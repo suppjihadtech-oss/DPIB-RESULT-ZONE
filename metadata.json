@@ -1,0 +1,8 @@
+{
+  "name": "DPIB RESULT ZONE",
+  "description": "দক্ষিণবঙ্গ পলিটেকনিক ইনস্টিটিউট আধুনিক ডিজিটাল ফলাফল ব্যবস্থাপনা ও অনুসন্ধান পোর্টাল - বীরশ্রেষ্ঠ মোস্তফা কামাল বাস স্ট্যান্ড সংলগ্ন, ভোলা সদর, ভোলা",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

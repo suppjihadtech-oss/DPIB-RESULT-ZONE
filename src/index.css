@@ -1,0 +1,196 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    font-family: 'Noto Sans Bengali', 'Outfit', system-ui, -apple-system, sans-serif;
+  }
+}
+
+.font-bengali {
+  font-family: 'Noto Sans Bengali', system-ui, -apple-system, sans-serif;
+}
+
+.font-outfit {
+  font-family: 'Outfit', system-ui, -apple-system, sans-serif;
+}
+
+/* Custom smooth scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Native Print Root off-screen in regular screen display */
+#dpib-native-print-root {
+  display: none !important;
+}
+
+@media print {
+  @page {
+    size: auto;
+    margin: 8mm 10mm 8mm 10mm;
+  }
+
+  *, *:before, *:after {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+  }
+
+  html, body {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  /* Universal Native Print Isolation Mode */
+  html.dpib-native-printing body > *:not(#dpib-native-print-root) {
+    display: none !important;
+    visibility: hidden !important;
+    height: 0 !important;
+    max-height: 0 !important;
+    overflow: hidden !important;
+  }
+
+  html.dpib-native-printing #dpib-native-print-root {
+    display: block !important;
+    visibility: visible !important;
+    position: static !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-height: auto !important;
+    height: auto !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    border: none !important;
+    box-shadow: none !important;
+    transform: none !important;
+    overflow: visible !important;
+  }
+
+  html.dpib-native-printing #dpib-native-print-root * {
+    visibility: visible !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Fallback mode if window.print is called directly without the root clone */
+  html:not(.dpib-native-printing) body * {
+    visibility: hidden;
+  }
+
+  .no-print,
+  .no-print * {
+    display: none !important;
+    visibility: hidden !important;
+  }
+
+  /* Make direct printable targets visible in fallback mode */
+  html:not(.dpib-native-printing) #printable-a4-document,
+  html:not(.dpib-native-printing) #printable-a4-document *,
+  html:not(.dpib-native-printing) #printable-result-sheet,
+  html:not(.dpib-native-printing) #printable-result-sheet *,
+  html:not(.dpib-native-printing) #dpib-printable-digital-card,
+  html:not(.dpib-native-printing) #dpib-printable-digital-card *,
+  html:not(.dpib-native-printing) #printable-admission-slip,
+  html:not(.dpib-native-printing) #printable-admission-slip *,
+  html:not(.dpib-native-printing) #printable-academic-analysis-report,
+  html:not(.dpib-native-printing) #printable-academic-analysis-report * {
+    visibility: visible !important;
+  }
+
+  html:not(.dpib-native-printing) #printable-a4-document,
+  html:not(.dpib-native-printing) #printable-result-sheet,
+  html:not(.dpib-native-printing) #dpib-printable-digital-card,
+  html:not(.dpib-native-printing) #printable-admission-slip,
+  html:not(.dpib-native-printing) #printable-academic-analysis-report {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-height: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    box-shadow: none !important;
+    border: none !important;
+    transform: none !important;
+    display: block !important;
+  }
+
+  .print-page-break {
+    page-break-after: always;
+    break-after: page;
+  }
+  .print-avoid-break {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+}
+
+/* 3D Realistic Book Page Flip Animation */
+@keyframes bookPageFlip {
+  0% {
+    transform: rotateY(0deg);
+    z-index: 10;
+    filter: brightness(1);
+    box-shadow: 0 2px 6px rgba(15, 23, 42, 0.05);
+  }
+  20% {
+    transform: rotateY(-35deg);
+    filter: brightness(1.04);
+  }
+  50% {
+    transform: rotateY(-90deg);
+    z-index: 30;
+    filter: brightness(0.92);
+    box-shadow: -8px 8px 20px rgba(15, 23, 42, 0.16);
+  }
+  80% {
+    transform: rotateY(-145deg);
+    filter: brightness(0.96);
+  }
+  100% {
+    transform: rotateY(-180deg);
+    z-index: 5;
+    filter: brightness(1);
+    box-shadow: 0 2px 6px rgba(15, 23, 42, 0.05);
+  }
+}
+
+.book-page-flipper {
+  animation: bookPageFlip 1.5s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite;
+  backface-visibility: visible;
+  transform-style: preserve-3d;
+}
+
+.book-page-delay-1 {
+  animation-delay: 0s;
+}
+
+.book-page-delay-2 {
+  animation-delay: 0.5s;
+}
+
+.book-page-delay-3 {
+  animation-delay: 1.0s;
+}
+
