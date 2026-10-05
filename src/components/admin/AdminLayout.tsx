@@ -86,7 +86,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
     : 'https://i.postimg.cc/mgyW32Y2/Firefly-Remove-Background.png';
 
   return (
-    <div className="min-h-screen bg-slate-50/80 text-slate-900 flex flex-col md:flex-row selection:bg-teal-700 selection:text-white font-bengali">
+    <div className="min-h-screen bg-slate-50/80 text-slate-900 flex flex-col md:flex-row selection:bg-teal-700 selection:text-white font-bengali w-full max-w-full overflow-x-clip">
       {/* ================= DESKTOP LIGHT GLASS SIDEBAR ================= */}
       <aside className="no-print hidden md:flex flex-col w-68 bg-white/75 backdrop-blur-2xl backdrop-saturate-180 text-slate-700 shrink-0 border-r border-slate-200/60 shadow-xs">
         {/* Brand Header */}
@@ -202,13 +202,13 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
       </aside>
 
       {/* ================= MAIN CONTENT WRAPPER ================= */}
-      <div className="flex-1 flex flex-col min-w-0 pb-20 md:pb-0">
+      <div className="flex-1 flex flex-col min-w-0 pb-20 md:pb-0 w-full max-w-full">
         {/* Top Header */}
-        <header className="no-print bg-white/80 backdrop-blur-2xl backdrop-saturate-180 border-b border-slate-200/60 py-2.5 sm:py-3 px-3 sm:px-6 flex items-center justify-between sticky top-0 z-30 shadow-[0_4px_24px_rgba(15,23,42,0.03)] gap-2">
-          <div className="flex items-center space-x-3 shrink-0">
+        <header className="no-print bg-white/80 backdrop-blur-2xl backdrop-saturate-180 border-b border-slate-200/60 py-2 sm:py-3 px-3 sm:px-6 flex items-center justify-between sticky top-0 z-30 shadow-[0_4px_24px_rgba(15,23,42,0.03)] gap-2 w-full max-w-full">
+          <div className="flex items-center space-x-2 sm:space-x-3 min-w-0">
             {/* Mobile Brand */}
-            <div className="flex items-center space-x-2 md:hidden">
-              <div className="w-8 h-8 rounded-xl bg-white/90 p-0.5 flex items-center justify-center border border-white/80 shadow-xs">
+            <div className="flex items-center space-x-2 md:hidden min-w-0">
+              <div className="w-8 h-8 rounded-xl bg-white/90 p-0.5 flex items-center justify-center border border-white/80 shadow-xs shrink-0">
                 <img
                   src={adminSectionLogoUrl}
                   alt="Logo"
@@ -216,7 +216,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
                   referrerPolicy="no-referrer"
                 />
               </div>
-              <span className="font-outfit font-black text-slate-900 text-sm tracking-tight">
+              <span className="font-outfit font-black text-slate-900 text-sm tracking-tight truncate">
                 DPIB <span className="text-teal-700">ADMIN</span>
               </span>
             </div>
@@ -298,11 +298,11 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
             </button>
           </div>
 
-          <div className="flex items-center space-x-2 sm:space-x-3 shrink-0">
-            {/* Quick "ভর্তি আবেদন" Button on Mobile */}
+          <div className="flex items-center space-x-1.5 sm:space-x-3 shrink-0">
+            {/* Quick "ভর্তি আবেদন" Button on Mobile: visible on sm+ screens; on phone screens bottom navigation handles it */}
             <button
               onClick={() => onSectionChange('admissions')}
-              className={`md:hidden flex items-center space-x-1 px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              className={`hidden sm:flex md:hidden items-center space-x-1 px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                 currentSection === 'admissions'
                   ? 'bg-teal-700 text-white shadow-xs'
                   : 'bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200/70'
@@ -318,18 +318,18 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
             {/* View Public Portal Button */}
             <button
               onClick={onBackToPublic}
-              className="flex items-center space-x-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              className="flex items-center space-x-1 px-2.5 sm:px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0"
             >
-              <ExternalLink className="w-3.5 h-3.5" />
+              <ExternalLink className="w-3.5 h-3.5 shrink-0" />
               <span className="hidden sm:inline">মূল ওয়েবসাইট দেখুন</span>
-              <span className="sm:hidden">ওয়েবসাইট</span>
+              <span className="sm:hidden text-[11px]">ওয়েবসাইট</span>
             </button>
 
             {/* Mobile Logout */}
             <button
               onClick={onLogout}
               title="লগআউট"
-              className="md:hidden p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-colors cursor-pointer"
+              className="md:hidden p-1.5 sm:p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-colors cursor-pointer shrink-0"
             >
               <LogOut className="w-4 h-4" />
             </button>
@@ -337,7 +337,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
         </header>
 
         {/* Dynamic Content Body */}
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto">
+        <main className="flex-1 p-3.5 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto min-w-0 max-w-full">
           {children}
         </main>
 

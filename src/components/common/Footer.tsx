@@ -12,7 +12,7 @@ export const Footer: React.FC<FooterProps> = ({ currentTab, isHome = false, onTa
   // If not on Home page, render the requested compact premium attribution section
   if (!isHome && currentTab !== 'home') {
     return (
-      <footer className="bg-[#F0F8FF] text-slate-700 pt-8 pb-36 sm:pb-20 px-4 border-t border-sky-200/75 select-none font-bengali">
+      <footer className="bg-[#F0F8FF] text-slate-700 pt-8 pb-36 sm:pb-20 px-4 border-t border-sky-200/75 select-none font-bengali w-full max-w-full overflow-hidden">
         <div className="max-w-7xl mx-auto">
           <CompactAttribution />
         </div>
@@ -22,8 +22,8 @@ export const Footer: React.FC<FooterProps> = ({ currentTab, isHome = false, onTa
 
   // Expanded Footer ONLY on Home Page
   return (
-    <footer className="bg-[#F0F8FF] text-slate-700 pt-12 pb-36 sm:pb-20 border-t border-sky-200/75 font-bengali">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <footer className="bg-[#F0F8FF] text-slate-700 pt-12 pb-36 sm:pb-20 border-t border-sky-200/75 font-bengali w-full max-w-full overflow-hidden">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-8 pb-10 border-b border-sky-200/60">
           {/* Brand Col */}
           <div className="md:col-span-2 space-y-4">

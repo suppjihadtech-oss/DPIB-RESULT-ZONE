@@ -8,7 +8,7 @@ export const CompactAttribution: React.FC<CompactAttributionProps> = ({ classNam
   return (
     <div
       id="dpib-compact-attribution"
-      className={`select-none text-center font-bengali py-3 ${className}`}
+      className={`select-none text-center font-bengali py-3 max-w-full overflow-hidden ${className}`}
     >
       <div className="max-w-md mx-auto flex flex-col items-center justify-center space-y-2.5">
         {/* 1. DPIB SERVER LOGO (Original untouched) */}

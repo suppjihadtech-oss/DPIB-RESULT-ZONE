@@ -534,7 +534,7 @@ export function App() {
   const isAdmissionRoute = publicTab === 'admission';
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900 selection:bg-blue-600 selection:text-white font-bengali">
+    <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900 selection:bg-blue-600 selection:text-white font-bengali w-full max-w-full overflow-x-clip">
       {/* Public Header - Clean Public Navigation with NO Admin Links (Hidden on dedicated /admission route) */}
       {!isAdmissionRoute && (
         <Header
@@ -551,7 +551,7 @@ export function App() {
       )}
 
       {/* Main View Router with Modern Page Transition */}
-      <main className={isAdmissionRoute ? 'flex-1' : 'flex-1 pb-24 md:pb-8'}>
+      <main className={isAdmissionRoute ? 'flex-1 w-full max-w-full min-w-0' : 'flex-1 pb-24 md:pb-8 w-full max-w-full min-w-0'}>
         <AnimatePresence mode="wait">
           {publicTab === 'home' && (
             <PageTransition key="public-home">

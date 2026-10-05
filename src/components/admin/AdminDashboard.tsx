@@ -96,10 +96,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, exam
   ];
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6 sm:space-y-8 min-w-0 max-w-full">
       {/* Top Welcome & Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 min-w-0">
+        <div className="min-w-0">
           <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
             অ্যাডমিন ড্যাশবোর্ড
           </h1>
@@ -109,10 +109,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, exam
         </div>
 
         {/* Quick Actions Header */}
-        <div className="flex items-center flex-wrap gap-2">
+        <div className="flex items-center flex-wrap gap-2 w-full sm:w-auto">
           <button
             onClick={() => onNavigate('admissions')}
-            className="flex items-center space-x-1.5 px-3.5 py-2 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs sm:text-sm font-bold transition-all shadow-xs active:scale-95 cursor-pointer"
+            className="flex items-center space-x-1.5 px-3.5 py-2 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs sm:text-sm font-bold transition-all shadow-xs active:scale-95 cursor-pointer shrink-0"
           >
             <GraduationCap className="w-4 h-4" />
             <span>ভর্তি আবেদন</span>
@@ -124,14 +124,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, exam
           </button>
           <button
             onClick={() => onNavigate('results')}
-            className="flex items-center space-x-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs sm:text-sm font-bold transition-all shadow-xs active:scale-95 cursor-pointer"
+            className="flex items-center space-x-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs sm:text-sm font-bold transition-all shadow-xs active:scale-95 cursor-pointer shrink-0"
           >
             <Upload className="w-4 h-4" />
             <span>ফলাফল আপলোড</span>
           </button>
           <button
             onClick={() => onNavigate('exams')}
-            className="flex items-center space-x-1.5 px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs sm:text-sm font-bold transition-all shadow-xs active:scale-95 cursor-pointer"
+            className="flex items-center space-x-1.5 px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs sm:text-sm font-bold transition-all shadow-xs active:scale-95 cursor-pointer shrink-0"
           >
             <Plus className="w-4 h-4" />
             <span>নতুন পরীক্ষা</span>
@@ -143,14 +143,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, exam
       {loading ? (
         <LoadingSpinner message="পরিসংখ্যান লোড হচ্ছে..." />
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3.5">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-2.5 sm:gap-3.5 min-w-0">
           {statCards.map((card, idx) => {
             const Icon = card.icon;
             return (
               <div
                 key={idx}
                 onClick={() => onNavigate(card.section)}
-                className="bg-white rounded-2xl border border-slate-200/90 p-4 shadow-2xs hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between"
+                className="bg-white rounded-2xl border border-slate-200/90 p-3.5 sm:p-4 shadow-2xs hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between min-w-0"
               >
                 <div className="flex items-center justify-between mb-3">
                   <div className={`p-2 rounded-xl border ${card.color}`}>
@@ -246,15 +246,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, exam
       </div>
 
       {/* Recent Exams Table */}
-      <div className="bg-white rounded-3xl border border-slate-200/90 p-5 sm:p-6 shadow-xs">
-        <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-4">
-          <div>
-            <h3 className="text-base sm:text-lg font-bold text-slate-900">সাম্প্রতিক পরীক্ষাসমূহ</h3>
-            <p className="text-xs text-slate-400">তৈরিকৃত পরীক্ষার সর্বশেষ অবস্থা</p>
+      <div className="bg-white rounded-3xl border border-slate-200/90 p-4 sm:p-6 shadow-xs min-w-0 max-w-full">
+        <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-4 min-w-0 gap-2">
+          <div className="min-w-0">
+            <h3 className="text-base sm:text-lg font-bold text-slate-900 truncate">সাম্প্রতিক পরীক্ষাসমূহ</h3>
+            <p className="text-xs text-slate-400 truncate">তৈরিকৃত পরীক্ষার সর্বশেষ অবস্থা</p>
           </div>
           <button
             onClick={() => onNavigate('exams')}
-            className="text-xs font-bold text-emerald-600 hover:text-emerald-700"
+            className="text-xs font-bold text-emerald-600 hover:text-emerald-700 shrink-0 cursor-pointer"
           >
             সকল পরীক্ষা দেখুন
           </button>
@@ -265,8 +265,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, exam
             এখনও কোনো পরীক্ষা তৈরি করা হয়নি। &quot;নতুন পরীক্ষা&quot; বাটনে ক্লিক করে পরীক্ষা তৈরি করুন।
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs sm:text-sm">
+          <div className="overflow-x-auto w-full max-w-full -mx-2 px-2 sm:mx-0 sm:px-0">
+            <table className="min-w-[480px] w-full text-left text-xs sm:text-sm">
               <thead>
                 <tr className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200">
                   <th className="py-2.5 px-3">পরীক্ষার নাম</th>

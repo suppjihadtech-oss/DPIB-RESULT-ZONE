@@ -59,11 +59,13 @@ export const HeroSearchCard: React.FC<HeroSearchCardProps> = ({
   const selectedExamLabel = selectedExamObj ? selectedExamObj.title : 'সকল পরীক্ষা';
 
   return (
-    <div className="relative overflow-hidden pt-8 pb-16 sm:pt-14 sm:pb-20 bg-gradient-to-b from-slate-50/70 via-blue-50/30 to-slate-100/50">
-      {/* Ambient Glassmorphism Backlight Spheres */}
-      <div className="absolute top-12 left-1/2 -translate-x-1/2 w-[600px] h-[350px] bg-gradient-to-tr from-blue-400/20 via-sky-300/20 to-indigo-400/15 blur-3xl pointer-events-none rounded-full" />
-      <div className="absolute top-1/3 left-10 w-72 h-72 bg-teal-300/15 blur-3xl pointer-events-none rounded-full" />
-      <div className="absolute bottom-10 right-10 w-80 h-80 bg-blue-500/10 blur-3xl pointer-events-none rounded-full" />
+    <div className="relative overflow-hidden pt-8 pb-16 sm:pt-14 sm:pb-20 bg-gradient-to-b from-slate-50/70 via-blue-50/30 to-slate-100/50 w-full max-w-full">
+      {/* Ambient Glassmorphism Backlight Spheres (Contained in an overflow-hidden wrapper) */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none -z-10 max-w-full">
+        <div className="absolute top-12 left-1/2 -translate-x-1/2 w-[600px] h-[350px] bg-gradient-to-tr from-blue-400/20 via-sky-300/20 to-indigo-400/15 blur-3xl rounded-full" />
+        <div className="absolute top-1/3 left-10 w-72 h-72 bg-teal-300/15 blur-3xl rounded-full" />
+        <div className="absolute bottom-10 right-10 w-80 h-80 bg-blue-500/10 blur-3xl rounded-full" />
+      </div>
 
       <div className="max-w-4xl mx-auto px-4 sm:px-6 text-center relative z-10">
         {/* Hero Title & Subtitle */}

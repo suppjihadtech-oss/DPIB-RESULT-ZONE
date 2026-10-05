@@ -8,7 +8,7 @@ interface PageTransitionProps extends HTMLMotionProps<'div'> {
 
 export const PageTransition: React.FC<PageTransitionProps> = ({
   children,
-  className = 'w-full',
+  className = 'w-full max-w-full min-w-0',
   ...props
 }) => {
   return (
@@ -30,7 +30,7 @@ export const PageTransition: React.FC<PageTransitionProps> = ({
 
 export const SubSectionTransition: React.FC<PageTransitionProps> = ({
   children,
-  className = 'w-full',
+  className = 'w-full max-w-full min-w-0',
   ...props
 }) => {
   return (

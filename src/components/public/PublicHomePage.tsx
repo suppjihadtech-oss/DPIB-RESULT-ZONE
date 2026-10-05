@@ -74,13 +74,15 @@ export const PublicHomePage: React.FC<PublicHomePageProps> = ({
   };
 
   return (
-    <div className="space-y-8 sm:space-y-12 pb-12 font-bengali relative">
-      {/* Ambient Glassmorphism Backlight Spheres */}
-      <div className="absolute top-20 left-1/4 w-96 h-96 bg-blue-400/10 blur-3xl pointer-events-none rounded-full" />
-      <div className="absolute top-80 right-10 w-80 h-80 bg-indigo-300/15 blur-3xl pointer-events-none rounded-full" />
+    <div className="space-y-8 sm:space-y-12 pb-12 font-bengali relative w-full max-w-full overflow-x-clip">
+      {/* Ambient Glassmorphism Backlight Spheres (Contained in an overflow-hidden wrapper to prevent mobile horizontal bleed) */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none -z-10 max-w-full">
+        <div className="absolute top-20 left-1/4 w-96 h-96 bg-blue-400/10 blur-3xl rounded-full" />
+        <div className="absolute top-80 right-10 w-80 h-80 bg-indigo-300/15 blur-3xl rounded-full" />
+      </div>
 
       {/* ================= HERO INSTITUTE INTRODUCTION SECTION ================= */}
-      <section className="relative overflow-hidden pt-8 sm:pt-14 pb-10 sm:pb-16 bg-white/70 backdrop-blur-2xl border border-white/80 shadow-[0_20px_50px_rgba(0,0,0,0.04),0_0_0_1px_rgba(255,255,255,0.9)_inset] rounded-[36px] mx-4 sm:mx-6">
+      <section className="relative overflow-hidden pt-8 sm:pt-14 pb-10 sm:pb-16 bg-white/70 backdrop-blur-2xl border border-white/80 shadow-[0_20px_50px_rgba(0,0,0,0.04),0_0_0_1px_rgba(255,255,255,0.9)_inset] rounded-[36px] mx-3 sm:mx-6 max-w-full">
         {/* Top Edge Sheen */}
         <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-white to-transparent" />
 
@@ -118,17 +120,17 @@ export const PublicHomePage: React.FC<PublicHomePageProps> = ({
           </p>
 
           {/* ================= TWO PRIMARY ACTION BUTTONS ================= */}
-          <div className="mt-8 sm:mt-10 flex flex-col sm:flex-row items-center justify-center gap-3.5 sm:gap-5 max-w-md sm:max-w-lg mx-auto">
+          <div className="mt-8 sm:mt-10 flex flex-col sm:flex-row items-center justify-center gap-3.5 sm:gap-5 max-w-md sm:max-w-lg mx-auto w-full">
             {/* Primary Action Button: ফলাফল অনুসন্ধান করুন */}
             <button
               id="home-btn-search-results"
               type="button"
               onClick={() => onNavigateTab('search')}
-              className="w-full sm:w-auto flex-1 px-8 py-4 bg-gradient-to-r from-blue-600 via-blue-600 to-indigo-600 hover:from-blue-700 hover:via-blue-700 hover:to-indigo-700 text-white rounded-2xl font-black text-base sm:text-lg shadow-[0_10px_25px_-5px_rgba(37,99,235,0.4)] transition-all flex items-center justify-center gap-2.5 active:scale-98 cursor-pointer ring-2 ring-blue-500/20"
+              className="w-full sm:w-auto flex-1 px-5 sm:px-8 py-4 bg-gradient-to-r from-blue-600 via-blue-600 to-indigo-600 hover:from-blue-700 hover:via-blue-700 hover:to-indigo-700 text-white rounded-2xl font-black text-base sm:text-lg shadow-[0_10px_25px_-5px_rgba(37,99,235,0.4)] transition-all flex items-center justify-center gap-2.5 active:scale-98 cursor-pointer ring-2 ring-blue-500/20 text-center"
             >
-              <Search className="w-5 h-5 stroke-[2.5]" />
-              <span>ফলাফল অনুসন্ধান করুন</span>
-              <ArrowRight className="w-4 h-4 ml-0.5" />
+              <Search className="w-5 h-5 stroke-[2.5] shrink-0" />
+              <span className="truncate">ফলাফল অনুসন্ধান করুন</span>
+              <ArrowRight className="w-4 h-4 ml-0.5 shrink-0" />
             </button>
 
             {/* Secondary Action Button: একাডেমিক এনালাইসিস */}
@@ -136,15 +138,15 @@ export const PublicHomePage: React.FC<PublicHomePageProps> = ({
               id="home-btn-analysis"
               type="button"
               onClick={() => onNavigateTab('analysis')}
-              className="w-full sm:w-auto flex-1 px-7 py-4 bg-white/90 backdrop-blur-md hover:bg-white text-slate-800 hover:text-blue-700 border border-slate-200/90 hover:border-blue-300 rounded-2xl font-black text-base sm:text-lg shadow-xs hover:shadow-md transition-all flex items-center justify-center gap-2.5 active:scale-98 cursor-pointer"
+              className="w-full sm:w-auto flex-1 px-5 sm:px-7 py-4 bg-white/90 backdrop-blur-md hover:bg-white text-slate-800 hover:text-blue-700 border border-slate-200/90 hover:border-blue-300 rounded-2xl font-black text-base sm:text-lg shadow-xs hover:shadow-md transition-all flex items-center justify-center gap-2.5 active:scale-98 cursor-pointer text-center"
             >
-              <BarChart3 className="w-5 h-5 text-blue-600 stroke-[2.2]" />
-              <span>একাডেমিক এনালাইসিস</span>
+              <BarChart3 className="w-5 h-5 text-blue-600 stroke-[2.2] shrink-0" />
+              <span className="truncate">একাডেমিক এনালাইসিস</span>
             </button>
           </div>
 
           {/* Key Trust Badges */}
-          <div className="mt-8 pt-6 border-t border-slate-200/60 flex flex-wrap items-center justify-center gap-4 sm:gap-8 text-xs text-slate-600 font-bold">
+          <div className="mt-8 pt-6 border-t border-slate-200/60 flex flex-wrap items-center justify-center gap-2.5 sm:gap-4 md:gap-8 text-xs text-slate-600 font-bold max-w-full">
             <span className="flex items-center gap-1.5 bg-white/60 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/80">
               <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
               <span>ক্লাউড ভেরিফাইড রেজাল্ট</span>

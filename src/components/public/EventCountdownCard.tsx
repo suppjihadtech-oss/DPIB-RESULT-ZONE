@@ -138,7 +138,7 @@ export const EventCountdownCard: React.FC<EventCountdownCardProps> = ({
   };
 
   return (
-    <div className="bg-white/95 backdrop-blur-md rounded-3xl border border-slate-200/90 p-5 sm:p-7 shadow-lg shadow-slate-100/60 relative overflow-hidden transition-all font-bengali">
+    <div className="bg-white/95 backdrop-blur-md rounded-3xl border border-slate-200/90 p-4 sm:p-7 shadow-lg shadow-slate-100/60 relative overflow-hidden transition-all font-bengali max-w-full">
       {/* Background Glow */}
       <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute bottom-0 left-0 w-48 h-48 bg-indigo-500/5 rounded-full blur-2xl pointer-events-none" />
@@ -221,46 +221,46 @@ export const EventCountdownCard: React.FC<EventCountdownCardProps> = ({
           </div>
 
           {/* Countdown Clock Display or Ongoing/Ended Status Box */}
-          <div className="shrink-0 bg-slate-50/90 border border-slate-200/80 p-4 sm:p-5 rounded-2xl">
+          <div className="w-full md:w-auto shrink-0 bg-slate-50/90 border border-slate-200/80 p-3 sm:p-5 rounded-2xl max-w-full">
             {timeLeft.status === 'UPCOMING' ? (
               <div className="space-y-2">
                 <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block text-center font-outfit">
                   COUNTDOWN TO EVENT
                 </span>
-                <div className="grid grid-cols-4 gap-2 text-center">
+                <div className="grid grid-cols-4 gap-1.5 sm:gap-2 text-center">
                   {/* Days */}
-                  <div className="bg-white border border-slate-200 rounded-xl p-2 sm:px-3 sm:py-2 min-w-[54px] shadow-2xs">
-                    <div className="text-xl sm:text-2xl font-black text-blue-600 font-outfit">
+                  <div className="bg-white border border-slate-200 rounded-xl p-1.5 sm:px-3 sm:py-2 min-w-0 sm:min-w-[54px] shadow-2xs">
+                    <div className="text-lg sm:text-2xl font-black text-blue-600 font-outfit">
                       {String(timeLeft.days).padStart(2, '0')}
                     </div>
-                    <div className="text-[9px] font-bold text-slate-500 uppercase font-outfit">
+                    <div className="text-[8px] sm:text-[9px] font-bold text-slate-500 uppercase font-outfit">
                       DAYS
                     </div>
                   </div>
                   {/* Hours */}
-                  <div className="bg-white border border-slate-200 rounded-xl p-2 sm:px-3 sm:py-2 min-w-[54px] shadow-2xs">
-                    <div className="text-xl sm:text-2xl font-black text-blue-600 font-outfit">
+                  <div className="bg-white border border-slate-200 rounded-xl p-1.5 sm:px-3 sm:py-2 min-w-0 sm:min-w-[54px] shadow-2xs">
+                    <div className="text-lg sm:text-2xl font-black text-blue-600 font-outfit">
                       {String(timeLeft.hours).padStart(2, '0')}
                     </div>
-                    <div className="text-[9px] font-bold text-slate-500 uppercase font-outfit">
+                    <div className="text-[8px] sm:text-[9px] font-bold text-slate-500 uppercase font-outfit">
                       HOURS
                     </div>
                   </div>
                   {/* Minutes */}
-                  <div className="bg-white border border-slate-200 rounded-xl p-2 sm:px-3 sm:py-2 min-w-[54px] shadow-2xs">
-                    <div className="text-xl sm:text-2xl font-black text-blue-600 font-outfit">
+                  <div className="bg-white border border-slate-200 rounded-xl p-1.5 sm:px-3 sm:py-2 min-w-0 sm:min-w-[54px] shadow-2xs">
+                    <div className="text-lg sm:text-2xl font-black text-blue-600 font-outfit">
                       {String(timeLeft.minutes).padStart(2, '0')}
                     </div>
-                    <div className="text-[9px] font-bold text-slate-500 uppercase font-outfit">
+                    <div className="text-[8px] sm:text-[9px] font-bold text-slate-500 uppercase font-outfit">
                       MINUTES
                     </div>
                   </div>
                   {/* Seconds */}
-                  <div className="bg-white border border-slate-200 rounded-xl p-2 sm:px-3 sm:py-2 min-w-[54px] shadow-2xs">
-                    <div className="text-xl sm:text-2xl font-black text-blue-600 font-outfit">
+                  <div className="bg-white border border-slate-200 rounded-xl p-1.5 sm:px-3 sm:py-2 min-w-0 sm:min-w-[54px] shadow-2xs">
+                    <div className="text-lg sm:text-2xl font-black text-blue-600 font-outfit">
                       {String(timeLeft.seconds).padStart(2, '0')}
                     </div>
-                    <div className="text-[9px] font-bold text-slate-500 uppercase font-outfit">
+                    <div className="text-[8px] sm:text-[9px] font-bold text-slate-500 uppercase font-outfit">
                       SECONDS
                     </div>
                   </div>
