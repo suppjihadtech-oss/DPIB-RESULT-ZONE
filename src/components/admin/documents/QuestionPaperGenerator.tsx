@@ -44,6 +44,7 @@ import { SelectBottomSheet, SelectTrigger, SelectOption } from '../../common/Sel
 import { BottomSheet } from '../../common/BottomSheet';
 import { saveDraft, getDraft, clearDraft, DraftRecord } from '../../../utils/draftStorage';
 import { DraftRestoreBanner } from '../../common/DraftRestoreBanner';
+import { saveQuestionPaper } from '../../../services/db';
 
 const AVAILABLE_TECHNOLOGIES = [
   { id: 'ALL', name: 'সকল প্রযুক্তি (সকল টেকনোলজি)', code: 'ALL' },
@@ -920,17 +921,263 @@ const QuestionSectionBottomSheet: React.FC<QuestionSectionBottomSheetProps> = ({
 };
 
 // =========================================================================
+// MULTI-SELECT DEPARTMENT BOTTOM SHEET (MAX 3 DEPARTMENTS)
+// =========================================================================
+interface MultiSelectTechBottomSheetProps {
+  isOpen: boolean;
+  onClose: () => void;
+  selectedTechs: string[];
+  onChange: (techs: string[]) => void;
+  maxSelections?: number;
+}
+
+const MultiSelectTechBottomSheet: React.FC<MultiSelectTechBottomSheetProps> = ({
+  isOpen,
+  onClose,
+  selectedTechs,
+  onChange,
+  maxSelections = 3,
+}) => {
+  const [tempSelected, setTempSelected] = useState<string[]>(selectedTechs);
+  const [warningMessage, setWarningMessage] = useState<string>('');
+
+  useEffect(() => {
+    if (isOpen) {
+      setTempSelected(selectedTechs);
+      setWarningMessage('');
+    }
+  }, [isOpen, selectedTechs]);
+
+  const toggleTech = (id: string) => {
+    setWarningMessage('');
+    if (id === 'ALL') {
+      if (tempSelected.includes('ALL')) {
+        setTempSelected([]);
+      } else {
+        setTempSelected(['ALL']);
+      }
+      return;
+    }
+
+    const withoutAll = tempSelected.filter((t) => t !== 'ALL');
+
+    if (withoutAll.includes(id)) {
+      setTempSelected(withoutAll.filter((t) => t !== id));
+    } else {
+      if (withoutAll.length >= maxSelections) {
+        setWarningMessage(`একসাথে সর্বোচ্চ ${toBanglaDigits(maxSelections)}টি ডিপার্টমেন্ট নির্বাচন করা যাবে।`);
+        return;
+      }
+      setTempSelected([...withoutAll, id]);
+    }
+  };
+
+  const handleApply = () => {
+    onChange(tempSelected);
+    onClose();
+  };
+
+  const handleClearAll = () => {
+    setTempSelected([]);
+    setWarningMessage('');
+  };
+
+  return (
+    <BottomSheet
+      isOpen={isOpen}
+      onClose={onClose}
+      title="ডিপার্টমেন্ট / টেকনোলজি নির্বাচন"
+      subtitle={`একসাথে সর্বোচ্চ ${toBanglaDigits(maxSelections)}টি ডিপার্টমেন্ট নির্বাচন করতে পারেন`}
+      maxHeight="max-h-[85vh]"
+    >
+      <div className="space-y-4 font-bengali pb-4">
+        {/* Top Info & Counter Bar */}
+        <div className="flex items-center justify-between px-1">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-slate-700">নির্বাচিত:</span>
+            <span
+              className={`px-2.5 py-0.5 rounded-full text-xs font-black font-mono ${
+                tempSelected.length === maxSelections
+                  ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                  : tempSelected.length > 0
+                  ? 'bg-violet-100 text-violet-800 border border-violet-200'
+                  : 'bg-slate-100 text-slate-600'
+              }`}
+            >
+              {toBanglaDigits(tempSelected.length)}/{toBanglaDigits(maxSelections)}টি
+            </span>
+            {tempSelected.length === maxSelections && (
+              <span className="text-[11px] font-bold text-amber-700">
+                (সর্বোচ্চ সীমা পূর্ণ)
+              </span>
+            )}
+          </div>
+
+          {tempSelected.length > 0 && (
+            <button
+              type="button"
+              onClick={handleClearAll}
+              className="text-xs font-bold text-rose-600 hover:text-rose-800 transition-colors cursor-pointer"
+            >
+              সব মুছুন
+            </button>
+          )}
+        </div>
+
+        {/* Warning Notification if exceeding limit */}
+        {warningMessage && (
+          <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-2xl text-xs font-bold flex items-center gap-2">
+            <X className="w-4 h-4 shrink-0" />
+            <span>{warningMessage}</span>
+          </div>
+        )}
+
+        {/* Departments List */}
+        <div className="space-y-2 max-h-[50vh] overflow-y-auto px-0.5">
+          {AVAILABLE_TECHNOLOGIES.map((tech) => {
+            const isSelected = tempSelected.includes(tech.id);
+            const isAllSelected = tempSelected.includes('ALL');
+            const isDisabled =
+              !isSelected &&
+              ((tech.id !== 'ALL' && isAllSelected) ||
+                (tech.id !== 'ALL' && tempSelected.filter((t) => t !== 'ALL').length >= maxSelections));
+
+            return (
+              <div
+                key={tech.id}
+                onClick={() => {
+                  if (!isDisabled) toggleTech(tech.id);
+                }}
+                className={`p-3.5 rounded-2xl border transition-all flex items-center justify-between gap-3 ${
+                  isSelected
+                    ? 'bg-violet-50/90 border-violet-500 shadow-2xs ring-1 ring-violet-500 cursor-pointer'
+                    : isDisabled
+                    ? 'bg-slate-50 border-slate-200 opacity-50 cursor-not-allowed'
+                    : 'bg-white hover:bg-slate-50 border-slate-200/90 hover:border-violet-300 cursor-pointer'
+                }`}
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <div
+                    className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                      isSelected
+                        ? 'bg-violet-700 text-white shadow-2xs'
+                        : 'bg-slate-100 text-slate-500'
+                    }`}
+                  >
+                    <Building className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <p
+                      className={`text-xs sm:text-sm font-bold truncate ${
+                        isSelected ? 'text-violet-950 font-black' : 'text-slate-800'
+                      }`}
+                    >
+                      {tech.name}
+                    </p>
+                    <span className="text-[10px] font-bold text-slate-400 font-mono">
+                      কোড: {tech.code}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  {tech.code && (
+                    <span
+                      className={`px-2 py-0.5 text-[10px] font-black rounded-lg font-mono ${
+                        isSelected ? 'bg-violet-200 text-violet-900' : 'bg-slate-100 text-slate-600'
+                      }`}
+                    >
+                      {tech.code}
+                    </span>
+                  )}
+                  <div
+                    className={`w-5 h-5 rounded-lg flex items-center justify-center border transition-all ${
+                      isSelected
+                        ? 'bg-violet-700 border-violet-700 text-white'
+                        : 'border-slate-300 bg-white'
+                    }`}
+                  >
+                    {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Selected preview chips in Bottom Sheet */}
+        {tempSelected.length > 0 && (
+          <div className="pt-2 border-t border-slate-100 flex flex-wrap gap-1.5 items-center">
+            <span className="text-[11px] font-bold text-slate-500 mr-1">নির্বাচিত ডিপার্টমেন্ট:</span>
+            {tempSelected.map((id) => {
+              const item = AVAILABLE_TECHNOLOGIES.find((t) => t.id === id);
+              return (
+                <span
+                  key={id}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 bg-violet-100 text-violet-800 border border-violet-200 rounded-xl text-xs font-bold"
+                >
+                  <span className="font-mono text-[10px] bg-white px-1 py-0.2 rounded text-violet-700">
+                    {item?.code || id}
+                  </span>
+                  <span>{item?.name.replace(' টেকনোলজি', '').replace(' প্রযুক্তি', '') || id}</span>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleTech(id);
+                    }}
+                    className="hover:text-rose-600 cursor-pointer p-0.5"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Confirm Action Button */}
+        <div className="pt-2">
+          <button
+            type="button"
+            onClick={handleApply}
+            className="w-full py-3 bg-violet-700 hover:bg-violet-800 text-white rounded-2xl text-xs sm:text-sm font-black transition-all shadow-md active:scale-98 flex items-center justify-center gap-2 cursor-pointer"
+          >
+            <CheckCircle2 className="w-4 h-4" />
+            <span>
+              {tempSelected.length > 0
+                ? `${toBanglaDigits(tempSelected.length)}টি ডিপার্টমেন্ট নিশ্চিত করুন`
+                : 'সিলেক্ট ছাড়া বন্ধ করুন'}
+            </span>
+          </button>
+        </div>
+      </div>
+    </BottomSheet>
+  );
+};
+
+// =========================================================================
 // MAIN QUESTION PAPER GENERATOR COMPONENT
 // =========================================================================
 export const QuestionPaperGenerator: React.FC = () => {
   const [examName, setExamName] = useState('১ম পর্ব সমাপনী পরীক্ষা');
   const [examYear, setExamYear] = useState('২০২৬');
-  const [selectedTech, setSelectedTech] = useState('');
+
+  // FEATURE 2: Multi-Department Selection (Max 3)
+  const [selectedTechs, setSelectedTechs] = useState<string[]>([]);
+
+  // FEATURE 1: Question Paper Format (FULL vs SHORT_ONLY)
+  const [questionPaperFormat, setQuestionPaperFormat] = useState<'FULL' | 'SHORT_ONLY'>('FULL');
+
   const [selectedSemester, setSelectedSemester] = useState('');
   const [subjectName, setSubjectName] = useState('');
   const [subjectCode, setSubjectCode] = useState('');
   const [examTime, setExamTime] = useState('৩ ঘণ্টা');
   const [totalMarks, setTotalMarks] = useState('৬০');
+
+  // Cloud saving state
+  const [isSavingCloud, setIsSavingCloud] = useState(false);
+  const [cloudSaveSuccess, setCloudSaveSuccess] = useState(false);
 
   // Bottom sheets for primary selection
   const [techSheetOpen, setTechSheetOpen] = useState(false);
@@ -983,12 +1230,14 @@ export const QuestionPaperGenerator: React.FC = () => {
       const draftData = {
         examName,
         examYear,
-        selectedTech,
+        selectedTech: selectedTechs[0] || '', // legacy single-tech backward compatibility
+        selectedTechs,
         selectedSemester,
         subjectName,
         subjectCode,
         examTime,
         totalMarks,
+        questionPaperFormat,
         groupAQuestions,
         groupBQuestions,
         groupCQuestions,
@@ -1004,12 +1253,13 @@ export const QuestionPaperGenerator: React.FC = () => {
   }, [
     examName,
     examYear,
-    selectedTech,
+    selectedTechs,
     selectedSemester,
     subjectName,
     subjectCode,
     examTime,
     totalMarks,
+    questionPaperFormat,
     groupAQuestions,
     groupBQuestions,
     groupCQuestions,
@@ -1023,7 +1273,19 @@ export const QuestionPaperGenerator: React.FC = () => {
     const d = pendingDraft.data;
     if (d.examName) setExamName(d.examName);
     if (d.examYear) setExamYear(d.examYear);
-    if (d.selectedTech) setSelectedTech(d.selectedTech);
+
+    // Multi-tech restore with backward compatibility
+    if (Array.isArray(d.selectedTechs) && d.selectedTechs.length > 0) {
+      setSelectedTechs(d.selectedTechs);
+    } else if (d.selectedTech) {
+      setSelectedTechs([d.selectedTech]);
+    }
+
+    // Format restore with backward compatibility
+    if (d.questionPaperFormat) {
+      setQuestionPaperFormat(d.questionPaperFormat);
+    }
+
     if (d.selectedSemester) setSelectedSemester(d.selectedSemester);
     if (d.subjectName) setSubjectName(d.subjectName);
     if (d.subjectCode) setSubjectCode(d.subjectCode);
@@ -1046,9 +1308,69 @@ export const QuestionPaperGenerator: React.FC = () => {
     setLastSavedTime(null);
   };
 
-  // Auto loaded curriculum subjects based on Tech + Sem
-  const autoSubjects = (selectedTech && selectedSemester)
-    ? getAutoLoadedCurriculumSubjects([selectedTech], selectedSemester as SemesterId)
+  // Remove single department chip
+  const handleRemoveDepartment = (techId: string) => {
+    setSelectedTechs((prev) => prev.filter((id) => id !== techId));
+  };
+
+  // Format department names for official A4 header display
+  const getFormattedTechDisplay = () => {
+    if (selectedTechs.length === 0) return '';
+    if (selectedTechs.includes('ALL')) {
+      return 'সকল টেকনোলজি';
+    }
+    const selectedObjs = AVAILABLE_TECHNOLOGIES.filter((t) => selectedTechs.includes(t.id));
+    if (selectedObjs.length === 1) {
+      return selectedObjs[0].name;
+    }
+    const cleanNames = selectedObjs.map((t) =>
+      t.name.replace(' টেকনোলজি', '').replace(' প্রযুক্তি', '')
+    );
+    if (cleanNames.length === 2) {
+      return `${cleanNames[0]} ও ${cleanNames[1]} টেকনোলজি`;
+    }
+    return `${cleanNames.slice(0, -1).join(', ')} ও ${cleanNames[cleanNames.length - 1]} টেকনোলজি`;
+  };
+
+  // Cloud Save Handler
+  const handleSaveToCloud = async () => {
+    if (selectedTechs.length === 0 || !selectedSemester || !subjectCode) return;
+    setIsSavingCloud(true);
+    try {
+      const payload = {
+        examName,
+        examYear,
+        selectedTechs,
+        selectedTech: selectedTechs[0] || '',
+        departmentName: getFormattedTechDisplay(),
+        selectedSemester,
+        semester: selectedSemester,
+        subjectName,
+        subjectCode,
+        examTime,
+        totalMarks,
+        questionPaperFormat,
+        isShortOnly: questionPaperFormat === 'SHORT_ONLY',
+        groupAQuestions,
+        groupBQuestions: questionPaperFormat === 'SHORT_ONLY' ? [] : groupBQuestions,
+        groupCQuestions: questionPaperFormat === 'SHORT_ONLY' ? [] : groupCQuestions,
+        groupAInstruction,
+        groupBInstruction,
+        groupCInstruction,
+      };
+      await saveQuestionPaper(payload);
+      setCloudSaveSuccess(true);
+      setTimeout(() => setCloudSaveSuccess(false), 3500);
+    } catch (err) {
+      console.error('Failed to save question paper to cloud:', err);
+    } finally {
+      setIsSavingCloud(false);
+    }
+  };
+
+  // Auto loaded curriculum subjects based on Multi-Tech + Sem
+  const autoSubjects = (selectedTechs.length > 0 && selectedSemester)
+    ? getAutoLoadedCurriculumSubjects(selectedTechs, selectedSemester as SemesterId)
     : [];
 
   const handleSelectSubject = (code: string) => {
@@ -1064,7 +1386,7 @@ export const QuestionPaperGenerator: React.FC = () => {
     }
   };
 
-  const selectedTechObj = AVAILABLE_TECHNOLOGIES.find((t) => t.id === selectedTech);
+  const selectedTechObjects = AVAILABLE_TECHNOLOGIES.filter((t) => selectedTechs.includes(t.id));
   const semesterBangla = selectedSemester
     ? (SEMESTER_MAP[selectedSemester as keyof typeof SEMESTER_MAP] || `${toBanglaDigits(selectedSemester)}ম পর্ব`)
     : '';
@@ -1103,14 +1425,6 @@ export const QuestionPaperGenerator: React.FC = () => {
     }
   };
 
-  // Options for Select Bottom Sheets
-  const techOptions: SelectOption[] = AVAILABLE_TECHNOLOGIES.map((t) => ({
-    value: t.id,
-    label: t.name,
-    badge: t.code,
-    icon: Building,
-  }));
-
   const semesterOptions: SelectOption[] = (['1', '2', '3', '4', '5', '6', '7', '8'] as SemesterId[]).map((sem) => ({
     value: sem,
     label: SEMESTER_MAP[sem] || `${toBanglaDigits(sem)}ম পর্ব`,
@@ -1121,7 +1435,9 @@ export const QuestionPaperGenerator: React.FC = () => {
   const subjectOptions: SelectOption[] = autoSubjects.map((s) => ({
     value: s.subjectCode,
     label: s.subjectName,
-    sublabel: `কোড: ${s.subjectCode} • পূর্ণমান: ${s.curriculumFullMarks || 100}`,
+    sublabel: `কোড: ${s.subjectCode} • পূর্ণমান: ${s.curriculumFullMarks || 100}${
+      s.technologies && s.technologies.length > 0 ? ` • (${s.technologies.join(', ')})` : ''
+    }`,
     badge: s.subjectCode,
     icon: BookOpen,
   }));
@@ -1153,18 +1469,102 @@ export const QuestionPaperGenerator: React.FC = () => {
               </p>
             </div>
           </div>
+
+          <div className="flex items-center gap-2 self-start sm:self-auto">
+            <button
+              type="button"
+              disabled={isSavingCloud || selectedTechs.length === 0 || !selectedSemester || !subjectCode}
+              onClick={handleSaveToCloud}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 shadow-xs cursor-pointer active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed ${
+                cloudSaveSuccess
+                  ? 'bg-emerald-600 text-white'
+                  : 'bg-teal-700 hover:bg-teal-800 text-white'
+              }`}
+            >
+              {cloudSaveSuccess ? (
+                <>
+                  <CheckCircle2 className="w-4 h-4 text-white" />
+                  <span>সংরক্ষণ সম্পন্ন হয়েছে!</span>
+                </>
+              ) : isSavingCloud ? (
+                <span>সংরক্ষণ হচ্ছে...</span>
+              ) : (
+                <>
+                  <Upload className="w-4 h-4 text-white" />
+                  <span>ক্লাউডে সংরক্ষণ করুন</span>
+                </>
+              )}
+            </button>
+          </div>
         </div>
 
         {/* Primary Meta Fields Row */}
         <div className="grid grid-cols-1 sm:grid-cols-4 gap-3.5 mb-4">
-          <SelectTrigger
-            label="টেকনোলজি নির্বাচন"
-            value={selectedTech}
-            displayValue={selectedTechObj ? selectedTechObj.name : ''}
-            placeholder="টেকনোলজি নির্বাচন করুন"
-            onClick={() => setTechSheetOpen(true)}
-            icon={Building}
-          />
+          <div className="space-y-1">
+            <label className="block text-xs font-bold text-slate-700 uppercase">
+              ডিপার্টমেন্ট / টেকনোলজি (সর্বোচ্চ ৩টি) <span className="text-rose-500">*</span>
+            </label>
+            <button
+              type="button"
+              onClick={() => setTechSheetOpen(true)}
+              className="w-full px-3.5 py-2.5 bg-slate-50 hover:bg-white border border-slate-200/90 hover:border-violet-400 rounded-xl text-left text-xs sm:text-sm font-semibold transition-all flex items-center justify-between gap-2 cursor-pointer shadow-2xs active:scale-[0.99]"
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <Building className="w-4 h-4 text-slate-400 shrink-0" />
+                <span className={`truncate ${selectedTechs.length === 0 ? 'text-slate-400' : 'text-slate-800'}`}>
+                  {selectedTechs.length === 0
+                    ? 'ডিপার্টমেন্ট নির্বাচন করুন'
+                    : selectedTechs.includes('ALL')
+                    ? 'সকল প্রযুক্তি (সকল টেকনোলজি)'
+                    : selectedTechs.map((id) => {
+                        const t = AVAILABLE_TECHNOLOGIES.find((item) => item.id === id);
+                        return t?.name.replace(' টেকনোলজি', '').replace(' প্রযুক্তি', '') || id;
+                      }).join(' + ')}
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                {selectedTechs.length > 0 && (
+                  <span className="px-2 py-0.5 rounded-md text-[10px] font-black bg-violet-100 text-violet-800 font-mono">
+                    {toBanglaDigits(selectedTechs.length)}টি
+                  </span>
+                )}
+                <ChevronRight className="w-4 h-4 text-slate-400" />
+              </div>
+            </button>
+
+            {/* Selected Technology Chips with easy remove action */}
+            {selectedTechs.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                {selectedTechs.map((id) => {
+                  const tech = AVAILABLE_TECHNOLOGIES.find((t) => t.id === id);
+                  return (
+                    <span
+                      key={id}
+                      className="inline-flex items-center gap-1 px-2 py-0.5 bg-violet-50 text-violet-800 border border-violet-200 rounded-lg text-[11px] font-bold"
+                    >
+                      <span className="font-mono text-[9px] bg-white px-1 py-0.2 rounded text-violet-700">
+                        {tech?.code || id}
+                      </span>
+                      <span className="truncate max-w-[120px]">
+                        {tech?.name.replace(' টেকনোলজি', '').replace(' প্রযুক্তি', '') || id}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleRemoveDepartment(id);
+                        }}
+                        className="hover:text-rose-600 cursor-pointer p-0.5 text-violet-500"
+                        title="রিমুভ করুন"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  );
+                })}
+              </div>
+            )}
+          </div>
 
           <SelectTrigger
             label="সেমিস্টার নির্বাচন"
@@ -1248,13 +1648,72 @@ export const QuestionPaperGenerator: React.FC = () => {
         {/* MODERN QUESTION MANAGEMENT CARDS (ক, খ ও গ বিভাগ)                           */}
         {/* ========================================================================= */}
         <div className="pt-4 border-t border-slate-100 space-y-4">
-          <div className="flex items-center justify-between">
-            <h4 className="text-xs sm:text-sm font-black text-slate-900 flex items-center gap-2">
-              <ListOrdered className="w-4 h-4 text-violet-700" />
-              <span>বিভাগ অনুযায়ী প্রশ্নাবলী পরিচালনা (ক, খ ও গ বিভাগ):</span>
-            </h4>
-            <span className="text-[11px] font-semibold text-slate-400">
-              সর্বমোট: {toBanglaDigits(groupAQuestions.length + groupBQuestions.length + groupCQuestions.length)}টি প্রশ্ন
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h4 className="text-xs sm:text-sm font-black text-slate-900 flex items-center gap-2">
+                <ListOrdered className="w-4 h-4 text-violet-700" />
+                <span>
+                  {questionPaperFormat === 'SHORT_ONLY'
+                    ? 'অতি সংক্ষিপ্ত প্রশ্নাবলি পরিচালনা (একক বিভাগ):'
+                    : 'বিভাগ অনুযায়ী প্রশ্নাবলী পরিচালনা (ক, খ ও গ বিভাগ):'}
+                </span>
+              </h4>
+              <p className="text-[11px] text-slate-500 font-medium mt-0.5">
+                {questionPaperFormat === 'SHORT_ONLY'
+                  ? 'এই বইয়ের জন্য শুধুমাত্র অতি সংক্ষিপ্ত প্রশ্ন দিয়ে সম্পূর্ণ প্রশ্নপত্র তৈরি হবে (খ ও গ বিভাগ প্রযোজ্য নয়)।'
+                  : 'পূর্ণাঙ্গ প্রশ্নপত্র: ক (অতি সংক্ষিপ্ত), খ (সংক্ষিপ্ত) ও গ (রচনামূলক) বিভাগ।'}
+              </p>
+            </div>
+
+            {/* FEATURE 1: Question Paper Format Switcher (FULL vs SHORT_ONLY) */}
+            <div className="flex items-center bg-slate-100 p-1 rounded-2xl border border-slate-200/80 self-start sm:self-auto shrink-0">
+              <button
+                type="button"
+                onClick={() => setQuestionPaperFormat('FULL')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  questionPaperFormat === 'FULL'
+                    ? 'bg-white text-violet-900 shadow-xs border border-slate-200/60'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Layers className="w-3.5 h-3.5 text-violet-700" />
+                <span>পূর্ণাঙ্গ ফরম্যাট (ক, খ ও গ)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setQuestionPaperFormat('SHORT_ONLY')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  questionPaperFormat === 'SHORT_ONLY'
+                    ? 'bg-white text-emerald-900 shadow-xs border border-emerald-300 ring-1 ring-emerald-400'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                <span>শুধুমাত্র অতি সংক্ষিপ্ত প্রশ্ন</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between text-[11px] text-slate-500 font-medium px-1">
+            <span>
+              {questionPaperFormat === 'SHORT_ONLY' ? (
+                <span className="inline-flex items-center gap-1.5 text-emerald-700 font-bold bg-emerald-50 px-2.5 py-0.5 rounded-lg border border-emerald-200">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>"শুধুমাত্র অতি সংক্ষিপ্ত প্রশ্ন" মোড সক্রিয় — খ ও গ বিভাগ বাধ্যতামূলক নয়</span>
+                </span>
+              ) : (
+                <span>সকল ৩টি বিভাগ সক্রিয়</span>
+              )}
+            </span>
+            <span className="font-semibold text-slate-500">
+              সর্বমোট:{' '}
+              {toBanglaDigits(
+                questionPaperFormat === 'SHORT_ONLY'
+                  ? groupAQuestions.length
+                  : groupAQuestions.length + groupBQuestions.length + groupCQuestions.length
+              )}
+              টি প্রশ্ন
             </span>
           </div>
 
@@ -1264,7 +1723,7 @@ export const QuestionPaperGenerator: React.FC = () => {
               <div>
                 <div className="flex items-center gap-2">
                   <span className="px-2.5 py-0.5 rounded-lg bg-violet-100 text-violet-800 text-xs font-black">
-                    ক-বিভাগ
+                    {questionPaperFormat === 'SHORT_ONLY' ? 'একক বিভাগ' : 'ক-বিভাগ'}
                   </span>
                   <span className="text-xs sm:text-sm font-bold text-slate-800">
                     অতি সংক্ষিপ্ত প্রশ্নমালা
@@ -1284,14 +1743,20 @@ export const QuestionPaperGenerator: React.FC = () => {
                 className="px-4 py-2 bg-violet-700 hover:bg-violet-800 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer active:scale-95 shrink-0"
               >
                 <Plus className="w-3.5 h-3.5" />
-                <span>ক-বিভাগে প্রশ্ন যুক্ত / সম্পাদনা করুন</span>
+                <span>
+                  {questionPaperFormat === 'SHORT_ONLY'
+                    ? 'অতি সংক্ষিপ্ত প্রশ্ন যুক্ত / সম্পাদনা করুন'
+                    : 'ক-বিভাগে প্রশ্ন যুক্ত / সম্পাদনা করুন'}
+                </span>
               </button>
             </div>
 
             {/* Questions preview in Card */}
             {groupAQuestions.length === 0 ? (
               <div className="py-3 px-4 text-center text-xs text-slate-400 bg-white rounded-xl border border-dashed border-slate-200">
-                ক-বিভাগে এখনো কোনো প্রশ্ন যুক্ত করা হয়নি। ডানপাশের <strong className="text-violet-700">"যুক্ত করুন"</strong> বাটনে ক্লিক করে প্রশ্ন লিখুন।
+                {questionPaperFormat === 'SHORT_ONLY'
+                  ? 'এখনো কোনো অতি সংক্ষিপ্ত প্রশ্ন যুক্ত করা হয়নি। ডানপাশের "যুক্ত করুন" বাটনে ক্লিক করে প্রশ্ন লিখুন।'
+                  : 'ক-বিভাগে এখনো কোনো প্রশ্ন যুক্ত করা হয়নি। ডানপাশের "যুক্ত করুন" বাটনে ক্লিক করে প্রশ্ন লিখুন।'}
               </div>
             ) : (
               <div className="space-y-1.5">
@@ -1333,155 +1798,160 @@ export const QuestionPaperGenerator: React.FC = () => {
             )}
           </div>
 
-          {/* Section B Card */}
-          <div className="p-4 bg-slate-50/80 border border-slate-200/90 rounded-2xl space-y-3">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-3 border-b border-slate-200/70">
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="px-2.5 py-0.5 rounded-lg bg-indigo-100 text-indigo-800 text-xs font-black">
-                    খ-বিভাগ
-                  </span>
-                  <span className="text-xs sm:text-sm font-bold text-slate-800">
-                    সংক্ষিপ্ত প্রশ্নমালা
-                  </span>
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-white text-slate-600 border border-slate-200 font-mono">
-                    {toBanglaDigits(groupBQuestions.length)}টি প্রশ্ন
-                  </span>
-                </div>
-                <p className="text-[11px] text-slate-500 font-medium mt-1">
-                  নির্দেশনা: <strong className="text-slate-800">{groupBInstruction}</strong>
-                </p>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setSheetSectionBOpen(true)}
-                className="px-4 py-2 bg-indigo-700 hover:bg-indigo-800 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer active:scale-95 shrink-0"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>খ-বিভাগে প্রশ্ন যুক্ত / সম্পাদনা করুন</span>
-              </button>
-            </div>
-
-            {/* Questions preview in Card */}
-            {groupBQuestions.length === 0 ? (
-              <div className="py-3 px-4 text-center text-xs text-slate-400 bg-white rounded-xl border border-dashed border-slate-200">
-                খ-বিভাগে এখনো কোনো প্রশ্ন যুক্ত করা হয়নি। ডানপাশের <strong className="text-indigo-700">"যুক্ত করুন"</strong> বাটনে ক্লিক করে প্রশ্ন লিখুন।
-              </div>
-            ) : (
-              <div className="space-y-1.5">
-                {groupBQuestions.map((q, idx) => (
-                  <div
-                    key={q.id || idx}
-                    className="p-2.5 bg-white border border-slate-200/70 rounded-xl flex items-center justify-between gap-2 text-xs"
-                  >
-                    <div className="flex items-start gap-2 min-w-0">
-                      <span className="w-5 text-center font-bold text-slate-500 font-mono shrink-0 pt-0.5">
-                        {toBanglaDigits(groupAQuestions.length + idx + 1)}.
+          {/* Section B & C are rendered only in FULL format */}
+          {questionPaperFormat === 'FULL' && (
+            <>
+              {/* Section B Card */}
+              <div className="p-4 bg-slate-50/80 border border-slate-200/90 rounded-2xl space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-3 border-b border-slate-200/70">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="px-2.5 py-0.5 rounded-lg bg-indigo-100 text-indigo-800 text-xs font-black">
+                        খ-বিভাগ
                       </span>
-                      <div className="min-w-0">
-                        <QuestionContentRenderer item={q} compact={true} />
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-1 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => setSheetSectionBOpen(true)}
-                        className="p-1 text-slate-400 hover:text-indigo-700 rounded transition-colors cursor-pointer"
-                        title="সম্পাদনা করুন"
-                      >
-                        <Edit3 className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveQuestion('B', idx)}
-                        className="p-1 text-slate-400 hover:text-rose-600 rounded transition-colors cursor-pointer"
-                        title="মুছে ফেলুন"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Section C Card */}
-          <div className="p-4 bg-slate-50/80 border border-slate-200/90 rounded-2xl space-y-3">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-3 border-b border-slate-200/70">
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="px-2.5 py-0.5 rounded-lg bg-teal-100 text-teal-800 text-xs font-black">
-                    গ-বিভাগ
-                  </span>
-                  <span className="text-xs sm:text-sm font-bold text-slate-800">
-                    রচনামূলক প্রশ্নমালা
-                  </span>
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-white text-slate-600 border border-slate-200 font-mono">
-                    {toBanglaDigits(groupCQuestions.length)}টি প্রশ্ন
-                  </span>
-                </div>
-                <p className="text-[11px] text-slate-500 font-medium mt-1">
-                  নির্দেশনা: <strong className="text-slate-800">{groupCInstruction}</strong>
-                </p>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setSheetSectionCOpen(true)}
-                className="px-4 py-2 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer active:scale-95 shrink-0"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>গ-বিভাগে প্রশ্ন যুক্ত / সম্পাদনা করুন</span>
-              </button>
-            </div>
-
-            {/* Questions preview in Card */}
-            {groupCQuestions.length === 0 ? (
-              <div className="py-3 px-4 text-center text-xs text-slate-400 bg-white rounded-xl border border-dashed border-slate-200">
-                গ-বিভাগে এখনো কোনো প্রশ্ন যুক্ত করা হয়নি। ডানপাশের <strong className="text-teal-700">"যুক্ত করুন"</strong> বাটনে ক্লিক করে প্রশ্ন লিখুন।
-              </div>
-            ) : (
-              <div className="space-y-1.5">
-                {groupCQuestions.map((q, idx) => (
-                  <div
-                    key={q.id || idx}
-                    className="p-2.5 bg-white border border-slate-200/70 rounded-xl flex items-center justify-between gap-2 text-xs"
-                  >
-                    <div className="flex items-start gap-2 min-w-0">
-                      <span className="w-5 text-center font-bold text-slate-500 font-mono shrink-0 pt-0.5">
-                        {toBanglaDigits(groupAQuestions.length + groupBQuestions.length + idx + 1)}.
+                      <span className="text-xs sm:text-sm font-bold text-slate-800">
+                        সংক্ষিপ্ত প্রশ্নমালা
                       </span>
-                      <div className="min-w-0">
-                        <QuestionContentRenderer item={q} compact={true} />
-                      </div>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-white text-slate-600 border border-slate-200 font-mono">
+                        {toBanglaDigits(groupBQuestions.length)}টি প্রশ্ন
+                      </span>
                     </div>
-
-                    <div className="flex items-center gap-1 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => setSheetSectionCOpen(true)}
-                        className="p-1 text-slate-400 hover:text-teal-700 rounded transition-colors cursor-pointer"
-                        title="সম্পাদনা করুন"
-                      >
-                        <Edit3 className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveQuestion('C', idx)}
-                        className="p-1 text-slate-400 hover:text-rose-600 rounded transition-colors cursor-pointer"
-                        title="মুছে ফেলুন"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
+                    <p className="text-[11px] text-slate-500 font-medium mt-1">
+                      নির্দেশনা: <strong className="text-slate-800">{groupBInstruction}</strong>
+                    </p>
                   </div>
-                ))}
+
+                  <button
+                    type="button"
+                    onClick={() => setSheetSectionBOpen(true)}
+                    className="px-4 py-2 bg-indigo-700 hover:bg-indigo-800 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer active:scale-95 shrink-0"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>খ-বিভাগে প্রশ্ন যুক্ত / সম্পাদনা করুন</span>
+                  </button>
+                </div>
+
+                {/* Questions preview in Card */}
+                {groupBQuestions.length === 0 ? (
+                  <div className="py-3 px-4 text-center text-xs text-slate-400 bg-white rounded-xl border border-dashed border-slate-200">
+                    খ-বিভাগে এখনো কোনো প্রশ্ন যুক্ত করা হয়নি। ডানপাশের <strong className="text-indigo-700">"যুক্ত করুন"</strong> বাটনে ক্লিক করে প্রশ্ন লিখুন।
+                  </div>
+                ) : (
+                  <div className="space-y-1.5">
+                    {groupBQuestions.map((q, idx) => (
+                      <div
+                        key={q.id || idx}
+                        className="p-2.5 bg-white border border-slate-200/70 rounded-xl flex items-center justify-between gap-2 text-xs"
+                      >
+                        <div className="flex items-start gap-2 min-w-0">
+                          <span className="w-5 text-center font-bold text-slate-500 font-mono shrink-0 pt-0.5">
+                            {toBanglaDigits(groupAQuestions.length + idx + 1)}.
+                          </span>
+                          <div className="min-w-0">
+                            <QuestionContentRenderer item={q} compact={true} />
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => setSheetSectionBOpen(true)}
+                            className="p-1 text-slate-400 hover:text-indigo-700 rounded transition-colors cursor-pointer"
+                            title="সম্পাদনা করুন"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveQuestion('B', idx)}
+                            className="p-1 text-slate-400 hover:text-rose-600 rounded transition-colors cursor-pointer"
+                            title="মুছে ফেলুন"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-            )}
-          </div>
+
+              {/* Section C Card */}
+              <div className="p-4 bg-slate-50/80 border border-slate-200/90 rounded-2xl space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-3 border-b border-slate-200/70">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="px-2.5 py-0.5 rounded-lg bg-teal-100 text-teal-800 text-xs font-black">
+                        গ-বিভাগ
+                      </span>
+                      <span className="text-xs sm:text-sm font-bold text-slate-800">
+                        রচনামূলক প্রশ্নমালা
+                      </span>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-white text-slate-600 border border-slate-200 font-mono">
+                        {toBanglaDigits(groupCQuestions.length)}টি প্রশ্ন
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 font-medium mt-1">
+                      নির্দেশনা: <strong className="text-slate-800">{groupCInstruction}</strong>
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setSheetSectionCOpen(true)}
+                    className="px-4 py-2 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer active:scale-95 shrink-0"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>গ-বিভাগে প্রশ্ন যুক্ত / সম্পাদনা করুন</span>
+                  </button>
+                </div>
+
+                {/* Questions preview in Card */}
+                {groupCQuestions.length === 0 ? (
+                  <div className="py-3 px-4 text-center text-xs text-slate-400 bg-white rounded-xl border border-dashed border-slate-200">
+                    গ-বিভাগে এখনো কোনো প্রশ্ন যুক্ত করা হয়নি। ডানপাশের <strong className="text-teal-700">"যুক্ত করুন"</strong> বাটনে ক্লিক করে প্রশ্ন লিখুন।
+                  </div>
+                ) : (
+                  <div className="space-y-1.5">
+                    {groupCQuestions.map((q, idx) => (
+                      <div
+                        key={q.id || idx}
+                        className="p-2.5 bg-white border border-slate-200/70 rounded-xl flex items-center justify-between gap-2 text-xs"
+                      >
+                        <div className="flex items-start gap-2 min-w-0">
+                          <span className="w-5 text-center font-bold text-slate-500 font-mono shrink-0 pt-0.5">
+                            {toBanglaDigits(groupAQuestions.length + groupBQuestions.length + idx + 1)}.
+                          </span>
+                          <div className="min-w-0">
+                            <QuestionContentRenderer item={q} compact={true} />
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => setSheetSectionCOpen(true)}
+                            className="p-1 text-slate-400 hover:text-teal-700 rounded transition-colors cursor-pointer"
+                            title="সম্পাদনা করুন"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveQuestion('C', idx)}
+                            className="p-1 text-slate-400 hover:text-rose-600 rounded transition-colors cursor-pointer"
+                            title="মুছে ফেলুন"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
         </div>
       </div>
 
@@ -1533,16 +2003,14 @@ export const QuestionPaperGenerator: React.FC = () => {
         startIndex={groupAQuestions.length + groupBQuestions.length + 1}
       />
 
-      {/* Select Bottom Sheets for Meta Info */}
-      <SelectBottomSheet
+      {/* Multi-Select Bottom Sheet for Department / Technology (Max 3) */}
+      <MultiSelectTechBottomSheet
         isOpen={techSheetOpen}
         onClose={() => setTechSheetOpen(false)}
-        title="টেকনোলজি নির্বাচন"
-        subtitle="প্রশ্নপত্রের জন্য বিভাগ সিলেক্ট করুন"
-        options={techOptions}
-        selectedValue={selectedTech}
-        onSelect={(val) => {
-          setSelectedTech(val);
+        selectedTechs={selectedTechs}
+        maxSelections={3}
+        onChange={(techs) => {
+          setSelectedTechs(techs);
           setSubjectCode('');
           setSubjectName('');
         }}
@@ -1575,19 +2043,19 @@ export const QuestionPaperGenerator: React.FC = () => {
       {/* ========================================================================= */}
       {/* A4 OFFICIAL EXAMINATION QUESTION PAPER ENGINE                            */}
       {/* ========================================================================= */}
-      {(!selectedTech || !selectedSemester || !subjectCode) ? (
+      {(selectedTechs.length === 0 || !selectedSemester || !subjectCode) ? (
         <div className="bg-white rounded-3xl border border-dashed border-slate-300 p-12 text-center text-slate-500 shadow-xs">
           <FileCode className="w-12 h-12 text-slate-300 mx-auto mb-3" />
           <p className="font-bold text-slate-700 text-sm">অনুগ্রহ করে টেকনোলজি, সেমিস্টার ও বিষয় নির্বাচন করুন</p>
           <p className="text-xs text-slate-400 mt-1">
-            টেকনোলজি, সেমিস্টার ও বিষয় নির্বাচন করে ক, খ ও গ বিভাগের প্রশ্ন লিখলে অফিশিয়াল প্রশ্নপত্র প্রিভিউ প্রদর্শিত হবে।
+            টেকনোলজি, সেমিস্টার ও বিষয় নির্বাচন করে প্রশ্ন লিখলে অফিশিয়াল প্রশ্নপত্র প্রিভিউ প্রদর্শিত হবে।
           </p>
         </div>
       ) : (
         <A4DocumentEngine
           hideDefaultHeader={true}
           showSignatures={false}
-          fileName={`question-paper-${selectedTech}-${selectedSemester}-${subjectCode}`}
+          fileName={`question-paper-${selectedTechs.join('-')}-${selectedSemester}-${subjectCode}`}
         >
           {/* Exact Official Question Paper Layout */}
           <div className="font-bengali text-black px-4 py-2 select-text leading-normal">
@@ -1602,7 +2070,7 @@ export const QuestionPaperGenerator: React.FC = () => {
                 </h2>
               )}
               <h3 className="text-sm font-semibold text-slate-800">
-                টেকনোলজি: {selectedTechObj?.name} | পর্ব: {semesterBangla}
+                টেকনোলজি: {getFormattedTechDisplay()} | পর্ব: {semesterBangla}
               </h3>
               <p className="text-sm font-bold mt-1 text-black">
                 বিষয়: {subjectName} (বিষয় কোড: {toBanglaDigits(subjectCode)})
@@ -1614,20 +2082,26 @@ export const QuestionPaperGenerator: React.FC = () => {
             </div>
 
             <div className="text-center text-xs italic text-slate-700 mb-4">
-              [ দ্রষ্টব্য: ডান পাশের সংখ্যা প্রশ্নের পূর্ণমান জ্ঞাপক। সকল বিভাগের প্রশ্নের উত্তর দাও। ]
+              {questionPaperFormat === 'SHORT_ONLY'
+                ? '[ দ্রষ্টব্য: ডান পাশের সংখ্যা প্রশ্নের পূর্ণমান জ্ঞাপক। সকল অতি সংক্ষিপ্ত প্রশ্নের উত্তর দাও। ]'
+                : '[ দ্রষ্টব্য: ডান পাশের সংখ্যা প্রশ্নের পূর্ণমান জ্ঞাপক। সকল বিভাগের প্রশ্নের উত্তর দাও। ]'}
             </div>
 
-            {/* Section A */}
+            {/* Section A (ক-বিভাগ অথবা শুধুমাত্র অতি সংক্ষিপ্ত প্রশ্ন) */}
             <div className="mb-5">
               <div className="text-center mb-2">
-                <h4 className="font-extrabold text-sm text-black">ক-বিভাগ (অতি সংক্ষিপ্ত প্রশ্ন)</h4>
+                <h4 className="font-extrabold text-sm text-black">
+                  {questionPaperFormat === 'SHORT_ONLY'
+                    ? 'অতি সংক্ষিপ্ত প্রশ্নাবলি'
+                    : 'ক-বিভাগ (অতি সংক্ষিপ্ত প্রশ্ন)'}
+                </h4>
                 {groupAInstruction && (
                   <p className="text-xs font-bold text-black mt-0.5">{groupAInstruction}</p>
                 )}
               </div>
               {groupAQuestions.length === 0 ? (
                 <p className="text-xs italic text-slate-400 py-2 text-center">
-                  (উপরে ক-বিভাগে প্রশ্ন এন্ট্রি করুন)
+                  (উপরে অতি সংক্ষিপ্ত প্রশ্ন এন্ট্রি করুন)
                 </p>
               ) : (
                 <ol className="list-decimal pl-6 space-y-2 text-xs text-black">
@@ -1640,51 +2114,56 @@ export const QuestionPaperGenerator: React.FC = () => {
               )}
             </div>
 
-            {/* Section B */}
-            <div className="mb-5">
-              <div className="text-center mb-2">
-                <h4 className="font-extrabold text-sm text-black">খ-বিভাগ (সংক্ষিপ্ত প্রশ্ন)</h4>
-                {groupBInstruction && (
-                  <p className="text-xs font-bold text-black mt-0.5">{groupBInstruction}</p>
-                )}
-              </div>
-              {groupBQuestions.length === 0 ? (
-                <p className="text-xs italic text-slate-400 py-2 text-center">
-                  (উপরে খ-বিভাগে প্রশ্ন এন্ট্রি করুন)
-                </p>
-              ) : (
-                <ol className="list-decimal pl-6 space-y-2.5 text-xs text-black" start={groupAQuestions.length + 1}>
-                  {groupBQuestions.map((q) => (
-                    <li key={q.id} className="leading-relaxed">
-                      <QuestionContentRenderer item={q} />
-                    </li>
-                  ))}
-                </ol>
-              )}
-            </div>
+            {/* Sections B & C are rendered only if not SHORT_ONLY */}
+            {questionPaperFormat === 'FULL' && (
+              <>
+                {/* Section B */}
+                <div className="mb-5">
+                  <div className="text-center mb-2">
+                    <h4 className="font-extrabold text-sm text-black">খ-বিভাগ (সংক্ষিপ্ত প্রশ্ন)</h4>
+                    {groupBInstruction && (
+                      <p className="text-xs font-bold text-black mt-0.5">{groupBInstruction}</p>
+                    )}
+                  </div>
+                  {groupBQuestions.length === 0 ? (
+                    <p className="text-xs italic text-slate-400 py-2 text-center">
+                      (উপরে খ-বিভাগে প্রশ্ন এন্ট্রি করুন)
+                    </p>
+                  ) : (
+                    <ol className="list-decimal pl-6 space-y-2.5 text-xs text-black" start={groupAQuestions.length + 1}>
+                      {groupBQuestions.map((q) => (
+                        <li key={q.id} className="leading-relaxed">
+                          <QuestionContentRenderer item={q} />
+                        </li>
+                      ))}
+                    </ol>
+                  )}
+                </div>
 
-            {/* Section C */}
-            <div className="mb-6">
-              <div className="text-center mb-2">
-                <h4 className="font-extrabold text-sm text-black">গ-বিভাগ (রচনামূলক প্রশ্ন)</h4>
-                {groupCInstruction && (
-                  <p className="text-xs font-bold text-black mt-0.5">{groupCInstruction}</p>
-                )}
-              </div>
-              {groupCQuestions.length === 0 ? (
-                <p className="text-xs italic text-slate-400 py-2 text-center">
-                  (উপরে গ-বিভাগে প্রশ্ন এন্ট্রি করুন)
-                </p>
-              ) : (
-                <ol className="list-decimal pl-6 space-y-3 text-xs text-black" start={groupAQuestions.length + groupBQuestions.length + 1}>
-                  {groupCQuestions.map((q) => (
-                    <li key={q.id} className="leading-relaxed">
-                      <QuestionContentRenderer item={q} />
-                    </li>
-                  ))}
-                </ol>
-              )}
-            </div>
+                {/* Section C */}
+                <div className="mb-6">
+                  <div className="text-center mb-2">
+                    <h4 className="font-extrabold text-sm text-black">গ-বিভাগ (রচনামূলক প্রশ্ন)</h4>
+                    {groupCInstruction && (
+                      <p className="text-xs font-bold text-black mt-0.5">{groupCInstruction}</p>
+                    )}
+                  </div>
+                  {groupCQuestions.length === 0 ? (
+                    <p className="text-xs italic text-slate-400 py-2 text-center">
+                      (উপরে গ-বিভাগে প্রশ্ন এন্ট্রি করুন)
+                    </p>
+                  ) : (
+                    <ol className="list-decimal pl-6 space-y-3 text-xs text-black" start={groupAQuestions.length + groupBQuestions.length + 1}>
+                      {groupCQuestions.map((q) => (
+                        <li key={q.id} className="leading-relaxed">
+                          <QuestionContentRenderer item={q} />
+                        </li>
+                      ))}
+                    </ol>
+                  )}
+                </div>
+              </>
+            )}
           </div>
         </A4DocumentEngine>
       )}
