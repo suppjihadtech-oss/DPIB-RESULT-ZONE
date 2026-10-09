@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import {
   Printer,
   Download,
@@ -13,11 +13,20 @@ import {
   Sparkles,
   Layers,
   CheckCircle2,
+  Type,
+  Sliders,
 } from 'lucide-react';
 import { DocumentSettings, DocumentTemplateStyle } from '../../../types';
 import { toBanglaDigits } from '../../../utils/bangla';
 import { printElementById } from '../../../utils/printHelper';
 import { getDocumentSettings, DEFAULT_DOCUMENT_SETTINGS } from '../../../services/db';
+import {
+  DocumentFontSizeController,
+  DocumentFontSettings,
+  DEFAULT_DOC_FONT_SETTINGS,
+  getStoredFontSettings,
+  saveStoredFontSettings,
+} from './DocumentFontSizeController';
 
 export { DEFAULT_DOCUMENT_SETTINGS };
 
@@ -74,10 +83,10 @@ export const A4InstituteHeader: React.FC<A4InstituteHeaderProps> = ({
               />
             )}
             <div>
-              <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight leading-tight">
+              <h1 className="doc-institute-title text-xl sm:text-2xl font-black text-slate-900 tracking-tight leading-tight">
                 {settings.instituteName}
               </h1>
-              <p className="text-xs text-slate-600 font-medium mt-0.5">
+              <p className="doc-subtitle text-xs text-slate-600 font-medium mt-0.5">
                 {settings.instituteAddress}
               </p>
             </div>
@@ -102,16 +111,16 @@ export const A4InstituteHeader: React.FC<A4InstituteHeaderProps> = ({
 
         {documentTitle && (
           <div className="mt-3.5 pt-2.5 border-t border-slate-200 text-center">
-            <h2 className="text-base sm:text-lg font-black text-teal-800 uppercase tracking-wide">
+            <h2 className="doc-main-title text-base sm:text-lg font-black text-teal-800 uppercase tracking-wide">
               {documentTitle}
             </h2>
             {documentSubtitle && (
-              <p className="text-xs font-semibold text-slate-600 mt-0.5">
+              <p className="doc-subtitle text-xs font-semibold text-slate-600 mt-0.5">
                 {documentSubtitle}
               </p>
             )}
             {academicYear && (
-              <span className="inline-block mt-1 px-2.5 py-0.5 rounded-full bg-teal-50 text-teal-800 border border-teal-200 text-[11px] font-bold">
+              <span className="doc-date inline-block mt-1 px-2.5 py-0.5 rounded-full bg-teal-50 text-teal-800 border border-teal-200 text-[11px] font-bold">
                 {toBanglaDigits(academicYear)}
               </span>
             )}
@@ -125,7 +134,7 @@ export const A4InstituteHeader: React.FC<A4InstituteHeaderProps> = ({
   return (
     <header className="text-center pb-2.5 mb-3 border-b border-slate-400 select-text relative z-10">
       {/* Principal Title */}
-      <h1 className="text-xl sm:text-[23px] font-black text-slate-950 tracking-tight leading-tight font-bengali">
+      <h1 className="doc-institute-title text-xl sm:text-[23px] font-black text-slate-950 tracking-tight leading-tight font-bengali">
         {settings.instituteName}
       </h1>
 
@@ -155,16 +164,16 @@ export const A4InstituteHeader: React.FC<A4InstituteHeaderProps> = ({
       {/* Document Specific Title */}
       {documentTitle && (
         <div className="mt-2.5 pt-2 border-t border-slate-300">
-          <h2 className="text-[15px] sm:text-base font-black text-slate-900 uppercase tracking-wide underline underline-offset-4 decoration-slate-400">
+          <h2 className="doc-main-title text-[15px] sm:text-base font-black text-slate-900 uppercase tracking-wide underline underline-offset-4 decoration-slate-400">
             {documentTitle}
           </h2>
           {documentSubtitle && (
-            <p className="text-[12px] font-semibold text-slate-700 mt-1">
+            <p className="doc-subtitle text-[12px] font-semibold text-slate-700 mt-1">
               {documentSubtitle}
             </p>
           )}
           {academicYear && (
-            <p className="text-[12px] font-bold text-slate-800 mt-0.5">
+            <p className="doc-date text-[12px] font-bold text-slate-800 mt-0.5">
               {toBanglaDigits(academicYear)}
             </p>
           )}
@@ -285,6 +294,23 @@ export const A4DocumentEngine: React.FC<A4DocumentEngineProps> = ({
   const documentRef = useRef<HTMLDivElement>(null);
   const settings = { ...DEFAULT_DOCUMENT_SETTINGS, ...customSettings };
 
+  // Unique document key for per-document font size persistence
+  const docKey = (fileName || documentTitle || 'default-doc').replace(/[^a-zA-Z0-9_-]/g, '_');
+  const [fontSettings, setFontSettings] = useState<DocumentFontSettings>(() =>
+    getStoredFontSettings(docKey)
+  );
+  const [isFontPanelOpen, setIsFontPanelOpen] = useState(false);
+
+  useEffect(() => {
+    setFontSettings(getStoredFontSettings(docKey));
+  }, [docKey]);
+
+  const scaleMultiplier = fontSettings.masterScale / 100;
+  const effectiveBaseSize = Math.round(fontSettings.bodySize * scaleMultiplier);
+  const effectiveHeaderSize = Math.round(fontSettings.headerSize * scaleMultiplier);
+  const effectiveTitleSize = Math.round(fontSettings.titleSize * scaleMultiplier);
+  const effectiveDateSize = Math.round(fontSettings.dateSize * scaleMultiplier);
+
   const handleTemplateSelect = (tpl: DocumentTemplateStyle) => {
     setTemplate(tpl);
     if (onTemplateChange) onTemplateChange(tpl);
@@ -396,6 +422,54 @@ export const A4DocumentEngine: React.FC<A4DocumentEngineProps> = ({
 
         {/* Zoom & Action Buttons */}
         <div className="flex items-center gap-2 flex-wrap">
+          {/* Quick Font Size Controls with Steppers & Panel Toggle */}
+          <div className="flex items-center gap-1 bg-violet-50/80 hover:bg-violet-50 p-1 rounded-xl border border-violet-200/80 transition-all shadow-2xs">
+            <button
+              type="button"
+              onClick={() => {
+                const next = {
+                  ...fontSettings,
+                  bodySize: Math.max(10, fontSettings.bodySize - 1),
+                };
+                setFontSettings(next);
+                saveStoredFontSettings(docKey, next);
+              }}
+              className="w-7 h-7 rounded-lg bg-white hover:bg-violet-100 text-slate-700 hover:text-violet-900 font-black text-xs transition-all active:scale-90 flex items-center justify-center cursor-pointer border border-violet-100"
+              title="ফন্ট ছোট করুন (A−)"
+            >
+              A−
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setIsFontPanelOpen((prev) => !prev)}
+              className="px-2 py-1 text-xs font-bold text-violet-950 flex items-center gap-1 hover:bg-white rounded-lg transition-all cursor-pointer"
+              title="ফন্ট সাইজ কন্ট্রোল প্যানেল খুলুন বা বন্ধ করুন"
+            >
+              <Type className="w-3.5 h-3.5 text-violet-700 shrink-0" />
+              <span className="font-mono text-[11px] font-bold">
+                {toBanglaDigits(effectiveBaseSize)}px
+              </span>
+              <Sliders className="w-3 h-3 text-violet-500 ml-0.5 shrink-0" />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                const next = {
+                  ...fontSettings,
+                  bodySize: Math.min(22, fontSettings.bodySize + 1),
+                };
+                setFontSettings(next);
+                saveStoredFontSettings(docKey, next);
+              }}
+              className="w-7 h-7 rounded-lg bg-white hover:bg-violet-100 text-slate-700 hover:text-violet-900 font-black text-xs transition-all active:scale-90 flex items-center justify-center cursor-pointer border border-violet-100"
+              title="ফন্ট বড় করুন (A+)"
+            >
+              A+
+            </button>
+          </div>
+
           {/* Zoom controls */}
           <div className="hidden sm:flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
             <button
@@ -461,6 +535,15 @@ export const A4DocumentEngine: React.FC<A4DocumentEngineProps> = ({
         </div>
       </div>
 
+      {/* Dynamic Font Size Controller Glassmorphism Panel */}
+      <DocumentFontSizeController
+        docKey={docKey}
+        settings={fontSettings}
+        onChange={(newSettings) => setFontSettings(newSettings)}
+        isOpen={isFontPanelOpen}
+        onToggle={() => setIsFontPanelOpen((prev) => !prev)}
+      />
+
       {pdfSuccess && (
         <div className="no-print p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs font-bold text-emerald-800 flex items-center gap-2">
           <CheckCircle2 className="w-4 h-4 text-emerald-600" />
@@ -483,39 +566,114 @@ export const A4DocumentEngine: React.FC<A4DocumentEngineProps> = ({
             <div
               id="printable-a4-document"
               ref={documentRef}
+              style={{
+                '--doc-font-scale': scaleMultiplier,
+                '--doc-base-size': `${effectiveBaseSize}px`,
+                '--doc-header-size': `${effectiveHeaderSize}px`,
+                '--doc-title-size': `${effectiveTitleSize}px`,
+                '--doc-desc-size': `${effectiveBaseSize}px`,
+                '--doc-date-size': `${effectiveDateSize}px`,
+                fontSize: `${effectiveBaseSize}px`,
+              } as React.CSSProperties}
               className={`${
                 isLandscape ? 'w-[297mm] min-h-[210mm]' : 'w-[210mm] min-h-[297mm]'
               } bg-white mx-auto text-slate-950 font-bengali p-[12mm] sm:p-[14mm] border border-slate-300 shadow-xl print:shadow-none print:border-none relative flex flex-col justify-between select-text ${
-                template === 'compact' ? 'text-[11px] p-[8mm] sm:p-[10mm]' : 'text-[12px]'
+                template === 'compact' ? 'p-[8mm] sm:p-[10mm]' : ''
               }`}
             >
-            {/* Content Container */}
-            <div className="w-full">
-              {/* Header (unless explicitly hidden) */}
-              {!hideDefaultHeader && (
-                <A4InstituteHeader
-                  documentTitle={documentTitle}
-                  documentSubtitle={documentSubtitle}
-                  academicYear={academicYear}
-                  customSettings={customSettings}
-                  template={template}
-                />
-              )}
+              {/* Dynamic Font Size Scoped Style Rules */}
+              <style>{`
+                #printable-a4-document {
+                  font-size: var(--doc-base-size, 13px) !important;
+                  line-height: 1.5;
+                }
+                #printable-a4-document h1,
+                #printable-a4-document .doc-header-title {
+                  font-size: var(--doc-header-size, 22px) !important;
+                  line-height: 1.25 !important;
+                }
+                #printable-a4-document h2,
+                #printable-a4-document .doc-title,
+                #printable-a4-document .doc-main-title {
+                  font-size: var(--doc-title-size, 18px) !important;
+                  line-height: 1.3 !important;
+                }
+                #printable-a4-document .doc-subtitle,
+                #printable-a4-document .doc-date,
+                #printable-a4-document .doc-meta {
+                  font-size: var(--doc-date-size, 11px) !important;
+                }
+                #printable-a4-document table {
+                  table-layout: auto !important;
+                  width: 100% !important;
+                }
+                #printable-a4-document table th {
+                  font-size: calc(var(--doc-desc-size, 13px) * 1.05) !important;
+                  word-break: break-word !important;
+                  padding-top: 6px !important;
+                  padding-bottom: 6px !important;
+                }
+                #printable-a4-document table td {
+                  font-size: var(--doc-desc-size, 13px) !important;
+                  word-break: break-word !important;
+                  padding-top: 6px !important;
+                  padding-bottom: 6px !important;
+                }
+                #printable-a4-document table td span.text-\\[11px\\],
+                #printable-a4-document table td span.text-\\[10px\\],
+                #printable-a4-document table td span.text-xs,
+                #printable-a4-document table td p.text-\\[11px\\],
+                #printable-a4-document table td p.text-\\[10px\\] {
+                  font-size: var(--doc-date-size, 11px) !important;
+                }
+                #printable-a4-document table td span.font-mono.font-bold,
+                #printable-a4-document table td span.font-bold {
+                  font-size: var(--doc-desc-size, 13px) !important;
+                }
+                #printable-a4-document p {
+                  font-size: var(--doc-desc-size, 13px);
+                }
+                #printable-a4-document .notice-body-text,
+                #printable-a4-document [data-doc-content="true"] {
+                  font-size: var(--doc-desc-size, 13px) !important;
+                  line-height: 1.65 !important;
+                }
+                #printable-a4-document .question-text {
+                  font-size: var(--doc-desc-size, 13px) !important;
+                  line-height: 1.5 !important;
+                }
+                #printable-a4-document .question-subtext {
+                  font-size: var(--doc-date-size, 11px) !important;
+                }
+              `}</style>
 
-              {/* Document Dynamic Content */}
-              <div className={!hideDefaultHeader ? 'mt-3' : ''}>{children}</div>
-            </div>
-
-            {/* Footer Signatures */}
-            {showSignatures && (
+              {/* Content Container */}
               <div className="w-full">
-                <A4SignaturesFooter {...signaturesConfig} />
+                {/* Header (unless explicitly hidden) */}
+                {!hideDefaultHeader && (
+                  <A4InstituteHeader
+                    documentTitle={documentTitle}
+                    documentSubtitle={documentSubtitle}
+                    academicYear={academicYear}
+                    customSettings={customSettings}
+                    template={template}
+                  />
+                )}
+
+                {/* Document Dynamic Content */}
+                <div className={!hideDefaultHeader ? 'mt-3' : ''}>{children}</div>
               </div>
-            )}
+
+              {/* Footer Signatures */}
+              {showSignatures && (
+                <div className="w-full">
+                  <A4SignaturesFooter {...signaturesConfig} />
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
-    </div>
   </div>
   );
 };

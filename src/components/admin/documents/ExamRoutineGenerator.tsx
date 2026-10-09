@@ -35,8 +35,14 @@ import { toBanglaDigits, SEMESTER_MAP } from '../../../utils/bangla';
 import { SelectBottomSheet, SelectTrigger, SelectOption } from '../../common/SelectBottomSheet';
 import { BottomSheet } from '../../common/BottomSheet';
 import { ModernDatePicker, ModernDateTrigger } from '../../common/ModernDatePicker';
+import { ModernTimePicker } from '../../common/ModernTimePicker';
 import { saveDraft, getDraft, clearDraft, DraftRecord } from '../../../utils/draftStorage';
 import { DraftRestoreBanner } from '../../common/DraftRestoreBanner';
+import {
+  suggestNextRoutineDate,
+  detectRoutineConflict,
+  parseTimeToMinutes,
+} from '../../../utils/smartRoutineAutomation';
 
 const AVAILABLE_TECHNOLOGIES = [
   { id: 'COMPUTER', name: 'কম্পিউটার টেকনোলজি', code: 'CMT' },
@@ -91,551 +97,10 @@ export const formatBanglaDateDisplay = (dateStr: string): string => {
   return dateStr;
 };
 
-// =========================================================================
-// 1. MODERN SLIDING DATE SELECTION BOTTOM SHEET COMPONENT
-// =========================================================================
-interface DateSelectionBottomSheetProps {
-  isOpen: boolean;
-  onClose: () => void;
-  selectedDate: string;
-  onSelectDate: (dateStr: string, dayBangla: string) => void;
-}
-
-const DateSelectionBottomSheet: React.FC<DateSelectionBottomSheetProps> = ({
-  isOpen,
-  onClose,
-  selectedDate,
-  onSelectDate,
-}) => {
-  const [currentViewDate, setCurrentViewDate] = useState(() => {
-    if (selectedDate) {
-      const parts = selectedDate.split('-');
-      if (parts.length === 3) {
-        return new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, 1);
-      }
-    }
-    return new Date();
-  });
-
-  const [tempSelectedDate, setTempSelectedDate] = useState(selectedDate || new Date().toISOString().split('T')[0]);
-
-  useEffect(() => {
-    if (selectedDate) {
-      setTempSelectedDate(selectedDate);
-      const parts = selectedDate.split('-');
-      if (parts.length === 3) {
-        setCurrentViewDate(new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, 1));
-      }
-    }
-  }, [selectedDate, isOpen]);
-
-  const year = currentViewDate.getFullYear();
-  const month = currentViewDate.getMonth();
-
-  const handlePrevMonth = () => {
-    setCurrentViewDate(new Date(year, month - 1, 1));
-  };
-
-  const handleNextMonth = () => {
-    setCurrentViewDate(new Date(year, month + 1, 1));
-  };
-
-  const totalDays = new Date(year, month + 1, 0).getDate();
-  const firstDayOfWeek = new Date(year, month, 1).getDay(); // 0 is Sun, 6 is Sat
-  // Starting grid with Saturday: Sat = 0, Sun = 1, Mon = 2, Tue = 3, Wed = 4, Thu = 5, Fri = 6
-  const startOffset = (firstDayOfWeek + 1) % 7;
-
-  const handleDayClick = (dayNumber: number) => {
-    const mm = String(month + 1).padStart(2, '0');
-    const dd = String(dayNumber).padStart(2, '0');
-    const fullDate = `${year}-${mm}-${dd}`;
-    setTempSelectedDate(fullDate);
-  };
-
-  const handleQuickPreset = (offsetDays: number) => {
-    const d = new Date();
-    d.setDate(d.getDate() + offsetDays);
-    const yyyy = d.getFullYear();
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    const dd = String(d.getDate()).padStart(2, '0');
-    const fullDate = `${yyyy}-${mm}-${dd}`;
-    setTempSelectedDate(fullDate);
-    setCurrentViewDate(new Date(yyyy, d.getMonth(), 1));
-  };
-
-  const handleConfirm = () => {
-    const dayBangla = getBanglaDayFromDate(tempSelectedDate);
-    onSelectDate(tempSelectedDate, dayBangla);
-    onClose();
-  };
-
-  const todayStr = new Date().toISOString().split('T')[0];
-  const computedDayBangla = getBanglaDayFromDate(tempSelectedDate);
-
-  const monthsBangla = [
-    'জানুয়ারি', 'ফেব্রুয়ারি', 'মার্চ', 'এপ্রিল', 'মে', 'জুন',
-    'জুলাই', 'আগস্ট', 'সেপ্টেম্বর', 'অক্টোবর', 'নভেম্বর', 'ডিসেম্বর'
-  ];
-  const weekdaysBangla = ['শনি', 'রবি', 'সোম', 'মঙ্গল', 'বুধ', 'বৃহঃ', 'শুক্র'];
-
-  return (
-    <BottomSheet
-      isOpen={isOpen}
-      onClose={onClose}
-      title="পরীক্ষার তারিখ নির্বাচন"
-      subtitle="ক্যালেন্ডার থেকে পরীক্ষার নির্ধারিত দিন ও তারিখ সিলেক্ট করুন"
-      maxHeight="max-h-[90vh]"
-    >
-      <div className="space-y-4 pb-4 font-bengali">
-        {/* Quick Date Chips */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1.5 scrollbar-none">
-          <span className="text-[11px] font-bold text-slate-500 shrink-0 mr-1">দ্রুত পছন্দ:</span>
-          <button
-            type="button"
-            onClick={() => handleQuickPreset(0)}
-            className="px-2.5 py-1 bg-slate-100 hover:bg-violet-50 hover:text-violet-700 text-slate-700 rounded-lg text-xs font-semibold shrink-0 transition-colors cursor-pointer"
-          >
-            আজ
-          </button>
-          <button
-            type="button"
-            onClick={() => handleQuickPreset(1)}
-            className="px-2.5 py-1 bg-slate-100 hover:bg-violet-50 hover:text-violet-700 text-slate-700 rounded-lg text-xs font-semibold shrink-0 transition-colors cursor-pointer"
-          >
-            আগামীকাল
-          </button>
-          <button
-            type="button"
-            onClick={() => handleQuickPreset(3)}
-            className="px-2.5 py-1 bg-slate-100 hover:bg-violet-50 hover:text-violet-700 text-slate-700 rounded-lg text-xs font-semibold shrink-0 transition-colors cursor-pointer"
-          >
-            ৩ দিন পর
-          </button>
-          <button
-            type="button"
-            onClick={() => handleQuickPreset(7)}
-            className="px-2.5 py-1 bg-slate-100 hover:bg-violet-50 hover:text-violet-700 text-slate-700 rounded-lg text-xs font-semibold shrink-0 transition-colors cursor-pointer"
-          >
-            ১ সপ্তাহ পর
-          </button>
-          <button
-            type="button"
-            onClick={() => handleQuickPreset(14)}
-            className="px-2.5 py-1 bg-slate-100 hover:bg-violet-50 hover:text-violet-700 text-slate-700 rounded-lg text-xs font-semibold shrink-0 transition-colors cursor-pointer"
-          >
-            ২ সপ্তাহ পর
-          </button>
-        </div>
-
-        {/* Calendar Box */}
-        <div className="bg-slate-50/70 border border-slate-200 rounded-2xl p-4">
-          {/* Month/Year Nav Header */}
-          <div className="flex items-center justify-between mb-3 pb-2 border-b border-slate-200/80">
-            <button
-              type="button"
-              onClick={handlePrevMonth}
-              className="p-2 rounded-xl bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 transition-colors cursor-pointer"
-              title="পূর্ববর্তী মাস"
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-
-            <div className="text-center">
-              <span className="text-sm font-black text-slate-900">
-                {monthsBangla[month]} {toBanglaDigits(year)}
-              </span>
-            </div>
-
-            <button
-              type="button"
-              onClick={handleNextMonth}
-              className="p-2 rounded-xl bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 transition-colors cursor-pointer"
-              title="পরবর্তী মাস"
-            >
-              <ChevronRight className="w-4 h-4" />
-            </button>
-          </div>
-
-          {/* Weekday Row */}
-          <div className="grid grid-cols-7 gap-1 text-center mb-2">
-            {weekdaysBangla.map((wd, i) => (
-              <div
-                key={wd}
-                className={`text-[11px] font-bold py-1 ${i === 6 ? 'text-rose-500' : 'text-slate-500'}`}
-              >
-                {wd}
-              </div>
-            ))}
-          </div>
-
-          {/* Days Grid */}
-          <div className="grid grid-cols-7 gap-1 text-center">
-            {Array.from({ length: startOffset }).map((_, i) => (
-              <div key={`empty-${i}`} className="h-9" />
-            ))}
-
-            {Array.from({ length: totalDays }).map((_, i) => {
-              const dayNum = i + 1;
-              const mm = String(month + 1).padStart(2, '0');
-              const dd = String(dayNum).padStart(2, '0');
-              const currentCellDate = `${year}-${mm}-${dd}`;
-              const isSelected = tempSelectedDate === currentCellDate;
-              const isToday = todayStr === currentCellDate;
-              const dayOfWeek = (startOffset + i) % 7;
-              const isFriday = dayOfWeek === 6;
-
-              return (
-                <button
-                  key={currentCellDate}
-                  type="button"
-                  onClick={() => handleDayClick(dayNum)}
-                  className={`h-9 w-full rounded-xl text-xs font-bold transition-all flex items-center justify-center relative cursor-pointer ${
-                    isSelected
-                      ? 'bg-violet-700 text-white shadow-md shadow-violet-500/30 scale-105 z-10'
-                      : isToday
-                      ? 'bg-violet-100 text-violet-900 border border-violet-300'
-                      : isFriday
-                      ? 'bg-white hover:bg-rose-50 text-rose-600 border border-slate-100'
-                      : 'bg-white hover:bg-slate-100 text-slate-800 border border-slate-100'
-                  }`}
-                >
-                  <span>{toBanglaDigits(dayNum)}</span>
-                  {isToday && !isSelected && (
-                    <span className="absolute bottom-1 w-1 h-1 bg-violet-600 rounded-full" />
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Selected Date & Auto Day Preview Card */}
-        <div className="bg-gradient-to-r from-violet-50 to-indigo-50 border border-violet-200/90 rounded-2xl p-3.5 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-violet-700 text-white flex items-center justify-center shrink-0 shadow-xs">
-              <CalendarDays className="w-5 h-5" />
-            </div>
-            <div>
-              <p className="text-[11px] font-bold text-violet-900">
-                {formatBanglaDateDisplay(tempSelectedDate)}
-              </p>
-              <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700 mt-0.5">
-                <span>বার: {computedDayBangla || '---'}</span>
-                <span className="px-1.5 py-0.2 bg-emerald-100 text-emerald-800 text-[10px] font-black rounded-md">
-                  স্বয়ংক্রিয় নির্ধারিত
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Actions */}
-        <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-100">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition-all cursor-pointer"
-          >
-            বাতিল
-          </button>
-          <button
-            type="button"
-            onClick={handleConfirm}
-            className="px-5 py-2.5 bg-violet-700 hover:bg-violet-800 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-violet-500/20 flex items-center gap-1.5 cursor-pointer active:scale-95"
-          >
-            <CheckCircle2 className="w-4 h-4" />
-            <span>তারিখ নিশ্চিত করুন</span>
-          </button>
-        </div>
-      </div>
-    </BottomSheet>
-  );
-};
-
-// =========================================================================
-// 2. MODERN SLIDING TIME SELECTION BOTTOM SHEET COMPONENT
-// =========================================================================
-interface TimeSelectionBottomSheetProps {
-  isOpen: boolean;
-  onClose: () => void;
-  startTime: string;
-  endTime: string;
-  onSelectTime: (start: string, end: string) => void;
-}
-
-const TIME_SHIFTS = [
-  {
-    id: 'morning_standard',
-    title: 'সকাল শিফট (স্ট্যান্ডার্ড)',
-    start: '10:00 AM',
-    end: '01:00 PM',
-    duration: '৩ ঘণ্টা',
-    description: 'মডেল টেস্ট ও বোর্ড সমাপনী পরীক্ষা',
-    icon: Sun,
-    badge: 'ডিফল্ট',
-  },
-  {
-    id: 'morning_early',
-    title: 'সকাল ১ম শিফট',
-    start: '09:00 AM',
-    end: '12:00 PM',
-    duration: '৩ ঘণ্টা',
-    description: 'সকালের ১ম শিফট পরীক্ষা',
-    icon: Sunrise,
-    badge: '১ম শিফট',
-  },
-  {
-    id: 'noon_shift',
-    title: 'দুপুর শিফট',
-    start: '11:00 AM',
-    end: '02:00 PM',
-    duration: '৩ ঘণ্টা',
-    description: 'মধ্যবর্তী সমাপনী শিফট',
-    icon: Clock,
-    badge: 'মধ্যাহ্ন',
-  },
-  {
-    id: 'afternoon_shift',
-    title: 'বিকাল শিফট (২য় শিফট)',
-    start: '02:00 PM',
-    end: '05:00 PM',
-    duration: '৩ ঘণ্টা',
-    description: 'বিকালের ২য় শিফট পরীক্ষা',
-    icon: Sunset,
-    badge: '২য় শিফট',
-  },
-  {
-    id: 'class_test',
-    title: 'ক্লাস টেস্ট ও কুইজ',
-    start: '10:00 AM',
-    end: '11:30 AM',
-    duration: '১.৫ ঘণ্টা',
-    description: 'সংক্ষিপ্ত ধারাবাহিক মূল্যায়ন',
-    icon: Timer,
-    badge: 'সংক্ষিপ্ত',
-  },
-  {
-    id: 'practical_full',
-    title: 'ব্যবহারিক / ল্যাব পরীক্ষা',
-    start: '09:00 AM',
-    end: '04:00 PM',
-    duration: '৭ ঘণ্টা',
-    description: 'পূর্ণ দিবস প্র্যাকটিক্যাল সেশন',
-    icon: Layers,
-    badge: 'ব্যবহারিক',
-  },
-];
-
-const TimeSelectionBottomSheet: React.FC<TimeSelectionBottomSheetProps> = ({
-  isOpen,
-  onClose,
-  startTime,
-  endTime,
-  onSelectTime,
-}) => {
-  const [selectedStart, setSelectedStart] = useState(startTime || '10:00 AM');
-  const [selectedEnd, setSelectedEnd] = useState(endTime || '01:00 PM');
-  const [customMode, setCustomMode] = useState(false);
-  const [dynamicShifts, setDynamicShifts] = useState<ShiftConfig[]>(DEFAULT_SHIFTS);
-
-  useEffect(() => {
-    async function loadShifts() {
-      try {
-        const loaded = await getShiftConfigs();
-        if (loaded && loaded.length > 0) {
-          setDynamicShifts(loaded);
-        }
-      } catch (e) {
-        console.error('Error loading shifts in TimeSelectionBottomSheet:', e);
-      }
-    }
-    if (isOpen) {
-      loadShifts();
-    }
-  }, [isOpen]);
-
-  useEffect(() => {
-    if (startTime) setSelectedStart(startTime);
-    if (endTime) setSelectedEnd(endTime);
-  }, [startTime, endTime, isOpen]);
-
-  const handleSelectPreset = (start: string, end: string) => {
-    setSelectedStart(start);
-    setSelectedEnd(end);
-    onSelectTime(start, end);
-    onClose();
-  };
-
-  const handleConfirmCustom = () => {
-    onSelectTime(selectedStart, selectedEnd);
-    onClose();
-  };
-
-  const START_OPTIONS = [
-    '08:00 AM', '08:30 AM', '09:00 AM', '09:30 AM', '10:00 AM', '10:30 AM', '11:00 AM',
-    '01:00 PM', '01:30 PM', '02:00 PM', '02:30 PM', '03:00 PM', '05:00 PM'
-  ];
-
-  const END_OPTIONS = [
-    '10:30 AM', '11:00 AM', '11:30 AM', '12:00 PM', '12:30 PM', '01:00 PM',
-    '01:30 PM', '02:00 PM', '03:30 PM', '04:00 PM', '04:30 PM', '05:00 PM', '06:00 PM', '06:30 PM'
-  ];
-
-  return (
-    <BottomSheet
-      isOpen={isOpen}
-      onClose={onClose}
-      title="পরীক্ষার সময়সূচি নির্বাচন"
-      subtitle="অ্যাডমিনে কনফিগার করা শিফট বা কাস্টম সময় সিলেক্ট করুন"
-      maxHeight="max-h-[90vh]"
-    >
-      <div className="space-y-4 pb-4 font-bengali">
-        {/* Toggle Preset / Custom Tabs */}
-        <div className="flex bg-slate-100 p-1 rounded-xl">
-          <button
-            type="button"
-            onClick={() => setCustomMode(false)}
-            className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-              !customMode ? 'bg-white text-violet-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            সক্রিয় শিফটসমূহ
-          </button>
-          <button
-            type="button"
-            onClick={() => setCustomMode(true)}
-            className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-              customMode ? 'bg-white text-violet-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            কাস্টম সময় নির্ধারণ
-          </button>
-        </div>
-
-        {!customMode ? (
-          <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-1">
-            {dynamicShifts.map((shift, idx) => {
-              const isMatch = selectedStart === shift.startTime && selectedEnd === shift.endTime;
-              const isSunset = shift.name.includes('বিকাল') || shift.name.includes('২য়') || shift.startTime.includes('PM');
-              const Icon = isSunset ? Sunset : Sunrise;
-
-              return (
-                <button
-                  key={shift.id || idx}
-                  type="button"
-                  onClick={() => handleSelectPreset(shift.startTime, shift.endTime)}
-                  className={`w-full p-3.5 rounded-2xl border text-left transition-all flex items-center justify-between cursor-pointer group ${
-                    isMatch
-                      ? 'bg-violet-50/90 border-violet-600 shadow-xs'
-                      : 'bg-white hover:bg-slate-50 border-slate-200/90'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <div
-                      className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border ${
-                        isMatch
-                          ? 'bg-violet-700 text-white border-violet-700'
-                          : 'bg-slate-50 text-slate-600 border-slate-200 group-hover:border-violet-200 group-hover:text-violet-700'
-                      }`}
-                    >
-                      <Icon className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h4 className="text-xs sm:text-sm font-bold text-slate-900">
-                          {shift.name}
-                        </h4>
-                        {shift.badge && (
-                          <span className="px-1.5 py-0.2 rounded-md bg-slate-100 text-slate-700 text-[10px] font-bold">
-                            {shift.badge}
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-[11px] text-slate-500 mt-0.5">{shift.description || `${shift.startTime} হতে ${shift.endTime}`}</p>
-                    </div>
-                  </div>
-
-                  <div className="text-right">
-                    <span className="inline-block font-mono font-bold text-xs sm:text-sm text-violet-900 bg-violet-100/60 px-2 py-0.5 rounded-lg border border-violet-200">
-                      {toBanglaDigits(shift.startTime)} - {toBanglaDigits(shift.endTime)}
-                    </span>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {/* Custom Start Time */}
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                শুরুর সময় নির্বাচন করুন:
-              </label>
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5">
-                {START_OPTIONS.map((opt) => (
-                  <button
-                    key={opt}
-                    type="button"
-                    onClick={() => setSelectedStart(opt)}
-                    className={`py-2 px-2 rounded-xl text-xs font-mono font-bold border transition-all cursor-pointer ${
-                      selectedStart === opt
-                        ? 'bg-violet-700 text-white border-violet-700 shadow-xs'
-                        : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-700'
-                    }`}
-                  >
-                    {toBanglaDigits(opt)}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Custom End Time */}
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                শেষের সময় নির্বাচন করুন:
-              </label>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
-                {END_OPTIONS.map((opt) => (
-                  <button
-                    key={opt}
-                    type="button"
-                    onClick={() => setSelectedEnd(opt)}
-                    className={`py-2 px-2 rounded-xl text-xs font-mono font-bold border transition-all cursor-pointer ${
-                      selectedEnd === opt
-                        ? 'bg-violet-700 text-white border-violet-700 shadow-xs'
-                        : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-700'
-                    }`}
-                  >
-                    {toBanglaDigits(opt)}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Custom Time Preview */}
-            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Clock className="w-4 h-4 text-violet-700" />
-                <span className="text-xs font-bold text-slate-800">
-                  নির্ধারিত সময়: <span className="font-mono text-violet-900">{toBanglaDigits(selectedStart)} - {toBanglaDigits(selectedEnd)}</span>
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={handleConfirmCustom}
-                className="px-4 py-1.5 bg-violet-700 hover:bg-violet-800 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
-              >
-                সময় নিশ্চিত করুন
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-    </BottomSheet>
-  );
-};
-
 export const ExamRoutineGenerator: React.FC = () => {
+  // Routine Generation Mode: 'COMBINED' (সম্মিলিত রুটিন) vs 'SINGLE' (একক রুটিন)
+  const [routineMode, setRoutineMode] = useState<'COMBINED' | 'SINGLE'>('COMBINED');
+
   const [exams, setExams] = useState<Exam[]>([]);
   const [selectedExamId, setSelectedExamId] = useState<string>('');
   
@@ -675,6 +140,7 @@ export const ExamRoutineGenerator: React.FC = () => {
 
     const timer = setTimeout(async () => {
       const draftData = {
+        routineMode,
         selectedExamId,
         viewTechFilter,
         viewSemesterFilter,
@@ -685,11 +151,12 @@ export const ExamRoutineGenerator: React.FC = () => {
     }, 800);
 
     return () => clearTimeout(timer);
-  }, [selectedExamId, viewTechFilter, viewSemesterFilter, routineItems]);
+  }, [routineMode, selectedExamId, viewTechFilter, viewSemesterFilter, routineItems]);
 
   const handleRestoreDraft = () => {
     if (!pendingDraft?.data) return;
     const d = pendingDraft.data;
+    if (d.routineMode) setRoutineMode(d.routineMode);
     if (d.selectedExamId) setSelectedExamId(d.selectedExamId);
     if (d.viewTechFilter) setViewTechFilter(d.viewTechFilter);
     if (d.viewSemesterFilter) setViewSemesterFilter(d.viewSemesterFilter);
@@ -745,6 +212,8 @@ export const ExamRoutineGenerator: React.FC = () => {
   const [formStartTime, setFormStartTime] = useState<string>('10:00 AM');
   const [formEndTime, setFormEndTime] = useState<string>('01:00 PM');
   const [subjectSearchQuery, setSubjectSearchQuery] = useState<string>('');
+  const [formWarningMessage, setFormWarningMessage] = useState<string>('');
+  const [autoSuggestedNotice, setAutoSuggestedNotice] = useState<string>('');
 
   // Load exams from Firestore on initial mount
   useEffect(() => {
@@ -801,17 +270,42 @@ export const ExamRoutineGenerator: React.FC = () => {
     );
   }, [availableCurriculumSubjects, subjectSearchQuery]);
 
-  // Open "বিষয় যুক্ত করুন" Bottom Sheet for new entry
+  // Open "বিষয় যুক্ত করুন" Bottom Sheet for new entry with Smart Auto-Suggest
   const handleOpenAddSubjectSheet = () => {
     setEditingItemId(null);
     setFormSubjectCode('');
     setFormSubjectName('');
     setSubjectSearchQuery('');
-    if (!formDate) {
-      const today = new Date().toISOString().split('T')[0];
-      setFormDate(today);
-      setFormDay(getBanglaDayFromDate(today));
+    setFormWarningMessage('');
+
+    // In Single Routine mode, pre-fill technology and semester
+    if (routineMode === 'SINGLE') {
+      const activeTech = viewTechFilter === 'ALL' ? 'COMPUTER' : viewTechFilter;
+      const activeSem = viewSemesterFilter === 'ALL' ? '2' : viewSemesterFilter;
+      setFormTech(activeTech);
+      setFormSemester(activeSem);
     }
+
+    // Smart Auto-Date Suggestion:
+    // If routine items exist, suggest the day after the latest exam date (skipping Fridays).
+    const existingDates = routineItems.map((item) => item.date).filter(Boolean);
+    const { nextDate, dayBangla } = suggestNextRoutineDate(existingDates, true);
+
+    setFormDate(nextDate);
+    setFormDay(dayBangla);
+
+    // Smart Time Suggestion: use the time of the last added item, or standard default
+    if (routineItems.length > 0) {
+      const lastItem = routineItems[routineItems.length - 1];
+      if (lastItem.startTime && lastItem.endTime) {
+        setFormStartTime(lastItem.startTime);
+        setFormEndTime(lastItem.endTime);
+        setAutoSuggestedNotice(`পূর্ববর্তী বিষয়ের সময় অনুযায়ী ${lastItem.startTime} - ${lastItem.endTime} এবং পরবর্তী সম্ভাব্য তারিখ সাজেস্ট করা হয়েছে।`);
+      }
+    } else {
+      setAutoSuggestedNotice('স্বয়ংক্রিয়ভাবে প্রাথমিক তারিখ ও সময় সাজেস্ট করা হয়েছে (প্রয়োজনে পরিবর্তন করতে পারেন)।');
+    }
+
     setSubjectSheetOpen(true);
   };
 
@@ -827,6 +321,8 @@ export const ExamRoutineGenerator: React.FC = () => {
     setFormStartTime(item.startTime);
     setFormEndTime(item.endTime);
     setSubjectSearchQuery('');
+    setFormWarningMessage('');
+    setAutoSuggestedNotice('');
     setSubjectSheetOpen(true);
   };
 
@@ -834,29 +330,36 @@ export const ExamRoutineGenerator: React.FC = () => {
   const handleSelectCurriculumSubject = (sub: CurriculumSubject) => {
     setFormSubjectCode(sub.subjectCode);
     setFormSubjectName(sub.subjectName);
+    setFormWarningMessage('');
   };
 
-  // Save entry from the Sliding Bottom Sheet with Duplicate Protection
+  // Save entry from the Sliding Bottom Sheet with Smart Conflict Detection and Date/Time Validation
   const handleSaveSubjectEntry = (e: React.FormEvent) => {
     e.preventDefault();
+    setFormWarningMessage('');
+
     if (!formSubjectName.trim()) {
-      alert('অনুগ্রহ করে বিষয়ের নাম সিলেক্ট বা এন্ট্রি করুন।');
+      setFormWarningMessage('অনুগ্রহ করে বিষয়ের নাম সিলেক্ট বা এন্ট্রি করুন।');
       return;
     }
 
     if (!formDate) {
-      alert('অনুগ্রহ করে পরীক্ষার তারিখ নির্ধারণ করুন।');
+      setFormWarningMessage('অনুগ্রহ করে পরীক্ষার তারিখ নির্ধারণ করুন।');
+      return;
+    }
+
+    // 1. Time Inversion Check
+    const startMin = parseTimeToMinutes(formStartTime);
+    const endMin = parseTimeToMinutes(formEndTime);
+    if (startMin > 0 && endMin > 0 && endMin <= startMin) {
+      setFormWarningMessage('ভুল সময়সূচি: পরীক্ষার সমাপ্তির সময় অবশ্যই শুরুর সময়ের পরবর্তী হতে হবে!');
       return;
     }
 
     const trimmedCode = formSubjectCode.trim();
     const trimmedName = formSubjectName.trim().toLowerCase();
 
-    // Duplicate Check Rule:
-    // Prevent adding the same subject for the same semester and date if:
-    // 1. Current entry is 'ALL' and already exists any entry for that subject/date/semester
-    // 2. Existing entry is 'ALL' for that subject/date/semester
-    // 3. Existing entry has the same technology
+    // 2. Duplicate Check Rule:
     const isDuplicate = routineItems.some((item) => {
       if (editingItemId && item.id === editingItemId) return false;
       
@@ -867,19 +370,33 @@ export const ExamRoutineGenerator: React.FC = () => {
         (item.subjectName && item.subjectName.trim().toLowerCase() === trimmedName);
 
       if (!sameSemester || !sameDate || !sameSubject) return false;
-
-      // If current is 'ALL', it represents all technologies so it clashes
       if (formTech === 'ALL') return true;
-
-      // If existing is 'ALL', it already represents all technologies including this one
       if (item.technology === 'ALL') return true;
-
-      // If existing is the same specific technology
       return item.technology === formTech;
     });
 
     if (isDuplicate) {
-      alert('সতর্কতা: এই বিষয়টি ইতিমধ্যে এই তারিখ ও সেমিস্টারের রুটিনে যুক্ত রয়েছে (ডুপ্লিকেট এন্ট্রি প্রতিরোধ করা হয়েছে)।');
+      setFormWarningMessage('সতর্কতা: এই বিষয়টি ইতিমধ্যে এই তারিখ ও সেমিস্টারের রুটিনে যুক্ত রয়েছে (ডুপ্লিকেট এন্ট্রি)।');
+      return;
+    }
+
+    // 3. Smart Conflict Detection (same tech, same date, overlapping times)
+    const conflict = detectRoutineConflict(
+      {
+        technology: formTech,
+        semesterId: formSemester,
+        date: formDate,
+        startTime: formStartTime,
+        endTime: formEndTime,
+        subjectCode: formSubjectCode,
+        subjectName: formSubjectName,
+      },
+      routineItems,
+      editingItemId
+    );
+
+    if (conflict.hasConflict) {
+      setFormWarningMessage(conflict.message);
       return;
     }
 
@@ -1004,20 +521,51 @@ export const ExamRoutineGenerator: React.FC = () => {
   // Filter routine items for view / document table
   const displayedRoutineItems = useMemo(() => {
     let list = [...routineItems];
-    if (viewTechFilter !== 'ALL') {
-      // Include specific technology OR entries representing ALL technologies
-      list = list.filter((item) => item.technology === viewTechFilter || item.technology === 'ALL');
+    if (routineMode === 'SINGLE') {
+      const activeTech = viewTechFilter === 'ALL' ? 'COMPUTER' : viewTechFilter;
+      const activeSem = viewSemesterFilter === 'ALL' ? '2' : viewSemesterFilter;
+      list = list.filter(
+        (item) =>
+          (item.technology === activeTech || item.technology === 'ALL') &&
+          item.semesterId === activeSem
+      );
+    } else {
+      if (viewTechFilter !== 'ALL') {
+        list = list.filter((item) => item.technology === viewTechFilter || item.technology === 'ALL');
+      }
+      if (viewSemesterFilter !== 'ALL') {
+        list = list.filter((item) => item.semesterId === viewSemesterFilter);
+      }
     }
-    if (viewSemesterFilter !== 'ALL') {
-      list = list.filter((item) => item.semesterId === viewSemesterFilter);
-    }
-    // Sort by Date, then Time, then Technology
+
+    // Sort strictly by Date, then Time, then Technology, then Semester
     return list.sort((a, b) => {
       if (a.date !== b.date) return (a.date || '').localeCompare(b.date || '');
-      if (a.startTime !== b.startTime) return (a.startTime || '').localeCompare(b.startTime || '');
-      return (a.technology || '').localeCompare(b.technology || '');
+      const timeA = parseTimeToMinutes(a.startTime);
+      const timeB = parseTimeToMinutes(b.startTime);
+      if (timeA !== timeB) return timeA - timeB;
+      if (a.technology !== b.technology) return (a.technology || '').localeCompare(b.technology || '');
+      return (a.semesterId || '').localeCompare(b.semesterId || '');
     });
-  }, [routineItems, viewTechFilter, viewSemesterFilter]);
+  }, [routineItems, routineMode, viewTechFilter, viewSemesterFilter]);
+
+  // Group displayedRoutineItems by Date for Combined Routine view & table
+  const groupedRoutineByDate = useMemo(() => {
+    const groups: { date: string; day: string; items: ExamRoutineItem[] }[] = [];
+    displayedRoutineItems.forEach((item) => {
+      let grp = groups.find((g) => g.date === item.date);
+      if (!grp) {
+        grp = {
+          date: item.date,
+          day: item.day || getBanglaDayFromDate(item.date),
+          items: [],
+        };
+        groups.push(grp);
+      }
+      grp.items.push(item);
+    });
+    return groups;
+  }, [displayedRoutineItems]);
 
   // Options for Select Bottom Sheets
   const examOptions: SelectOption[] = exams.map((ex) => ({
@@ -1140,8 +688,94 @@ export const ExamRoutineGenerator: React.FC = () => {
           </div>
         </div>
 
-        {/* Global Selectors Row (Select Exam, Tech Filter, Semester Filter) */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-4">
+        {/* ২ টি রুটিন তৈরির মোড অপশন (সম্মিলিত রুটিন বনাম একক রুটিন) */}
+        <div className="pt-4 pb-2 border-b border-slate-100 mb-2">
+          <label className="block text-xs font-bold text-slate-700 mb-2">
+            রুটিন তৈরির মোড নির্বাচন করুন:
+          </label>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                setRoutineMode('COMBINED');
+                setViewTechFilter('ALL');
+                setViewSemesterFilter('ALL');
+              }}
+              className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex items-start gap-3 ${
+                routineMode === 'COMBINED'
+                  ? 'bg-violet-50/90 border-violet-400 shadow-xs ring-2 ring-violet-200'
+                  : 'bg-slate-50 hover:bg-slate-100 border-slate-200/90 text-slate-600'
+              }`}
+            >
+              <div
+                className={`p-2 rounded-xl shrink-0 ${
+                  routineMode === 'COMBINED'
+                    ? 'bg-violet-600 text-white shadow-xs'
+                    : 'bg-white text-slate-500 border border-slate-200'
+                }`}
+              >
+                <Layers className="w-5 h-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center justify-between gap-1">
+                  <h4 className="text-xs sm:text-sm font-black text-slate-900">
+                    ১. সম্মিলিত রুটিন তৈরি করুন
+                  </h4>
+                  {routineMode === 'COMBINED' && (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-violet-600 text-white">
+                      সক্রিয়
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-slate-500 mt-1 leading-snug">
+                  একই রুটিনে সব টেকনোলজি ও পর্বের বিষয় তারিখ অনুযায়ী একসঙ্গে থাকবে (BTEB স্ট্যান্ডার্ড ফরম্যাট)।
+                </p>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setRoutineMode('SINGLE');
+                if (viewTechFilter === 'ALL') setViewTechFilter('COMPUTER');
+                if (viewSemesterFilter === 'ALL') setViewSemesterFilter('2');
+              }}
+              className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex items-start gap-3 ${
+                routineMode === 'SINGLE'
+                  ? 'bg-violet-50/90 border-violet-400 shadow-xs ring-2 ring-violet-200'
+                  : 'bg-slate-50 hover:bg-slate-100 border-slate-200/90 text-slate-600'
+              }`}
+            >
+              <div
+                className={`p-2 rounded-xl shrink-0 ${
+                  routineMode === 'SINGLE'
+                    ? 'bg-violet-600 text-white shadow-xs'
+                    : 'bg-white text-slate-500 border border-slate-200'
+                }`}
+              >
+                <Building className="w-5 h-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center justify-between gap-1">
+                  <h4 className="text-xs sm:text-sm font-black text-slate-900">
+                    ২. একক রুটিন তৈরি করুন
+                  </h4>
+                  {routineMode === 'SINGLE' && (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-violet-600 text-white">
+                      সক্রিয়
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-slate-500 mt-1 leading-snug">
+                  নির্দিষ্ট ডিপার্টমেন্ট/টেকনোলজি ও সেমিস্টার পর্বের জন্য আলাদা স্বতন্ত্র পরীক্ষার রুটিন।
+                </p>
+              </div>
+            </button>
+          </div>
+        </div>
+
+        {/* Global Selectors Row (Select Exam, Tech Filter/Select, Semester Filter/Select) */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
           <SelectTrigger
             label="পরীক্ষা নির্বাচন"
             value={selectedExamId}
@@ -1152,11 +786,11 @@ export const ExamRoutineGenerator: React.FC = () => {
           />
 
           <SelectTrigger
-            label="টেকনোলজি ফিল্টার"
+            label={routineMode === 'SINGLE' ? 'টেকনোলজি নির্বাচন' : 'টেকনোলজি ফিল্টার'}
             value={viewTechFilter}
             displayValue={
               viewTechFilter === 'ALL'
-                ? 'সকল টেকনোলজি (সমন্বিত রুটিন)'
+                ? 'সকল টেকনোলজি (সম্মিলিত রুটিন)'
                 : AVAILABLE_TECHNOLOGIES.find((t) => t.id === viewTechFilter)?.name || viewTechFilter
             }
             placeholder="টেকনোলজি নির্বাচন"
@@ -1165,7 +799,7 @@ export const ExamRoutineGenerator: React.FC = () => {
           />
 
           <SelectTrigger
-            label="সেমিস্টার / পর্ব ফিল্টার"
+            label={routineMode === 'SINGLE' ? 'সেমিস্টার / পর্ব নির্বাচন' : 'সেমিস্টার / পর্ব ফিল্টার'}
             value={viewSemesterFilter}
             displayValue={
               viewSemesterFilter === 'ALL'
@@ -1421,6 +1055,32 @@ export const ExamRoutineGenerator: React.FC = () => {
         maxHeight="max-h-[92vh]"
       >
         <form onSubmit={handleSaveSubjectEntry} className="space-y-4 pb-6 font-bengali">
+          {/* Auto Suggested Notice Banner */}
+          {autoSuggestedNotice && (
+            <div className="p-3 bg-indigo-50/80 border border-indigo-200/90 rounded-2xl flex items-center justify-between gap-2 text-indigo-950 text-xs">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-indigo-600 shrink-0" />
+                <span className="font-semibold">{autoSuggestedNotice}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAutoSuggestedNotice('')}
+                className="text-indigo-400 hover:text-indigo-700 p-0.5 rounded cursor-pointer"
+                title="বন্ধ করুন"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+
+          {/* Validation Warning Alert */}
+          {formWarningMessage && (
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-2 text-rose-800 text-xs animate-shake">
+              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+              <span className="font-bold">{formWarningMessage}</span>
+            </div>
+          )}
+
           {/* 1. Technology & Semester Selectors (Modern SelectTriggers with SVG icons) */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-200/80">
             <SelectTrigger
@@ -1593,19 +1253,23 @@ export const ExamRoutineGenerator: React.FC = () => {
         </form>
       </BottomSheet>
 
-      {/* Modern Date Selection Sliding Bottom Sheet */}
-      <DateSelectionBottomSheet
+      {/* Modern Date Selection Modal using ModernDatePicker */}
+      <ModernDatePicker
         isOpen={formDateSheetOpen}
         onClose={() => setFormDateSheetOpen(false)}
-        selectedDate={formDate}
-        onSelectDate={(dateStr, dayBangla) => {
-          setFormDate(dateStr);
-          setFormDay(dayBangla);
+        value={formDate}
+        onChange={(newDate) => {
+          setFormDate(newDate);
+          setFormDay(getBanglaDayFromDate(newDate));
         }}
+        title="পরীক্ষার তারিখ নির্বাচন"
+        subtitle="ক্যালেন্ডার থেকে পরীক্ষার তারিখ নির্ধারণ করুন (বার স্বয়ংক্রিয়ভাবে নির্ধারিত হবে)"
+        minYear={2020}
+        maxYear={2035}
       />
 
-      {/* Modern Time Selection Sliding Bottom Sheet */}
-      <TimeSelectionBottomSheet
+      {/* Modern Time Selection Sliding Bottom Sheet using ModernTimePicker */}
+      <ModernTimePicker
         isOpen={formTimeSheetOpen}
         onClose={() => setFormTimeSheetOpen(false)}
         startTime={formStartTime}
@@ -1613,7 +1277,11 @@ export const ExamRoutineGenerator: React.FC = () => {
         onSelectTime={(start, end) => {
           setFormStartTime(start);
           setFormEndTime(end);
+          setFormWarningMessage('');
         }}
+        title="পরীক্ষার সময়সূচি নির্বাচন"
+        subtitle="শুরুর সময় ও শেষের সময় নির্ধারণ করুন"
+        suggestedDurationMinutes={180}
       />
 
       {/* Select Bottom Sheets for Quick Filtering */}
@@ -1734,27 +1402,35 @@ export const ExamRoutineGenerator: React.FC = () => {
         <A4DocumentEngine
           hideDefaultHeader={true}
           showSignatures={false}
-          fileName={`exam-routine-${selectedExam?.title || 'dpib'}-${viewTechFilter}`}
+          fileName={`exam-routine-${routineMode.toLowerCase()}-${selectedExam?.title || 'dpib'}-${viewTechFilter}`}
         >
           {/* Official DPIB Exam Routine Sheet Container */}
           <div className="font-bengali text-black text-center px-4 py-2 select-text">
             {/* Header */}
-            <p className="m-0 text-sm font-semibold text-black">
+            <p className="doc-institute-title m-0 text-sm font-semibold text-black">
               দক্ষিণবঙ্গ পলিটেকনিক ইনস্টিটিউট, ভোলা।
             </p>
-            <h1 className="text-xl font-bold my-1 border-b-[1.5px] border-black inline-block pb-0.5">
+            <h1 className="doc-header-title text-xl font-bold my-1 border-b-[1.5px] border-black inline-block pb-0.5">
               ডিপ্লোমা ইন-ইঞ্জিনিয়ারিং
             </h1>
             {selectedExam && (
-              <p className="mt-2 mb-0.5 text-base font-bold text-black">
+              <p className="doc-title mt-2 mb-0.5 text-base font-bold text-black">
                 {selectedExam.title}
               </p>
             )}
-            <p className="mb-4 text-xs font-semibold text-slate-800">
-              {viewTechFilter === 'ALL'
-                ? 'সকল টেকনোলজি (সমন্বিত পরীক্ষার সময়সূচি)'
-                : `টেকনোলজিঃ ${AVAILABLE_TECHNOLOGIES.find((t) => t.id === viewTechFilter)?.name || viewTechFilter}`}
-              {viewSemesterFilter !== 'ALL' && ` • ${SEMESTER_MAP[viewSemesterFilter as SemesterId] || `${viewSemesterFilter}ম পর্ব`}`}
+            <p className="doc-subtitle mb-4 text-xs font-semibold text-slate-800">
+              {routineMode === 'COMBINED' ? (
+                <>
+                  সকল টেকনোলজি (সম্মিলিত পরীক্ষার সময়সূচি)
+                  {viewTechFilter !== 'ALL' && ` • ফিল্টার: ${AVAILABLE_TECHNOLOGIES.find((t) => t.id === viewTechFilter)?.name || viewTechFilter}`}
+                  {viewSemesterFilter !== 'ALL' && ` • ${SEMESTER_MAP[viewSemesterFilter as SemesterId] || `${viewSemesterFilter}ম পর্ব`}`}
+                </>
+              ) : (
+                <>
+                  {`টেকনোলজিঃ ${AVAILABLE_TECHNOLOGIES.find((t) => t.id === viewTechFilter)?.name || viewTechFilter}`}
+                  {` • পর্বঃ ${SEMESTER_MAP[viewSemesterFilter as SemesterId] || `${viewSemesterFilter}ম পর্ব`}`}
+                </>
+              )}
             </p>
 
             {/* Table: Official Examination Schedule */}
@@ -1776,50 +1452,106 @@ export const ExamRoutineGenerator: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {displayedRoutineItems.map((item) => {
-                  const techObj = AVAILABLE_TECHNOLOGIES.find((t) => t.id === item.technology);
-                  const isAll = item.technology === 'ALL';
-                  const semBangla = item.semesterId ? SEMESTER_MAP[item.semesterId as SemesterId] : '';
+                {routineMode === 'COMBINED' ? (
+                  // ১. সম্মিলিত রুটিন: একই তারিখের সব টেকনোলজি ও পর্বের বিষয়গুলো তারিখ অনুযায়ী একত্রিত সাজানো
+                  groupedRoutineByDate.map((group) => {
+                    return group.items.map((item, itemIdx) => {
+                      const techObj = AVAILABLE_TECHNOLOGIES.find((t) => t.id === item.technology);
+                      const isAll = item.technology === 'ALL';
+                      const semBangla = item.semesterId ? SEMESTER_MAP[item.semesterId as SemesterId] : '';
 
-                  return (
-                    <tr key={item.id} className="border border-black">
-                      {/* Date & Day */}
-                      <td className="border border-black p-2 text-xs font-medium leading-tight">
-                        <span className="block font-mono font-bold">{toBanglaDigits(item.date)}</span>
-                        <span className="block text-slate-800 font-semibold text-[11px] mt-0.5">{item.day}</span>
-                      </td>
-
-                      {/* Technology & Semester */}
-                      <td className="border border-black p-2 text-xs font-semibold leading-tight">
-                        <span className="block font-bold text-black">
-                          {isAll ? 'সকল টেকনোলজি' : (techObj?.name || item.technology)}
-                        </span>
-                        {semBangla && (
-                          <span className="block text-[11px] text-slate-700 mt-0.5">({semBangla})</span>
-                        )}
-                      </td>
-
-                      {/* Subject Name & Code */}
-                      <td className="border border-black p-0 align-middle text-left">
-                        <div className="p-2 text-xs font-semibold text-black leading-snug">
-                          <span className="font-bold">{item.subjectName}</span>
-                          {item.subjectCode && (
-                            <span className="block text-[11px] font-mono text-slate-700 mt-0.5">
-                              (বিষয় কোড: {toBanglaDigits(item.subjectCode)})
-                            </span>
+                      return (
+                        <tr key={item.id} className="border border-black">
+                          {/* বার / তারিখ (Rowspan for all subjects of this date group) */}
+                          {itemIdx === 0 && (
+                            <td
+                              rowSpan={group.items.length}
+                              className="border border-black p-2 text-xs font-medium leading-tight align-middle text-center bg-slate-50/20"
+                            >
+                              <span className="block font-mono font-bold text-xs">{toBanglaDigits(group.date)}</span>
+                              <span className="block text-slate-800 font-semibold text-[11px] mt-0.5">{group.day}</span>
+                            </td>
                           )}
-                        </div>
-                      </td>
 
-                      {/* Time */}
-                      <td className="border border-black p-2 text-xs font-semibold leading-tight">
-                        <span className="block font-mono text-[11px]">{toBanglaDigits(item.startTime)}</span>
-                        <span className="block text-[10px] text-slate-500">হতে</span>
-                        <span className="block font-mono text-[11px]">{toBanglaDigits(item.endTime)}</span>
-                      </td>
-                    </tr>
-                  );
-                })}
+                          {/* টেকনোলজি ও পর্ব */}
+                          <td className="border border-black p-2 text-xs font-semibold leading-tight text-center">
+                            <span className="block font-bold text-black">
+                              {isAll ? 'সকল টেকনোলজি' : (techObj?.name || item.technology)}
+                            </span>
+                            {semBangla && (
+                              <span className="block text-[11px] text-slate-700 mt-0.5">({semBangla})</span>
+                            )}
+                          </td>
+
+                          {/* বিষয় ও বিষয় কোড */}
+                          <td className="border border-black p-0 align-middle text-left">
+                            <div className="p-2 text-xs font-semibold text-black leading-snug">
+                              <span className="font-bold">{item.subjectName}</span>
+                              {item.subjectCode && (
+                                <span className="block text-[11px] font-mono text-slate-700 mt-0.5">
+                                  (বিষয় কোড: {toBanglaDigits(item.subjectCode)})
+                                </span>
+                              )}
+                            </div>
+                          </td>
+
+                          {/* সময় */}
+                          <td className="border border-black p-2 text-xs font-semibold leading-tight text-center">
+                            <span className="block font-mono text-[11px]">{toBanglaDigits(item.startTime)}</span>
+                            <span className="block text-[10px] text-slate-500">হতে</span>
+                            <span className="block font-mono text-[11px]">{toBanglaDigits(item.endTime)}</span>
+                          </td>
+                        </tr>
+                      );
+                    });
+                  })
+                ) : (
+                  // ২. একক রুটিন: নির্বাচিত টেকনোলজি ও সেমিস্টার পর্বের রুটিন
+                  displayedRoutineItems.map((item) => {
+                    const techObj = AVAILABLE_TECHNOLOGIES.find((t) => t.id === item.technology);
+                    const isAll = item.technology === 'ALL';
+                    const semBangla = item.semesterId ? SEMESTER_MAP[item.semesterId as SemesterId] : '';
+
+                    return (
+                      <tr key={item.id} className="border border-black">
+                        {/* বার / তারিখ */}
+                        <td className="border border-black p-2 text-xs font-medium leading-tight align-middle text-center">
+                          <span className="block font-mono font-bold text-xs">{toBanglaDigits(item.date)}</span>
+                          <span className="block text-slate-800 font-semibold text-[11px] mt-0.5">{item.day}</span>
+                        </td>
+
+                        {/* টেকনোলজি ও পর্ব */}
+                        <td className="border border-black p-2 text-xs font-semibold leading-tight text-center">
+                          <span className="block font-bold text-black">
+                            {isAll ? 'সকল টেকনোলজি' : (techObj?.name || item.technology)}
+                          </span>
+                          {semBangla && (
+                            <span className="block text-[11px] text-slate-700 mt-0.5">({semBangla})</span>
+                          )}
+                        </td>
+
+                        {/* বিষয় ও বিষয় কোড */}
+                        <td className="border border-black p-0 align-middle text-left">
+                          <div className="p-2 text-xs font-semibold text-black leading-snug">
+                            <span className="font-bold">{item.subjectName}</span>
+                            {item.subjectCode && (
+                              <span className="block text-[11px] font-mono text-slate-700 mt-0.5">
+                                (বিষয় কোড: {toBanglaDigits(item.subjectCode)})
+                              </span>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* সময় */}
+                        <td className="border border-black p-2 text-xs font-semibold leading-tight text-center">
+                          <span className="block font-mono text-[11px]">{toBanglaDigits(item.startTime)}</span>
+                          <span className="block text-[10px] text-slate-500">হতে</span>
+                          <span className="block font-mono text-[11px]">{toBanglaDigits(item.endTime)}</span>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
               </tbody>
             </table>
 

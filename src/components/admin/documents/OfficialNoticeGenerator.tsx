@@ -14,6 +14,7 @@ import { SelectBottomSheet, SelectTrigger, SelectOption } from '../../common/Sel
 import { ModernDatePicker, ModernDateTrigger } from '../../common/ModernDatePicker';
 import { saveDraft, getDraft, clearDraft, DraftRecord } from '../../../utils/draftStorage';
 import { DraftRestoreBanner } from '../../common/DraftRestoreBanner';
+import { getBanglaDayFromDate } from '../../../utils/banglaDateHelper';
 
 type BodyFontSize = 'small' | 'normal' | 'large' | 'xlarge';
 
@@ -287,9 +288,16 @@ export const OfficialNoticeGenerator: React.FC = () => {
           </div>
 
           <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-bold text-slate-700">বিজ্ঞপ্তির তারিখ <span className="text-rose-500">*</span></label>
+              {noticeDate && (
+                <span className="text-[11px] font-bold text-teal-800 bg-teal-50 px-2 py-0.5 rounded-md border border-teal-200">
+                  বার: {getBanglaDayFromDate(noticeDate)} (স্বয়ংক্রিয়)
+                </span>
+              )}
+            </div>
             <ModernDateTrigger
               id="notice-date-trigger"
-              label="বিজ্ঞপ্তির তারিখ"
               required
               value={noticeDate}
               onClick={() => setDatePickerOpen(true)}
@@ -492,7 +500,7 @@ export const OfficialNoticeGenerator: React.FC = () => {
           </div>
 
           {/* Memo No (Left) & Date (Right) */}
-          <div className="flex justify-between items-center text-sm font-medium mb-6">
+          <div className="flex justify-between items-center text-sm font-medium mb-6 doc-date">
             <p className="text-slate-900">
               <span className="font-semibold">স্মারক নং:</span> {memoNo ? memoNo : ''}
             </p>
@@ -503,14 +511,14 @@ export const OfficialNoticeGenerator: React.FC = () => {
 
           {/* Notice Subject / Title */}
           <div className="text-center mb-8">
-            <h2 className="inline-block text-lg font-bold text-black border-b-[1.5px] border-black pb-0.5">
+            <h2 className="doc-title inline-block text-lg font-bold text-black border-b-[1.5px] border-black pb-0.5">
               বিষয়: {noticeTitle}
             </h2>
           </div>
 
           {/* Notice Body with font size scaling and bold rendering */}
           <div
-            className={`text-black text-justify min-h-[280px] px-1 ${
+            className={`notice-body-text text-black text-justify min-h-[280px] px-1 ${
               fontSizeClassMap[bodyFontSize]
             } ${isOverallBold ? 'font-bold' : 'font-normal'}`}
           >

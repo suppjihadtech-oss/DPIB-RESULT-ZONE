@@ -312,3 +312,51 @@ export function getFullDayInfo(date: Date): DayInfo {
     isRedDay,
   };
 }
+
+/**
+ * Calculates total inclusive days in a date range YYYY-MM-DD
+ */
+export function calculateDateRangeDays(startDate?: string, endDate?: string): number {
+  if (!startDate) return 1;
+  const effectiveEnd = endDate && endDate >= startDate ? endDate : startDate;
+  if (effectiveEnd === startDate) return 1;
+  const start = new Date(startDate);
+  const end = new Date(effectiveEnd);
+  if (isNaN(start.getTime()) || isNaN(end.getTime())) return 1;
+  const diffTime = end.getTime() - start.getTime();
+  if (diffTime < 0) return 1;
+  const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24)) + 1;
+  return Math.max(1, diffDays);
+}
+
+/**
+ * Checks if a given date (YYYY-MM-DD) falls within an event's date range
+ */
+export function isDateWithinEventRange(dateStr: string, event: { eventDate: string; endDate?: string }): boolean {
+  if (!event.eventDate) return false;
+  const start = event.eventDate;
+  const end = event.endDate && event.endDate >= start ? event.endDate : start;
+  return dateStr >= start && dateStr <= end;
+}
+
+/**
+ * Returns the position of a date inside an event range:
+ * - 'single': event is only 1 day
+ * - 'start': date is the first day of a multi-day event
+ * - 'middle': date is an intermediate day of a multi-day event
+ * - 'end': date is the final day of a multi-day event
+ * - 'outside': not in range
+ */
+export function getEventDatePosition(
+  dateStr: string,
+  event: { eventDate: string; endDate?: string }
+): 'single' | 'start' | 'middle' | 'end' | 'outside' {
+  const start = event.eventDate;
+  const end = event.endDate && event.endDate >= start ? event.endDate : start;
+  if (dateStr < start || dateStr > end) return 'outside';
+  if (start === end) return 'single';
+  if (dateStr === start) return 'start';
+  if (dateStr === end) return 'end';
+  return 'middle';
+}
+

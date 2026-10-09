@@ -200,7 +200,8 @@ export interface AppEvent {
   title: string;
   eventType: EventType;
   eventTypeName?: string;
-  eventDate: string; // YYYY-MM-DD
+  eventDate: string; // YYYY-MM-DD (শুরুর তারিখ)
+  endDate?: string; // YYYY-MM-DD (শেষ তারিখ - একাধিক দিনের ইভেন্ট বা ছুটির ক্ষেত্রে)
   startTime?: string; // HH:mm
   endTime?: string; // HH:mm
   location?: string;

@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { AppEvent } from '../../types';
 import { toBanglaDigits, formatTime12Hour } from '../../utils/bangla';
+import { calculateDateRangeDays } from '../../utils/calendarUtils';
 
 interface EventCountdownCardProps {
   events: AppEvent[];
@@ -29,8 +30,9 @@ interface TimeLeft {
 function calculateTimeRemaining(event: AppEvent): TimeLeft {
   const now = new Date();
 
-  // Combine eventDate and startTime
-  const dateParts = event.eventDate.split('-');
+  // Combine eventDate (start date) and startTime
+  const startDateStr = event.eventDate || new Date().toISOString().split('T')[0];
+  const dateParts = startDateStr.split('-');
   const year = parseInt(dateParts[0], 10);
   const month = parseInt(dateParts[1], 10) - 1;
   const day = parseInt(dateParts[2], 10);
@@ -47,19 +49,26 @@ function calculateTimeRemaining(event: AppEvent): TimeLeft {
 
   const startDateTime = new Date(year, month, day, startHours, startMinutes, 0);
 
+  // For multi-day event, use endDate for endDateTime
+  const effectiveEndDateStr = event.endDate && event.endDate >= startDateStr ? event.endDate : startDateStr;
+  const endDateParts = effectiveEndDateStr.split('-');
+  const endYear = parseInt(endDateParts[0], 10);
+  const endMonth = parseInt(endDateParts[1], 10) - 1;
+  const endDay = parseInt(endDateParts[2], 10);
+
   let endDateTime: Date;
   if (event.endTime) {
     const endTimeParts = event.endTime.split(':');
     if (endTimeParts.length >= 2) {
       const endHours = parseInt(endTimeParts[0], 10);
       const endMinutes = parseInt(endTimeParts[1], 10);
-      endDateTime = new Date(year, month, day, endHours, endMinutes, 0);
+      endDateTime = new Date(endYear, endMonth, endDay, endHours, endMinutes, 0);
     } else {
-      endDateTime = new Date(startDateTime.getTime() + 4 * 60 * 60 * 1000); // 4 hrs default
+      endDateTime = new Date(endYear, endMonth, endDay, 23, 59, 59);
     }
   } else {
-    // Default end time: end of that day (23:59:59)
-    endDateTime = new Date(year, month, day, 23, 59, 59);
+    // Default end time: end of final day (23:59:59)
+    endDateTime = new Date(endYear, endMonth, endDay, 23, 59, 59);
   }
 
   const nowMs = now.getTime();
@@ -80,11 +89,16 @@ function calculateTimeRemaining(event: AppEvent): TimeLeft {
       status: 'UPCOMING',
     };
   } else if (nowMs >= startMs && nowMs <= endMs) {
+    const diff = endMs - nowMs;
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+    const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
+    const minutes = Math.floor((diff / (1000 * 60)) % 60);
+    const seconds = Math.floor((diff / 1000) % 60);
     return {
-      days: 0,
-      hours: 0,
-      minutes: 0,
-      seconds: 0,
+      days: Math.max(0, days),
+      hours: Math.max(0, hours),
+      minutes: Math.max(0, minutes),
+      seconds: Math.max(0, seconds),
       status: 'ONGOING',
     };
   } else {
@@ -105,10 +119,16 @@ export const EventCountdownCard: React.FC<EventCountdownCardProps> = ({
   const [currentIndex, setCurrentIndex] = useState(0);
   const [tick, setTick] = useState(0);
 
-  // Filter only upcoming or ongoing published events
+  // Filter only upcoming or ongoing published events (checking up through endDate)
   const activeEvents = useMemo(() => {
+    const now = new Date();
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     return events
-      .filter((ev) => ev.status === 'PUBLISHED')
+      .filter((ev) => {
+        if (ev.status !== 'PUBLISHED') return false;
+        const effectiveEnd = ev.endDate && ev.endDate >= ev.eventDate ? ev.endDate : ev.eventDate;
+        return effectiveEnd >= todayStr;
+      })
       .sort((a, b) => a.eventDate.localeCompare(b.eventDate));
   }, [events]);
 
@@ -195,7 +215,14 @@ export const EventCountdownCard: React.FC<EventCountdownCardProps> = ({
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-slate-600 font-medium">
               <div className="flex items-center space-x-1.5 font-outfit">
                 <Calendar className="w-3.5 h-3.5 text-blue-600" />
-                <span>{currentEvent.eventDate}</span>
+                {currentEvent.endDate && currentEvent.endDate !== currentEvent.eventDate ? (
+                  <span>
+                    {currentEvent.eventDate} হতে {currentEvent.endDate} (
+                    {toBanglaDigits(calculateDateRangeDays(currentEvent.eventDate, currentEvent.endDate))} দিন)
+                  </span>
+                ) : (
+                  <span>{currentEvent.eventDate}</span>
+                )}
               </div>
               {currentEvent.startTime && (
                 <div className="flex items-center space-x-1.5 font-outfit">
@@ -270,9 +297,15 @@ export const EventCountdownCard: React.FC<EventCountdownCardProps> = ({
               <div className="text-center py-2 px-4 space-y-1">
                 <span className="inline-flex items-center space-x-1.5 px-3 py-1 bg-emerald-100 text-emerald-800 rounded-full text-xs font-black font-outfit uppercase">
                   <span className="w-2 h-2 rounded-full bg-emerald-600 animate-ping" />
-                  <span>ONGOING / চলমান</span>
+                  <span>ONGOING / বর্তমানে চলমান</span>
                 </span>
-                <p className="text-sm font-black text-emerald-900 mt-1">অনুষ্ঠান শুরু হয়েছে</p>
+                <p className="text-xs sm:text-sm font-bold text-emerald-900 mt-1">
+                  {timeLeft.days > 0
+                    ? `সমাপ্ত হতে বাকি ${toBanglaDigits(timeLeft.days)} দিন`
+                    : timeLeft.hours > 0
+                    ? `সমাপ্ত হতে বাকি ${toBanglaDigits(timeLeft.hours)} ঘণ্টা`
+                    : 'কার্যক্রম বর্তমানে চলমান রয়েছে'}
+                </p>
               </div>
             ) : (
               <div className="text-center py-2 px-4 space-y-1">

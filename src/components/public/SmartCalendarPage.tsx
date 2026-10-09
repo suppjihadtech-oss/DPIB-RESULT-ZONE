@@ -26,8 +26,8 @@ import {
 } from 'lucide-react';
 import { AppEvent } from '../../types';
 import { getPublishedEvents, subscribeToPublishedEvents } from '../../services/db';
-import { getFullDayInfo, DayInfo } from '../../utils/calendarUtils';
-import { toBanglaDigits, formatTime12Hour } from '../../utils/bangla';
+import { getFullDayInfo, DayInfo, calculateDateRangeDays } from '../../utils/calendarUtils';
+import { toBanglaDigits, formatTime12Hour, formatBanglaDate } from '../../utils/bangla';
 import { BottomSheet } from '../common/BottomSheet';
 
 const MONTH_NAMES_EN = [
@@ -100,14 +100,59 @@ export const SmartCalendarPage: React.FC = () => {
     return events.filter((ev) => ev.eventType === selectedCategoryFilter);
   }, [events, selectedCategoryFilter]);
 
-  // Map events by date string YYYY-MM-DD
+  // Map events across their entire date range (YYYY-MM-DD)
   const eventsByDate = useMemo(() => {
     const map = new Map<string, AppEvent[]>();
+
     filteredEvents.forEach((ev) => {
-      const existing = map.get(ev.eventDate) || [];
-      existing.push(ev);
-      map.set(ev.eventDate, existing);
+      if (!ev.eventDate) return;
+      const startDateStr = ev.eventDate;
+      const endDateStr = ev.endDate && ev.endDate >= ev.eventDate ? ev.endDate : ev.eventDate;
+
+      if (startDateStr === endDateStr) {
+        // Single day event
+        const existing = map.get(startDateStr) || [];
+        if (!existing.some((x) => x.id === ev.id)) {
+          existing.push(ev);
+        }
+        map.set(startDateStr, existing);
+      } else {
+        // Multi-day event spanning multiple dates
+        const startParts = startDateStr.split('-');
+        const endParts = endDateStr.split('-');
+        if (startParts.length === 3 && endParts.length === 3) {
+          const startYear = parseInt(startParts[0], 10);
+          const startMonth = parseInt(startParts[1], 10) - 1;
+          const startDay = parseInt(startParts[2], 10);
+
+          const endYear = parseInt(endParts[0], 10);
+          const endMonth = parseInt(endParts[1], 10) - 1;
+          const endDay = parseInt(endParts[2], 10);
+
+          const curr = new Date(startYear, startMonth, startDay);
+          const end = new Date(endYear, endMonth, endDay);
+
+          let safetyCounter = 0;
+          while (curr <= end && safetyCounter < 366) {
+            const pad = (n: number) => String(n).padStart(2, '0');
+            const dStr = `${curr.getFullYear()}-${pad(curr.getMonth() + 1)}-${pad(curr.getDate())}`;
+            const existing = map.get(dStr) || [];
+            if (!existing.some((x) => x.id === ev.id)) {
+              existing.push(ev);
+            }
+            map.set(dStr, existing);
+
+            curr.setDate(curr.getDate() + 1);
+            safetyCounter++;
+          }
+        } else {
+          const existing = map.get(startDateStr) || [];
+          existing.push(ev);
+          map.set(startDateStr, existing);
+        }
+      }
     });
+
     return map;
   }, [filteredEvents]);
 
@@ -332,40 +377,122 @@ export const SmartCalendarPage: React.FC = () => {
               const hasEvents = dayEvents.length > 0;
               const isRed = dayInfo.isRedDay || hasSpecialDay;
 
+              // Multi-day and holiday inspection
+              const multiDayEvent = dayEvents.find((ev) => ev.endDate && ev.endDate > ev.eventDate);
+              const holidayEvent = dayEvents.find((ev) => ev.eventType === 'HOLIDAY');
+              const isHolidayCell = Boolean(holidayEvent) || dayInfo.specialDays.some((s) => s.isHoliday);
+              const primaryEvent = multiDayEvent || holidayEvent || dayEvents[0];
+
+              const dStr = dayInfo.dateString;
+              let isRangeStart = false;
+              let isRangeEnd = false;
+              let isRangeMiddle = false;
+
+              if (multiDayEvent) {
+                const sStr = multiDayEvent.eventDate;
+                const eStr = multiDayEvent.endDate || multiDayEvent.eventDate;
+                isRangeStart = dStr === sStr;
+                isRangeEnd = dStr === eStr;
+                isRangeMiddle = dStr > sStr && dStr < eStr;
+              }
+
+              // Build responsive, continuous range styles
+              let containerStyle = '';
+              if (isSelected) {
+                containerStyle =
+                  'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-600/20 ring-2 ring-blue-600/30 rounded-2xl z-10';
+              } else if (isTodayDate) {
+                containerStyle =
+                  'bg-blue-50/90 border-blue-400 text-blue-900 font-bold rounded-2xl ring-1 ring-blue-300';
+              } else if (multiDayEvent && isCurrentMonth) {
+                const isHolidayTheme = multiDayEvent.eventType === 'HOLIDAY';
+                if (isHolidayTheme) {
+                  containerStyle =
+                    isRangeStart
+                      ? 'bg-orange-50 hover:bg-orange-100 text-orange-950 border-orange-300 rounded-l-2xl border-l-2 border-l-orange-500 shadow-2xs'
+                      : isRangeEnd
+                      ? 'bg-orange-50 hover:bg-orange-100 text-orange-950 border-orange-300 rounded-r-2xl border-r-2 border-r-orange-500 shadow-2xs'
+                      : isRangeMiddle
+                      ? 'bg-orange-100/70 hover:bg-orange-100 text-orange-950 border-y border-orange-300 rounded-none border-x-0'
+                      : 'bg-orange-50 hover:bg-orange-100 text-orange-950 border-orange-300 rounded-2xl';
+                } else {
+                  containerStyle =
+                    isRangeStart
+                      ? 'bg-indigo-50 hover:bg-indigo-100 text-indigo-950 border-indigo-300 rounded-l-2xl border-l-2 border-l-indigo-600 shadow-2xs'
+                      : isRangeEnd
+                      ? 'bg-indigo-50 hover:bg-indigo-100 text-indigo-950 border-indigo-300 rounded-r-2xl border-r-2 border-r-indigo-600 shadow-2xs'
+                      : isRangeMiddle
+                      ? 'bg-indigo-100/70 hover:bg-indigo-100 text-indigo-950 border-y border-indigo-300 rounded-none border-x-0'
+                      : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-950 border-indigo-300 rounded-2xl';
+                }
+              } else if (isHolidayCell && isCurrentMonth) {
+                containerStyle = 'bg-rose-50/70 hover:bg-rose-100/70 border-rose-200 text-rose-900 rounded-2xl';
+              } else if (isCurrentMonth) {
+                containerStyle = 'bg-white hover:bg-slate-50 border-slate-200/80 text-slate-900 rounded-2xl';
+              } else {
+                containerStyle = 'bg-slate-50/40 border-transparent text-slate-300 hover:bg-slate-50 rounded-2xl';
+              }
+
               return (
                 <button
                   key={index}
                   type="button"
                   onClick={() => handleDateClick(date)}
-                  className={`relative p-2 sm:p-2.5 rounded-2xl min-h-[64px] sm:min-h-[76px] flex flex-col items-center justify-between transition-all text-center cursor-pointer border ${
-                    isSelected
-                      ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-600/20 ring-2 ring-blue-600/30'
-                      : isTodayDate
-                      ? 'bg-blue-50/70 border-blue-300 text-blue-900 font-bold'
-                      : isCurrentMonth
-                      ? 'bg-white hover:bg-slate-50 border-slate-200/80 text-slate-900'
-                      : 'bg-slate-50/40 border-transparent text-slate-300 hover:bg-slate-50'
-                  }`}
+                  className={`relative p-1.5 sm:p-2.5 min-h-[64px] sm:min-h-[82px] flex flex-col items-center justify-between transition-all text-center cursor-pointer border ${containerStyle}`}
                 >
-                  {/* Top indicator icons/badges */}
+                  {/* Top indicator row */}
                   <div className="w-full flex items-center justify-between px-0.5">
-                    {/* Event or Special Badge Indicator */}
+                    {/* Range tag or dot indicators */}
                     <div className="flex items-center space-x-1">
-                      {hasEvents && (
-                        <span
-                          className={`w-1.5 h-1.5 rounded-full ${
-                            isSelected ? 'bg-amber-300' : 'bg-blue-600 animate-pulse'
-                          }`}
-                          title="ইভেন্ট রয়েছে"
-                        />
-                      )}
-                      {hasSpecialDay && (
-                        <span
-                          className={`w-1.5 h-1.5 rounded-full ${
-                            isSelected ? 'bg-rose-200' : 'bg-rose-500'
-                          }`}
-                          title="বিশেষ দিবস / ছুটি"
-                        />
+                      {multiDayEvent ? (
+                        isRangeStart ? (
+                          <span className={`text-[8px] font-black uppercase px-1 py-0.2 rounded leading-tight ${
+                            isSelected
+                              ? 'bg-white text-blue-700'
+                              : multiDayEvent.eventType === 'HOLIDAY'
+                              ? 'bg-orange-600 text-white'
+                              : 'bg-indigo-600 text-white'
+                          }`}>
+                            শুরু
+                          </span>
+                        ) : isRangeEnd ? (
+                          <span className={`text-[8px] font-black uppercase px-1 py-0.2 rounded leading-tight ${
+                            isSelected
+                              ? 'bg-white text-blue-700'
+                              : multiDayEvent.eventType === 'HOLIDAY'
+                              ? 'bg-orange-600 text-white'
+                              : 'bg-indigo-600 text-white'
+                          }`}>
+                            শেষ
+                          </span>
+                        ) : isRangeMiddle ? (
+                          <span className={`w-1.5 h-1.5 rounded-full ${
+                            isSelected
+                              ? 'bg-amber-300'
+                              : multiDayEvent.eventType === 'HOLIDAY'
+                              ? 'bg-orange-500'
+                              : 'bg-indigo-500'
+                          }`} />
+                        ) : null
+                      ) : (
+                        <>
+                          {hasEvents && (
+                            <span
+                              className={`w-1.5 h-1.5 rounded-full ${
+                                isSelected ? 'bg-amber-300' : 'bg-blue-600 animate-pulse'
+                              }`}
+                              title="ইভেন্ট রয়েছে"
+                            />
+                          )}
+                          {hasSpecialDay && (
+                            <span
+                              className={`w-1.5 h-1.5 rounded-full ${
+                                isSelected ? 'bg-rose-200' : 'bg-rose-500'
+                              }`}
+                              title="বিশেষ দিবস / ছুটি"
+                            />
+                          )}
+                        </>
                       )}
                     </div>
 
@@ -404,6 +531,36 @@ export const SmartCalendarPage: React.FC = () => {
                   >
                     {toBanglaDigits(dayInfo.banglaDay)}
                   </div>
+
+                  {/* Title Preview on Desktop */}
+                  {primaryEvent && isCurrentMonth && (
+                    <div className="w-full mt-1 hidden sm:block">
+                      <div
+                        className={`px-1.5 py-0.5 rounded-md text-[9px] font-bold truncate flex items-center gap-1 ${
+                          isSelected
+                            ? 'bg-blue-800 text-white'
+                            : primaryEvent.eventType === 'HOLIDAY'
+                            ? 'bg-orange-200/90 text-orange-950 border border-orange-300/60'
+                            : 'bg-blue-100 text-blue-900 border border-blue-200/60'
+                        }`}
+                        title={`${primaryEvent.title} (${primaryEvent.eventTypeName || primaryEvent.eventType})`}
+                      >
+                        {isRangeStart && <span className="w-1.5 h-1.5 rounded-full bg-orange-600 shrink-0" />}
+                        <span className="truncate">{primaryEvent.title}</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Colored indicator bar on mobile */}
+                  {primaryEvent && isCurrentMonth && (
+                    <div className="w-full sm:hidden flex items-center justify-center mt-0.5">
+                      <span
+                        className={`h-1 w-full rounded-full ${
+                          primaryEvent.eventType === 'HOLIDAY' ? 'bg-orange-500' : 'bg-blue-600'
+                        }`}
+                      />
+                    </div>
+                  )}
                 </button>
               );
             })}
@@ -413,11 +570,15 @@ export const SmartCalendarPage: React.FC = () => {
           <div className="pt-4 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3 text-[11px] text-slate-500 font-medium">
             <div className="flex items-center space-x-2">
               <span className="w-2.5 h-2.5 rounded-full bg-rose-500" />
-              <span>সরকারি ও জাতীয় ছুটি / বিশেষ দিবস (লাল চিহ্নিত)</span>
+              <span>সরকারি ও জাতীয় ছুটি (লাল চিহ্নিত)</span>
             </div>
             <div className="flex items-center space-x-2">
               <span className="w-2.5 h-2.5 rounded-full bg-blue-600" />
-              <span>ইনস্টিটিউট পরীক্ষা ও অনুষ্ঠান (ইভেন্ট)</span>
+              <span>ইনস্টিটিউট পরীক্ষা ও অনুষ্ঠান (নীল চিহ্নিত)</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <span className="w-3.5 h-2 rounded bg-orange-200 border border-orange-400" />
+              <span>একাধিক দিনের ছুটি ও অবকাশ (ধারাবাহিক হাইলাইট)</span>
             </div>
           </div>
 
@@ -694,41 +855,107 @@ const DateDetailsCard: React.FC<{ dayInfo: DayInfo; events: AppEvent[] }> = ({
           </div>
 
           <div className="space-y-3">
-            {events.map((ev) => (
-              <div
-                key={ev.id}
-                className="p-3 bg-white rounded-xl border border-blue-100 space-y-1.5 shadow-2xs"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <h4 className="text-xs sm:text-sm font-bold text-slate-900">{ev.title}</h4>
-                  <span className="px-2 py-0.5 bg-blue-100 text-blue-800 text-[10px] font-black rounded-md font-outfit uppercase shrink-0">
-                    {ev.eventTypeName || ev.eventType}
-                  </span>
-                </div>
+            {events.map((ev) => {
+              const isMultiDay = Boolean(ev.endDate && ev.endDate > ev.eventDate);
+              const totalDays = isMultiDay ? calculateDateRangeDays(ev.eventDate, ev.endDate) : 1;
+              const isHoliday = ev.eventType === 'HOLIDAY';
 
-                {(ev.startTime || ev.endTime) && (
-                  <div className="flex items-center space-x-1.5 text-[11px] text-slate-600 font-outfit">
-                    <Clock className="w-3.5 h-3.5 text-slate-400" />
-                    <span>
-                      {formatTime12Hour(ev.startTime)} {ev.endTime ? ` - ${formatTime12Hour(ev.endTime)}` : ''}
+              let dayPositionText = '';
+              if (isMultiDay) {
+                const startParts = ev.eventDate.split('-');
+                const currParts = dayInfo.dateString.split('-');
+                if (startParts.length === 3 && currParts.length === 3) {
+                  const sDate = new Date(parseInt(startParts[0], 10), parseInt(startParts[1], 10) - 1, parseInt(startParts[2], 10));
+                  const cDate = new Date(parseInt(currParts[0], 10), parseInt(currParts[1], 10) - 1, parseInt(currParts[2], 10));
+                  const diff = Math.round((cDate.getTime() - sDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+                  if (diff >= 1 && diff <= totalDays) {
+                    dayPositionText = `আজ ${isHoliday ? 'ছুটির' : 'ইভেন্টের'} ${toBanglaDigits(diff)}তম দিন`;
+                  }
+                }
+              }
+
+              return (
+                <div
+                  key={ev.id}
+                  className={`p-3.5 rounded-2xl border space-y-2 shadow-2xs ${
+                    isHoliday
+                      ? 'bg-orange-50/70 border-orange-200'
+                      : 'bg-white border-blue-100'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <h4 className="text-xs sm:text-sm font-bold text-slate-900 leading-snug">{ev.title}</h4>
+                    <span
+                      className={`px-2 py-0.5 text-[10px] font-black rounded-md font-outfit uppercase shrink-0 border ${
+                        isHoliday
+                          ? 'bg-orange-100 text-orange-800 border-orange-200'
+                          : 'bg-blue-100 text-blue-800 border-blue-200'
+                      }`}
+                    >
+                      {ev.eventTypeName || ev.eventType}
                     </span>
                   </div>
-                )}
 
-                {ev.location && (
-                  <div className="flex items-center space-x-1.5 text-[11px] text-slate-600">
-                    <MapPin className="w-3.5 h-3.5 text-slate-400" />
-                    <span>{ev.location}</span>
-                  </div>
-                )}
+                  {/* Multi-day date range strip */}
+                  {isMultiDay ? (
+                    <div
+                      className={`p-2.5 rounded-xl border space-y-1 text-xs ${
+                        isHoliday
+                          ? 'bg-orange-100/70 border-orange-200 text-orange-950'
+                          : 'bg-blue-50/80 border-blue-200 text-blue-950'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between font-bold font-outfit flex-wrap gap-1">
+                        <span className="flex items-center gap-1.5">
+                          <CalendarDays className={`w-3.5 h-3.5 ${isHoliday ? 'text-orange-600' : 'text-blue-600'}`} />
+                          <span>সময়সীমা:</span>
+                        </span>
+                        <span>
+                          {ev.eventDate} হতে {ev.endDate}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-[11px] pt-1 border-t border-black/5">
+                        <span>
+                          মোট সময়কাল: <strong className="font-outfit">{toBanglaDigits(totalDays)} দিন</strong>
+                        </span>
+                        {dayPositionText && (
+                          <span className={`font-bold ${isHoliday ? 'text-orange-800' : 'text-blue-800'}`}>
+                            ({dayPositionText})
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-[11px] text-slate-500 flex items-center gap-1.5 font-outfit">
+                      <CalendarDays className="w-3.5 h-3.5 text-slate-400" />
+                      <span>{ev.eventDate}</span>
+                    </div>
+                  )}
 
-                {ev.description && (
-                  <p className="text-[11px] text-slate-600 leading-relaxed pt-1 border-t border-slate-100">
-                    {ev.description}
-                  </p>
-                )}
-              </div>
-            ))}
+                  {(ev.startTime || ev.endTime) && (
+                    <div className="flex items-center space-x-1.5 text-[11px] text-slate-600 font-outfit">
+                      <Clock className="w-3.5 h-3.5 text-slate-400" />
+                      <span>
+                        {formatTime12Hour(ev.startTime)} {ev.endTime ? ` - ${formatTime12Hour(ev.endTime)}` : ''}
+                      </span>
+                    </div>
+                  )}
+
+                  {ev.location && (
+                    <div className="flex items-center space-x-1.5 text-[11px] text-slate-600">
+                      <MapPin className="w-3.5 h-3.5 text-slate-400" />
+                      <span>{ev.location}</span>
+                    </div>
+                  )}
+
+                  {ev.description && (
+                    <p className="text-[11px] text-slate-600 leading-relaxed pt-1 border-t border-slate-100">
+                      {ev.description}
+                    </p>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       ) : (

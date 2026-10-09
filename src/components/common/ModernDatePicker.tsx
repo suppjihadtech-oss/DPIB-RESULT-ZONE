@@ -38,6 +38,8 @@ interface ModernDatePickerProps {
   subtitle?: string;
   minYear?: number;
   maxYear?: number;
+  minDate?: string; // ISO format 'YYYY-MM-DD'
+  maxDate?: string; // ISO format 'YYYY-MM-DD'
 }
 
 export const ModernDatePicker: React.FC<ModernDatePickerProps> = ({
@@ -49,6 +51,8 @@ export const ModernDatePicker: React.FC<ModernDatePickerProps> = ({
   subtitle,
   minYear = 1970,
   maxYear = 2035,
+  minDate,
+  maxDate,
 }) => {
   // Parse initial date
   const parseDate = (dStr: string) => {
@@ -110,7 +114,17 @@ export const ModernDatePicker: React.FC<ModernDatePickerProps> = ({
     }
   };
 
+  const isDateDisabled = (dayNum: number) => {
+    const mStr = String(currentMonth + 1).padStart(2, '0');
+    const dStr = String(dayNum).padStart(2, '0');
+    const dateStr = `${currentYear}-${mStr}-${dStr}`;
+    if (minDate && dateStr < minDate) return true;
+    if (maxDate && dateStr > maxDate) return true;
+    return false;
+  };
+
   const handleSelectDay = (day: number) => {
+    if (isDateDisabled(day)) return;
     setSelectedDay(day);
     const mStr = String(currentMonth + 1).padStart(2, '0');
     const dStr = String(day).padStart(2, '0');
@@ -121,12 +135,18 @@ export const ModernDatePicker: React.FC<ModernDatePickerProps> = ({
 
   const handleSetToday = () => {
     const today = new Date();
-    setCurrentYear(today.getFullYear());
-    setCurrentMonth(today.getMonth());
-    setSelectedDay(today.getDate());
-    const mStr = String(today.getMonth() + 1).padStart(2, '0');
-    const dStr = String(today.getDate()).padStart(2, '0');
-    onChange(`${today.getFullYear()}-${mStr}-${dStr}`);
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    let targetDateStr = todayStr;
+    if (minDate && todayStr < minDate) {
+      targetDateStr = minDate;
+    } else if (maxDate && todayStr > maxDate) {
+      targetDateStr = maxDate;
+    }
+    const d = parseDate(targetDateStr);
+    setCurrentYear(d.getFullYear());
+    setCurrentMonth(d.getMonth());
+    setSelectedDay(d.getDate());
+    onChange(targetDateStr);
     onClose();
   };
 
@@ -275,18 +295,22 @@ export const ModernDatePicker: React.FC<ModernDatePickerProps> = ({
 
                 const dayOfWeekJS = new Date(currentYear, currentMonth, dayNum).getDay();
                 const isFriday = dayOfWeekJS === 5;
+                const isDisabled = isDateDisabled(dayNum);
 
                 return (
                   <button
                     key={dayNum}
                     type="button"
+                    disabled={isDisabled}
                     onClick={() => handleSelectDay(dayNum)}
-                    className={`h-10 sm:h-11 rounded-xl flex items-center justify-center text-xs sm:text-sm font-bold font-outfit transition-all cursor-pointer ${
-                      isSelected
-                        ? 'bg-teal-700 text-white shadow-md shadow-teal-700/20 ring-2 ring-teal-600 font-black'
+                    className={`h-10 sm:h-11 rounded-xl flex items-center justify-center text-xs sm:text-sm font-bold font-outfit transition-all ${
+                      isDisabled
+                        ? 'opacity-25 cursor-not-allowed bg-slate-100 text-slate-400 border border-transparent'
+                        : isSelected
+                        ? 'bg-teal-700 text-white shadow-md shadow-teal-700/20 ring-2 ring-teal-600 font-black cursor-pointer'
                         : isFriday
-                        ? 'bg-rose-50/70 hover:bg-rose-100 text-rose-700 border border-rose-100'
-                        : 'bg-white hover:bg-teal-50/70 text-slate-800 border border-slate-100 hover:border-teal-200'
+                        ? 'bg-rose-50/70 hover:bg-rose-100 text-rose-700 border border-rose-100 cursor-pointer'
+                        : 'bg-white hover:bg-teal-50/70 text-slate-800 border border-slate-100 hover:border-teal-200 cursor-pointer'
                     }`}
                   >
                     {toBanglaDigits(dayNum)}

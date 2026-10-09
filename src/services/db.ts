@@ -1615,6 +1615,7 @@ export async function saveEvent(event: Partial<AppEvent>): Promise<string> {
       eventType: event.eventType || 'OTHER',
       eventTypeName: event.eventTypeName || 'অন্যান্য',
       eventDate: event.eventDate || new Date().toISOString().split('T')[0],
+      endDate: event.endDate || event.eventDate || new Date().toISOString().split('T')[0],
       startTime: event.startTime || '',
       endTime: event.endTime || '',
       location: event.location || '',
