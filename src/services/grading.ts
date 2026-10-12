@@ -13,15 +13,28 @@ export const DEFAULT_GRADING_RULES: GradingRule[] = [
   { id: '10', minMarksPercentage: 0, maxMarksPercentage: 39.99, grade: 'F', gradePoint: 0.00, description: 'অকৃতকার্য (Fail)' },
 ];
 
+let cachedPassMarkPercentage = 40;
+
+export function getCachedPassMark(): number {
+  return cachedPassMarkPercentage;
+}
+
+export function updateCachedPassMark(val: number) {
+  if (typeof val === 'number' && !isNaN(val) && val >= 10 && val <= 100) {
+    cachedPassMarkPercentage = val;
+  }
+}
+
 /**
  * Calculates grade, gradePoint and pass status from obtainedMarks and subjectFullMarks.
  * Formula: percentage = (obtainedMarks / subjectFullMarks) * 100
- * Exactly 40% or more (percentage >= 40) is PASS (Grade D or higher).
+ * Exactly passMarkPercentage or more is PASS (Grade D or higher). Default is 40%.
  */
 export function calculateSubjectGrade(
   obtainedMarks: number,
   fullMarks: number,
-  rules: GradingRule[] = DEFAULT_GRADING_RULES
+  rules: GradingRule[] = DEFAULT_GRADING_RULES,
+  customPassMark?: number
 ): { grade: string; gradePoint: number; isPassed: boolean; percentage: number } {
   const obtained = Number(obtainedMarks) || 0;
   const full = Number(fullMarks);
@@ -35,17 +48,20 @@ export function calculateSubjectGrade(
   // Round to 4 decimal places to prevent floating-point representation quirks
   const percentage = Math.round(rawPercentage * 10000) / 10000;
 
-  // Grade mapping:
-  // 80%–100% = A+ (4.00)
-  // 75%–79.99% = A (3.75)
-  // 70%–74.99% = A- (3.50)
-  // 65%–69.99% = B+ (3.25)
-  // 60%–64.99% = B (3.00)
-  // 55%–59.99% = B- (2.75)
-  // 50%–54.99% = C+ (2.50)
-  // 45%–49.99% = C (2.25)
-  // 40%–44.99% = D (2.00) -> percentage >= 40 is PASS
-  // 0%–39.99% = F (0.00) -> FAIL
+  // Determine effective pass mark percentage (authority configurable, e.g. 40, 45)
+  const effectivePassMark = typeof customPassMark === 'number' && !isNaN(customPassMark)
+    ? customPassMark
+    : cachedPassMarkPercentage;
+
+  // If percentage is below pass mark, it is FAIL (F)
+  if (percentage < effectivePassMark - 0.0001) {
+    return {
+      grade: 'F',
+      gradePoint: 0.00,
+      isPassed: false,
+      percentage: Math.round(rawPercentage * 100) / 100,
+    };
+  }
 
   let grade = 'F';
   let gradePoint = 0.00;
@@ -83,7 +99,7 @@ export function calculateSubjectGrade(
     grade = 'C';
     gradePoint = 2.25;
     isPassed = true;
-  } else if (percentage >= 39.9999) { // Exactly 40% or >= 40 is PASS with D
+  } else if (percentage >= effectivePassMark - 0.0001) {
     grade = 'D';
     gradePoint = 2.00;
     isPassed = true;
@@ -109,7 +125,8 @@ export function calculateSubjectGrade(
  */
 export function calculateOverallResult(
   subjects: { obtainedMarks: number; fullMarks: number; gradePoint?: number; grade?: string; isPassed?: boolean }[],
-  rules: GradingRule[] = DEFAULT_GRADING_RULES
+  rules: GradingRule[] = DEFAULT_GRADING_RULES,
+  customPassMark?: number
 ): {
   totalFullMarks: number;
   totalObtainedMarks: number;
@@ -144,9 +161,9 @@ export function calculateOverallResult(
     totalObtained += obtained;
 
     // Calculate subject grade using its own actual full marks and obtained marks
-    const calc = calculateSubjectGrade(obtained, full, rules);
+    const calc = calculateSubjectGrade(obtained, full, rules, customPassMark);
 
-    // If grade is 'F' (percentage < 40), it is a failed subject
+    // If grade is 'F' (percentage < pass mark), it is a failed subject
     if (calc.grade === 'F' || calc.gradePoint === 0 || !calc.isPassed) {
       failedSubjectCount++;
     }
@@ -156,7 +173,7 @@ export function calculateOverallResult(
   }
 
   const overallPercentage = totalFull > 0 ? (totalObtained / totalFull) * 100 : 0;
-  const overallGradeInfo = calculateSubjectGrade(totalObtained, totalFull, rules);
+  const overallGradeInfo = calculateSubjectGrade(totalObtained, totalFull, rules, customPassMark);
 
   const hasFailedSubject = failedSubjectCount > 0;
   // A student with NO 'F' in any subject is PASSED

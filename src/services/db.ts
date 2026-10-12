@@ -36,7 +36,7 @@ import {
   ShiftConfig,
 } from '../types';
 import { MASTER_CURRICULUM_DATA, normalizeTechnologyKey } from '../data/masterCurriculum';
-import { DEFAULT_GRADING_RULES, calculateOverallResult, calculateSubjectGrade } from './grading';
+import { DEFAULT_GRADING_RULES, calculateOverallResult, calculateSubjectGrade, updateCachedPassMark } from './grading';
 import { toEnglishDigits } from '../utils/bangla';
 import { resolveSubjectMeta, normalizeDepartment, normalizeSemester } from './excel';
 
@@ -561,6 +561,8 @@ export async function getSystemSettings(): Promise<SystemSettings> {
     const snap = await getDoc(docRef);
     if (snap.exists()) {
       const data = snap.data() as SystemSettings;
+      const passPct = typeof data.passMarkPercentage === 'number' && !isNaN(data.passMarkPercentage) ? data.passMarkPercentage : 40;
+      updateCachedPassMark(passPct);
       return {
         ...data,
         instituteName: data.instituteName || 'দক্ষিণবঙ্গ পলিটেকনিক ইনস্টিটিউট',
@@ -571,6 +573,7 @@ export async function getSystemSettings(): Promise<SystemSettings> {
         departments: data.departments || DEFAULT_DEPARTMENTS,
         examTypes: data.examTypes || DEFAULT_EXAM_TYPES,
         shifts: data.shifts && data.shifts.length > 0 ? data.shifts : DEFAULT_SHIFTS,
+        passMarkPercentage: passPct,
       };
     }
   } catch (e) {
@@ -586,6 +589,7 @@ export async function getSystemSettings(): Promise<SystemSettings> {
     departments: DEFAULT_DEPARTMENTS,
     examTypes: DEFAULT_EXAM_TYPES,
     shifts: DEFAULT_SHIFTS,
+    passMarkPercentage: 40,
   };
 }
 

@@ -180,6 +180,7 @@ export interface SystemSettings {
   departments: Department[];
   examTypes: string[];
   shifts?: ShiftConfig[];
+  passMarkPercentage?: number; // Default 40%, customizable by authority (e.g. 45%)
   updatedAt?: number;
 }
 

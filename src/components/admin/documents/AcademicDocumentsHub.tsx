@@ -93,23 +93,14 @@ export const AcademicDocumentsHub: React.FC<AcademicDocumentsHubProps> = ({
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+                className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
                   isActive
                     ? 'bg-teal-700 text-white shadow-xs'
                     : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
                 }`}
               >
                 <Icon className="w-3.5 h-3.5 shrink-0" />
-                <div className="flex flex-col text-left leading-none">
-                  <span>{tab.label}</span>
-                  <span
-                    className={`text-[8.5px] font-outfit uppercase tracking-wider font-bold mt-0.5 ${
-                      isActive ? 'text-teal-100' : 'text-slate-400'
-                    }`}
-                  >
-                    {tab.enLabel}
-                  </span>
-                </div>
+                <span>{tab.label}</span>
               </button>
             );
           })}

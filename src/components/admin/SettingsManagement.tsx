@@ -17,6 +17,9 @@ import {
   ChevronRight,
   ShieldCheck,
   ShieldAlert,
+  Percent,
+  Award,
+  AlertCircle,
 } from 'lucide-react';
 import { Department, GradingRule, ShiftConfig, SystemSettings } from '../../types';
 import {
@@ -26,6 +29,7 @@ import {
   DEFAULT_SHIFTS,
   saveShiftConfigs,
 } from '../../services/db';
+import { updateCachedPassMark } from '../../services/grading';
 import { getFirebaseStatus } from '../../services/firebase';
 import { getActiveAdminUsername, getAdminSecuritySettings } from '../../services/adminAuth';
 import { toBanglaDigits } from '../../utils/bangla';
@@ -59,6 +63,9 @@ export const SettingsManagement: React.FC<SettingsManagementProps> = ({
   // Dynamic Shifts State (Summary)
   const [shifts, setShifts] = useState<ShiftConfig[]>(DEFAULT_SHIFTS);
 
+  // Authority-Controlled Pass Mark Percentage (Default 40%)
+  const [passMarkPercentage, setPassMarkPercentage] = useState<number>(40);
+
   // Security Status & Active Admin
   const [activeAdminUser, setActiveAdminUser] = useState('DPIB');
   const [isTwoFactorActive, setIsTwoFactorActive] = useState(false);
@@ -78,6 +85,9 @@ export const SettingsManagement: React.FC<SettingsManagementProps> = ({
       setGradingRules(data.gradingRules);
       setDeptList(data.departments);
       setShifts(data.shifts && data.shifts.length > 0 ? data.shifts : DEFAULT_SHIFTS);
+      const effectivePass = typeof data.passMarkPercentage === 'number' && !isNaN(data.passMarkPercentage) ? data.passMarkPercentage : 40;
+      setPassMarkPercentage(effectivePass);
+      updateCachedPassMark(effectivePass);
       setActiveAdminUser(currentAdmin);
       setIsTwoFactorActive(secConfig.twoFactorEnabled);
     } catch (err) {
@@ -96,11 +106,14 @@ export const SettingsManagement: React.FC<SettingsManagementProps> = ({
     setSaving(true);
     setSavedSuccess(false);
     try {
+      const cleanPassMark = Number(passMarkPercentage) || 40;
+      updateCachedPassMark(cleanPassMark);
       await saveSystemSettings({
         ...settings,
         instituteName,
         gradingRules,
         departments: deptList,
+        passMarkPercentage: cleanPassMark,
         updatedAt: Date.now(),
       });
       setSavedSuccess(true);
@@ -248,6 +261,98 @@ export const SettingsManagement: React.FC<SettingsManagementProps> = ({
             <span>নিরাপত্তা পেজে প্রবেশ করুন</span>
             <ChevronRight className="w-4 h-4" />
           </button>
+        </div>
+      </div>
+
+      {/* ================= AUTHORITY-CONTROLLED PASS MARK PERCENTAGE CARD ================= */}
+      <div className="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-xs space-y-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-100 gap-4">
+          <div className="flex items-center space-x-3">
+            <div className="w-10 h-10 rounded-2xl bg-amber-50 border border-amber-200/80 flex items-center justify-center text-amber-700">
+              <Percent className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-base sm:text-lg font-bold text-slate-900">
+                  কর্তৃপক্ষের নিয়ন্ত্রণে পাস মার্ক নির্ধারণ
+                </h3>
+                <span className="px-2 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-[10px] font-black uppercase font-outfit">
+                  PASS CRITERIA
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5">
+                ফলাফল গণনায় ন্যূনতম পাসের হার নির্ধারণ করুন (ডিফল্ট ৪০%, প্রয়োজন অনুযায়ী পরিবর্তনযোগ্য)।
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs font-black font-mono">
+              বর্তমান পাসের হার: {toBanglaDigits(passMarkPercentage)}%
+            </span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
+          <div className="space-y-3">
+            <label className="block text-xs font-bold text-slate-700 uppercase">
+              পাস মার্কের হার (%) <span className="text-rose-500">*</span>
+            </label>
+            <div className="flex items-center gap-3">
+              <div className="relative flex-1">
+                <input
+                  type="number"
+                  min="20"
+                  max="100"
+                  step="1"
+                  value={passMarkPercentage}
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    if (!isNaN(val)) setPassMarkPercentage(val);
+                  }}
+                  className="w-full pl-4 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-900 outline-none focus:border-amber-600 focus:bg-white font-mono transition-all"
+                  placeholder="৪০"
+                />
+                <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">
+                  %
+                </span>
+              </div>
+
+              {/* Quick preset buttons */}
+              <div className="flex items-center gap-1.5 shrink-0">
+                {[33, 40, 45, 50].map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() => setPassMarkPercentage(preset)}
+                    className={`px-2.5 py-2 rounded-xl text-xs font-bold font-mono transition-all border cursor-pointer ${
+                      passMarkPercentage === preset
+                        ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
+                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    {toBanglaDigits(preset)}%
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <p className="text-[11px] text-slate-500 leading-snug">
+              পরীক্ষার্থী প্রাপ্ত নম্বরের শতকরা হার এই মানের সমান বা বেশি হলে সে বিষয়ভিত্তিক পাস (উত্তীর্ণ) হিসেবে গণ্য হবে।
+            </p>
+          </div>
+
+          <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200/80 text-xs space-y-2">
+            <div className="flex items-center gap-1.5 font-bold text-slate-800">
+              <Award className="w-4 h-4 text-amber-600 shrink-0" />
+              <span>নীতি ও কার্যপ্রণালী:</span>
+            </div>
+            <ul className="list-disc list-inside space-y-1 text-slate-600 text-[11px] leading-relaxed">
+              <li>স্বাভাবিক বিটিইবি মানদণ্ড অনুযায়ী ডিফল্ট পাসের হার <strong>৪০%</strong>।</li>
+              <li>কর্তৃপক্ষ চাইলে এটি পরিবর্তন করে (যেমন: <strong>৪৫%</strong>) সংরক্ষণ করতে পারবেন।</li>
+              <li>সংরক্ষিত পাসের হারটি সকল নতুন ফলাফল প্রস্তুতি ও সামগ্রিক গ্রেডিং হিসাবে সরাসরি সক্রিয় হবে।</li>
+            </ul>
+          </div>
         </div>
       </div>
 

@@ -436,7 +436,7 @@ export const ClassRoutineGenerator: React.FC = () => {
             </div>
             <div>
               <h3 className="text-base sm:text-lg font-black text-slate-900 tracking-tight">
-                ক্লাস রুটিন জেনারেটর (Class Routine Generator)
+                ক্লাস রুটিন জেনারেটর
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
                 শিফট, টেকনোলজি ও সেমিস্টার নির্বাচন করে স্বাধীন সময়সূচিতে প্রফেশনাল ক্লাস রুটিন তৈরি করুন
