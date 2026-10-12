@@ -287,6 +287,12 @@ export const A4DocumentEngine: React.FC<A4DocumentEngineProps> = ({
   onBeforeDownloadPdf,
 }) => {
   const [template, setTemplate] = useState<DocumentTemplateStyle>(defaultTemplate);
+
+  useEffect(() => {
+    if (defaultTemplate) {
+      setTemplate(defaultTemplate);
+    }
+  }, [defaultTemplate]);
   const [zoom, setZoom] = useState<number>(100);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [isPrinting, setIsPrinting] = useState(false);
@@ -638,9 +644,15 @@ export const A4DocumentEngine: React.FC<A4DocumentEngineProps> = ({
                   font-size: var(--doc-desc-size, 13px) !important;
                   line-height: 1.65 !important;
                 }
-                #printable-a4-document .question-text {
+                #printable-a4-document .question-text,
+                #printable-a4-document .question-item,
+                #printable-a4-document .question-content {
                   font-size: var(--doc-desc-size, 13px) !important;
-                  line-height: 1.5 !important;
+                  line-height: 1.55 !important;
+                }
+                #printable-a4-document .question-item span,
+                #printable-a4-document .question-item div {
+                  font-size: inherit;
                 }
                 #printable-a4-document .question-subtext {
                   font-size: var(--doc-date-size, 11px) !important;

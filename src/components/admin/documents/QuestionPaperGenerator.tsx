@@ -35,16 +35,79 @@ import {
   RectangleHorizontal,
   Expand,
   ChevronRight,
+  Sparkles,
+  Hash,
 } from 'lucide-react';
 import { A4DocumentEngine } from './A4DocumentEngine';
 import { toBanglaDigits, SEMESTER_MAP } from '../../../utils/bangla';
-import { SemesterId } from '../../../types';
+import { SemesterId, DocumentTemplateStyle } from '../../../types';
 import { getAutoLoadedCurriculumSubjects } from '../../../data/masterCurriculum';
 import { SelectBottomSheet, SelectTrigger, SelectOption } from '../../common/SelectBottomSheet';
 import { BottomSheet } from '../../common/BottomSheet';
 import { saveDraft, getDraft, clearDraft, DraftRecord } from '../../../utils/draftStorage';
 import { DraftRestoreBanner } from '../../common/DraftRestoreBanner';
 import { saveQuestionPaper } from '../../../services/db';
+
+export type ExamTypePreset =
+  | 'PARBA_SAMAPANI'
+  | 'MID_TERM'
+  | 'PRE_ASSESSMENT'
+  | 'MODEL_TEST'
+  | 'CLASS_TEST'
+  | 'CONTINUOUS'
+  | 'CUSTOM';
+
+export interface ExamTypeOption {
+  id: ExamTypePreset;
+  label: string;
+  enLabel: string;
+  badge: string;
+}
+
+export const EXAM_TYPE_OPTIONS: ExamTypeOption[] = [
+  { id: 'PARBA_SAMAPANI', label: 'পর্ব সমাপনী পরীক্ষা', enLabel: 'Parba Samapani Examination', badge: 'প্রধান' },
+  { id: 'MID_TERM', label: 'মিড-টার্ম পরীক্ষা', enLabel: 'Mid-Term Examination', badge: 'মিড' },
+  { id: 'PRE_ASSESSMENT', label: 'প্রি-অ্যাসেসমেন্ট পরীক্ষা', enLabel: 'Pre-Assessment Examination', badge: 'প্রি' },
+  { id: 'MODEL_TEST', label: 'মডেল টেস্ট পরীক্ষা', enLabel: 'Model Test Examination', badge: 'মডেল' },
+  { id: 'CLASS_TEST', label: 'ক্লাস টেস্ট / কুইজ পরীক্ষা', enLabel: 'Class Test / Quiz', badge: 'সিটি' },
+  { id: 'CONTINUOUS', label: 'ধারাবাহিক মূল্যায়ন পরীক্ষা', enLabel: 'Continuous Assessment', badge: 'ধারাবাহিক' },
+  { id: 'CUSTOM', label: 'কাস্টম (নিজের মতো লিখুন)', enLabel: 'Custom Exam Title', badge: 'কাস্টম' },
+];
+
+/**
+ * Checks if a subject is an English medium subject based on subject name and code.
+ */
+export const isEnglishSubject = (name: string = '', code: string = ''): boolean => {
+  const norm = `${name} ${code}`.toLowerCase();
+  return /english|ইংরেজি|ইংলিশ|communicative english|technical english|25712|25722/i.test(norm);
+};
+
+/**
+ * Generates smart auto-selected exam title based on exam type and semester.
+ */
+export const generateSmartExamTitle = (type: ExamTypePreset, semester: string): string => {
+  const semText = semester
+    ? (SEMESTER_MAP[semester as SemesterId] || `${toBanglaDigits(semester)}ম পর্ব`)
+    : '';
+
+  switch (type) {
+    case 'PARBA_SAMAPANI':
+      return semText ? `${semText} সমাপনী পরীক্ষা` : 'পর্ব সমাপনী পরীক্ষা';
+    case 'MID_TERM':
+      return semText ? `${semText} মিড-টার্ম পরীক্ষা` : 'মিড-টার্ম পরীক্ষা';
+    case 'PRE_ASSESSMENT':
+      return semText ? `${semText} প্রি-অ্যাসেসমেন্ট পরীক্ষা` : 'প্রি-অ্যাসেসমেন্ট পরীক্ষা';
+    case 'MODEL_TEST':
+      return semText ? `${semText} মডেল টেস্ট পরীক্ষা` : 'মডেল টেস্ট পরীক্ষা';
+    case 'CLASS_TEST':
+      return semText ? `${semText} ক্লাস টেস্ট পরীক্ষা` : 'ক্লাস টেস্ট পরীক্ষা';
+    case 'CONTINUOUS':
+      return semText ? `${semText} ধারাবাহিক মূল্যায়ন পরীক্ষা` : 'ধারাবাহিক মূল্যায়ন পরীক্ষা';
+    case 'CUSTOM':
+    default:
+      return '';
+  }
+};
 
 const AVAILABLE_TECHNOLOGIES = [
   { id: 'ALL', name: 'সকল প্রযুক্তি (সকল টেকনোলজি)', code: 'ALL' },
@@ -166,6 +229,7 @@ interface QuestionSectionBottomSheetProps {
   onUpdateQuestion: (index: number, item: QuestionItem) => void;
   onRemoveQuestion: (index: number) => void;
   startIndex: number;
+  isEnglishNumbering?: boolean;
 }
 
 // =========================================================================
@@ -215,6 +279,7 @@ const QuestionSectionBottomSheet: React.FC<QuestionSectionBottomSheetProps> = ({
   onUpdateQuestion,
   onRemoveQuestion,
   startIndex,
+  isEnglishNumbering = false,
 }) => {
   const [inputText, setInputText] = useState('');
   const [attachedImages, setAttachedImages] = useState<QuestionImage[]>([]);
@@ -231,8 +296,10 @@ const QuestionSectionBottomSheet: React.FC<QuestionSectionBottomSheetProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Quick instruction presets
-  const instructionPresets: Record<'A' | 'B' | 'C', string[]> = {
+  const formatNum = (n: number) => (isEnglishNumbering ? `${n}` : toBanglaDigits(n));
+
+  // Quick instruction presets - Bangla & English dual support
+  const instructionPresetsBangla: Record<'A' | 'B' | 'C', string[]> = {
     A: [
       'যে-কোনো ১০টি প্রশ্নের উত্তর দাও: ১ × ১০ = ১০',
       'সকল প্রশ্নের উত্তর দাও: ১ × ১০ = ১০',
@@ -252,6 +319,29 @@ const QuestionSectionBottomSheet: React.FC<QuestionSectionBottomSheetProps> = ({
       'যে-কোনো ৩টি প্রশ্নের উত্তর দাও',
     ],
   };
+
+  const instructionPresetsEnglish: Record<'A' | 'B' | 'C', string[]> = {
+    A: [
+      'Answer any 10 questions: 1 × 10 = 10',
+      'Answer all questions: 1 × 10 = 10',
+      'Answer any 5 questions: 2 × 5 = 10',
+      'Answer any 10 questions',
+    ],
+    B: [
+      'Answer any 4 questions: 5 × 4 = 20',
+      'Answer any 5 questions: 4 × 5 = 20',
+      'Answer any 3 questions: 5 × 3 = 15',
+      'Answer any 4 questions',
+    ],
+    C: [
+      'Answer any 3 questions: 10 × 3 = 30',
+      'Answer any 5 questions: 6 × 5 = 30',
+      'Answer any 4 questions: 8 × 4 = 32',
+      'Answer any 3 questions',
+    ],
+  };
+
+  const instructionPresets = isEnglishNumbering ? instructionPresetsEnglish : instructionPresetsBangla;
 
   // Insert HTML tag into textarea at cursor position
   const insertHtmlTag = (openTag: string, closeTag: string = '') => {
@@ -440,8 +530,12 @@ const QuestionSectionBottomSheet: React.FC<QuestionSectionBottomSheetProps> = ({
               <Edit3 className="w-4 h-4 text-violet-700" />
               <span>
                 {editingIndex !== null
-                  ? `প্রশ্ন নং ${toBanglaDigits(startIndex + editingIndex)} সম্পাদনা করুন:`
-                  : `নতুন প্রশ্ন লিখুন (প্রশ্ন নং ${toBanglaDigits(startIndex + questions.length)}):`}
+                  ? isEnglishNumbering
+                    ? `Edit Question No. ${formatNum(startIndex + editingIndex)}:`
+                    : `প্রশ্ন নং ${formatNum(startIndex + editingIndex)} সম্পাদনা করুন:`
+                  : isEnglishNumbering
+                  ? `Add New Question (No. ${formatNum(startIndex + questions.length)}):`
+                  : `নতুন প্রশ্ন লিখুন (প্রশ্ন নং ${formatNum(startIndex + questions.length)}):`}
               </span>
             </label>
 
@@ -452,7 +546,7 @@ const QuestionSectionBottomSheet: React.FC<QuestionSectionBottomSheetProps> = ({
                 className="text-[11px] font-bold text-rose-600 hover:underline flex items-center gap-0.5 cursor-pointer"
               >
                 <X className="w-3.5 h-3.5" />
-                <span>এডিট বাতিল</span>
+                <span>{isEnglishNumbering ? 'Cancel Edit' : 'এডিট বাতিল'}</span>
               </button>
             )}
           </div>
@@ -544,8 +638,43 @@ const QuestionSectionBottomSheet: React.FC<QuestionSectionBottomSheetProps> = ({
                 }`}
               >
                 <ImageIcon className="w-3.5 h-3.5" />
-                <span>ছবি / চিত্র যোগ করুন {attachedImages.length > 0 ? `(${toBanglaDigits(attachedImages.length)})` : ''}</span>
+                <span>ছবি / চিত্র যোগ করুন {attachedImages.length > 0 ? `(${formatNum(attachedImages.length)})` : ''}</span>
               </button>
+            </div>
+
+            {/* Sub-Question Quick Insertion Toolbar */}
+            <div className="w-full flex flex-wrap items-center gap-1 pt-1.5 mt-1 border-t border-violet-100">
+              <span className="text-[10px] font-bold text-slate-500 px-1 flex items-center gap-1">
+                <Hash className="w-3 h-3 text-violet-700" />
+                <span>{isEnglishNumbering ? 'উপ-প্রশ্ন (Sub-Question):' : 'উপ-প্রশ্ন (Sub-Question):'}</span>
+              </span>
+              {isEnglishNumbering ? (
+                <>
+                  {['(a)', '(b)', '(c)', '(d)', '(e)', '(i)', '(ii)', '(iii)', '(1)', '(2)'].map((tag) => (
+                    <button
+                      key={tag}
+                      type="button"
+                      onClick={() => insertHtmlTag(`${tag} `)}
+                      className="px-2 py-0.5 text-[10px] font-mono font-bold bg-violet-50 hover:bg-violet-200/80 text-violet-900 rounded-md border border-violet-200 transition-all cursor-pointer"
+                    >
+                      {tag}
+                    </button>
+                  ))}
+                </>
+              ) : (
+                <>
+                  {['(ক)', '(খ)', '(গ)', '(ঘ)', '(ঙ)', '(১)', '(২)', '(৩)', '(i)', '(ii)'].map((tag) => (
+                    <button
+                      key={tag}
+                      type="button"
+                      onClick={() => insertHtmlTag(`${tag} `)}
+                      className="px-2 py-0.5 text-[10px] font-bold bg-violet-50 hover:bg-violet-200/80 text-violet-900 rounded-md border border-violet-200 transition-all cursor-pointer"
+                    >
+                      {tag}
+                    </button>
+                  ))}
+                </>
+              )}
             </div>
           </div>
 
@@ -820,7 +949,7 @@ const QuestionSectionBottomSheet: React.FC<QuestionSectionBottomSheetProps> = ({
                 এই বিভাগের বর্তমান প্রশ্নসমূহ
               </span>
               <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-violet-100 text-violet-800 font-mono">
-                মোট: {toBanglaDigits(questions.length)} টি
+                মোট: {formatNum(questions.length)} {isEnglishNumbering ? 'টি' : 'টি'}
               </span>
             </div>
             <span className="text-[10px] text-slate-400 font-medium">
@@ -839,7 +968,7 @@ const QuestionSectionBottomSheet: React.FC<QuestionSectionBottomSheetProps> = ({
           ) : (
             <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
               {questions.map((q, idx) => {
-                const serialNum = toBanglaDigits(startIndex + idx);
+                const serialNum = formatNum(startIndex + idx);
                 const isBeingEdited = editingIndex === idx;
 
                 return (
@@ -1163,6 +1292,16 @@ export const QuestionPaperGenerator: React.FC = () => {
   const [examName, setExamName] = useState('১ম পর্ব সমাপনী পরীক্ষা');
   const [examYear, setExamYear] = useState('২০২৬');
 
+  // FEATURE: Smart Auto-Selection for Exam Name
+  const [examType, setExamType] = useState<ExamTypePreset>('PARBA_SAMAPANI');
+  const [examTypeSheetOpen, setExamTypeSheetOpen] = useState(false);
+
+  // FEATURE: Numbering Mode (Auto detect English subject vs Bangla)
+  const [numberingMode, setNumberingMode] = useState<'AUTO' | 'BANGLA' | 'ENGLISH'>('AUTO');
+
+  // FEATURE: Template System (official, modern, compact)
+  const [template, setTemplate] = useState<DocumentTemplateStyle>('official');
+
   // FEATURE 2: Multi-Department Selection (Max 3)
   const [selectedTechs, setSelectedTechs] = useState<string[]>([]);
 
@@ -1204,6 +1343,11 @@ export const QuestionPaperGenerator: React.FC = () => {
   const [lastSavedTime, setLastSavedTime] = useState<number | null>(null);
   const isInitialMount = useRef(true);
 
+  // Effective English Detection (auto or manual override)
+  const isEnglish =
+    numberingMode === 'ENGLISH' ||
+    (numberingMode === 'AUTO' && isEnglishSubject(subjectName, subjectCode));
+
   // Check for existing draft on load
   useEffect(() => {
     async function checkDraft() {
@@ -1230,6 +1374,9 @@ export const QuestionPaperGenerator: React.FC = () => {
       const draftData = {
         examName,
         examYear,
+        examType,
+        numberingMode,
+        template,
         selectedTech: selectedTechs[0] || '', // legacy single-tech backward compatibility
         selectedTechs,
         selectedSemester,
@@ -1253,6 +1400,9 @@ export const QuestionPaperGenerator: React.FC = () => {
   }, [
     examName,
     examYear,
+    examType,
+    numberingMode,
+    template,
     selectedTechs,
     selectedSemester,
     subjectName,
@@ -1273,6 +1423,9 @@ export const QuestionPaperGenerator: React.FC = () => {
     const d = pendingDraft.data;
     if (d.examName) setExamName(d.examName);
     if (d.examYear) setExamYear(d.examYear);
+    if (d.examType) setExamType(d.examType);
+    if (d.numberingMode) setNumberingMode(d.numberingMode);
+    if (d.template) setTemplate(d.template);
 
     // Multi-tech restore with backward compatibility
     if (Array.isArray(d.selectedTechs) && d.selectedTechs.length > 0) {
@@ -1340,6 +1493,9 @@ export const QuestionPaperGenerator: React.FC = () => {
       const payload = {
         examName,
         examYear,
+        examType,
+        numberingMode,
+        template,
         selectedTechs,
         selectedTech: selectedTechs[0] || '',
         departmentName: getFormattedTechDisplay(),
@@ -1386,10 +1542,26 @@ export const QuestionPaperGenerator: React.FC = () => {
     }
   };
 
+  const handleSelectExamType = (type: ExamTypePreset) => {
+    setExamType(type);
+    if (type !== 'CUSTOM') {
+      const autoTitle = generateSmartExamTitle(type, selectedSemester);
+      if (autoTitle) setExamName(autoTitle);
+    }
+  };
+
   const selectedTechObjects = AVAILABLE_TECHNOLOGIES.filter((t) => selectedTechs.includes(t.id));
   const semesterBangla = selectedSemester
     ? (SEMESTER_MAP[selectedSemester as keyof typeof SEMESTER_MAP] || `${toBanglaDigits(selectedSemester)}ম পর্ব`)
     : '';
+
+  const examTypeOptions: SelectOption[] = EXAM_TYPE_OPTIONS.map((opt) => ({
+    value: opt.id,
+    label: opt.label,
+    sublabel: opt.enLabel,
+    badge: opt.badge,
+    icon: Sparkles,
+  }));
 
   // Add Question Handlers
   const handleAddQuestion = (group: 'A' | 'B' | 'C', item: QuestionItem) => {
@@ -1567,7 +1739,7 @@ export const QuestionPaperGenerator: React.FC = () => {
           </div>
 
           <SelectTrigger
-            label="সেমিস্টার নির্বাচন"
+            label="সেমিস্টার / পর্ব নির্বাচন"
             value={selectedSemester}
             displayValue={selectedSemester ? SEMESTER_MAP[selectedSemester as SemesterId] : ''}
             placeholder="সেমিস্টার নির্বাচন করুন"
@@ -1575,79 +1747,243 @@ export const QuestionPaperGenerator: React.FC = () => {
             icon={GraduationCap}
           />
 
-          <SelectTrigger
-            label="বিষয় নির্বাচন"
-            value={subjectCode}
-            displayValue={subjectName ? `${subjectName} (${subjectCode})` : ''}
-            placeholder={autoSubjects.length > 0 ? 'বিষয় সিলেক্ট করুন' : 'আগে টেকনোলজি ও পর্ব বাছুন'}
-            onClick={() => setSubjectSheetOpen(true)}
-            icon={BookOpen}
-            disabled={autoSubjects.length === 0}
-          />
+          <div className="space-y-1">
+            <div className="flex items-center justify-between">
+              <label className="block text-xs font-bold text-slate-700">
+                বিষয় নির্বাচন
+              </label>
+              {subjectCode && (
+                <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded ${
+                  isEnglish ? 'bg-amber-100 text-amber-900 border border-amber-200' : 'bg-teal-50 text-teal-800 border border-teal-200'
+                }`}>
+                  {isEnglish ? 'English Subject' : 'বাংলা মাধ্যম'}
+                </span>
+              )}
+            </div>
+            <SelectTrigger
+              value={subjectCode}
+              displayValue={subjectName ? `${subjectName} (${subjectCode})` : ''}
+              placeholder={autoSubjects.length > 0 ? 'বিষয় সিলেক্ট করুন' : 'আগে টেকনোলজি ও পর্ব বাছুন'}
+              onClick={() => setSubjectSheetOpen(true)}
+              icon={BookOpen}
+              disabled={autoSubjects.length === 0}
+            />
+          </div>
 
+          {/* FEATURE 2: SMART AUTO-SELECTION FOR EXAM TYPE */}
+          <SelectTrigger
+            label="পরীক্ষার ধরন (স্মার্ট অটো-সিলেক্ট)"
+            value={examType}
+            displayValue={EXAM_TYPE_OPTIONS.find((t) => t.id === examType)?.label || 'পর্ব সমাপনী পরীক্ষা'}
+            placeholder="পরীক্ষার ধরন বেছে নিন"
+            onClick={() => setExamTypeSheetOpen(true)}
+            icon={Sparkles}
+          />
+        </div>
+
+        {/* Secondary Meta Row: Exam Title Auto-Selection & Numbering Mode & Extra Settings */}
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3.5 mb-5 pt-3 border-t border-slate-100">
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1.5">পরীক্ষার নাম</label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block text-xs font-bold text-slate-700">
+                পরীক্ষার নাম (সম্পাদনাযোগ্য)
+              </label>
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md border ${
+                examType === 'CUSTOM'
+                  ? 'bg-amber-50 text-amber-800 border-amber-200'
+                  : 'bg-violet-50 text-violet-800 border-violet-200'
+              }`}>
+                {examType === 'CUSTOM' ? 'কাস্টম' : '✨ অটো-সিলেক্টেড'}
+              </span>
+            </div>
             <input
               type="text"
               value={examName}
               onChange={(e) => setExamName(e.target.value)}
               placeholder="পরীক্ষার নাম লিখুন"
-              className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200/90 rounded-2xl font-semibold focus:bg-white focus:border-violet-600 focus:outline-hidden transition-all"
+              className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200/90 rounded-2xl font-semibold focus:bg-white focus:border-violet-600 focus:outline-hidden transition-all shadow-2xs"
             />
+          </div>
+
+          {/* FEATURE 1: QUESTION NUMBERING CONTROL */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block text-xs font-bold text-slate-700 flex items-center gap-1">
+                <Hash className="w-3.5 h-3.5 text-violet-700" />
+                <span>প্রশ্নের নম্বর মোড</span>
+              </label>
+              <span className="text-[10px] font-bold text-teal-800 bg-teal-50 px-1.5 py-0.2 rounded border border-teal-200 font-mono">
+                {isEnglish ? '1, 2, 3 (Eng)' : '১, ২, ৩ (বাংলা)'}
+              </span>
+            </div>
+            <div className="grid grid-cols-3 gap-1 bg-slate-100 p-1 rounded-2xl border border-slate-200/80">
+              <button
+                type="button"
+                onClick={() => setNumberingMode('AUTO')}
+                title="বিষয় অনুযায়ী স্বয়ংক্রিয় (ইংরেজি বিষয়ের জন্য 1, 2, 3 এবং বাংলায় ১, ২, ৩)"
+                className={`py-1.5 text-[11px] font-bold rounded-xl transition-all cursor-pointer text-center ${
+                  numberingMode === 'AUTO'
+                    ? 'bg-white text-violet-900 shadow-2xs border border-slate-200'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                স্বয়ংক্রিয়
+              </button>
+              <button
+                type="button"
+                onClick={() => setNumberingMode('BANGLA')}
+                title="বাধ্যতামূলক বাংলা অঙ্কে নম্বরিং (১, ২, ৩...)"
+                className={`py-1.5 text-[11px] font-bold rounded-xl transition-all cursor-pointer text-center ${
+                  numberingMode === 'BANGLA'
+                    ? 'bg-white text-violet-900 shadow-2xs border border-slate-200'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                বাংলা (১,২)
+              </button>
+              <button
+                type="button"
+                onClick={() => setNumberingMode('ENGLISH')}
+                title="বাধ্যতামূলক ইংরেজি অঙ্কে নম্বরিং (1, 2, 3...)"
+                className={`py-1.5 text-[11px] font-bold rounded-xl transition-all cursor-pointer text-center ${
+                  numberingMode === 'ENGLISH'
+                    ? 'bg-white text-violet-900 shadow-2xs border border-slate-200'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                English (1,2)
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1.5">পরীক্ষার সাল ও সময়</label>
+            <div className="grid grid-cols-2 gap-2">
+              <input
+                type="text"
+                value={examYear}
+                onChange={(e) => setExamYear(e.target.value)}
+                placeholder="সাল (২০২৬)"
+                className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200/90 rounded-2xl font-semibold focus:bg-white focus:border-violet-600 focus:outline-hidden transition-all shadow-2xs"
+              />
+              <input
+                type="text"
+                value={examTime}
+                onChange={(e) => setExamTime(e.target.value)}
+                placeholder="সময় (৩ ঘণ্টা)"
+                className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200/90 rounded-2xl font-semibold focus:bg-white focus:border-violet-600 focus:outline-hidden transition-all shadow-2xs"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1.5">পূর্ণমান ও কাস্টম বিষয়</label>
+            <div className="grid grid-cols-2 gap-2">
+              <input
+                type="text"
+                value={totalMarks}
+                onChange={(e) => setTotalMarks(e.target.value)}
+                placeholder="পূর্ণমান (৬০)"
+                className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200/90 rounded-2xl font-semibold focus:bg-white focus:border-violet-600 focus:outline-hidden transition-all shadow-2xs"
+              />
+              <input
+                type="text"
+                value={subjectName}
+                onChange={(e) => setSubjectName(e.target.value)}
+                placeholder="বিষয়ের নাম লিখুন"
+                className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200/90 rounded-2xl font-semibold focus:bg-white focus:border-violet-600 focus:outline-hidden transition-all shadow-2xs"
+              />
+            </div>
           </div>
         </div>
 
-        {/* Extra Settings Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3.5 mb-5">
-          <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1.5">পরীক্ষার সাল</label>
-            <input
-              type="text"
-              value={examYear}
-              onChange={(e) => setExamYear(e.target.value)}
-              placeholder="পরীক্ষার সন বা সাল লিখুন"
-              className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200/90 rounded-2xl font-semibold focus:bg-white focus:border-violet-600 focus:outline-hidden transition-all"
-            />
+        {/* ========================================================================= */}
+        {/* TEMPLATE SYSTEM SWITCHER & FORMAT SWITCHER                                */}
+        {/* ========================================================================= */}
+        <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-3 mb-5">
+          {/* FEATURE 3: TEMPLATE SWITCHER (3 BUTTONS) */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5 shrink-0">
+              <Layers className="w-4 h-4 text-teal-700" />
+              <span>টেমপ্লেট স্টাইল:</span>
+            </span>
+
+            <div className="flex items-center bg-white p-1 rounded-xl border border-slate-200 shadow-2xs gap-1 flex-wrap">
+              <button
+                type="button"
+                onClick={() => setTemplate('official')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  template === 'official'
+                    ? 'bg-teal-700 text-white shadow-xs'
+                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                }`}
+              >
+                অফিসিয়াল স্ট্যান্ডার্ড
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setTemplate('modern')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  template === 'modern'
+                    ? 'bg-teal-700 text-white shadow-xs'
+                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                }`}
+              >
+                মডার্ন ক্লিন
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setTemplate('compact')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  template === 'compact'
+                    ? 'bg-teal-700 text-white shadow-xs'
+                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                }`}
+              >
+                কমপ্যাক্ট শিট
+              </button>
+            </div>
           </div>
 
-          <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1.5">পরীক্ষার সময়</label>
-            <input
-              type="text"
-              value={examTime}
-              onChange={(e) => setExamTime(e.target.value)}
-              placeholder="পরীক্ষার সময়কাল লিখুন"
-              className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200/90 rounded-2xl font-semibold focus:bg-white focus:border-violet-600 focus:outline-hidden transition-all"
-            />
-          </div>
+          {/* Format Switcher */}
+          <div className="flex items-center gap-1.5 self-start md:self-auto">
+            <span className="text-xs font-bold text-slate-500 mr-1">ফরম্যাট:</span>
+            <div className="flex items-center bg-white p-1 rounded-xl border border-slate-200 shadow-2xs">
+              <button
+                type="button"
+                onClick={() => setQuestionPaperFormat('FULL')}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  questionPaperFormat === 'FULL'
+                    ? 'bg-violet-700 text-white shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Layers className="w-3.5 h-3.5" />
+                <span>পূর্ণাঙ্গ (ক, খ ও গ)</span>
+              </button>
 
-          <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1.5">পূর্ণমান</label>
-            <input
-              type="text"
-              value={totalMarks}
-              onChange={(e) => setTotalMarks(e.target.value)}
-              placeholder="পরীক্ষার পূর্ণমান নম্বর লিখুন"
-              className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200/90 rounded-2xl font-semibold focus:bg-white focus:border-violet-600 focus:outline-hidden transition-all"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1.5">ম্যানুয়াল বিষয়ের নাম (প্রয়োজনে)</label>
-            <input
-              type="text"
-              value={subjectName}
-              onChange={(e) => setSubjectName(e.target.value)}
-              placeholder="বিষয়ের নাম লিখুন"
-              className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200/90 rounded-2xl font-semibold focus:bg-white focus:border-violet-600 focus:outline-hidden transition-all"
-            />
+              <button
+                type="button"
+                onClick={() => setQuestionPaperFormat('SHORT_ONLY')}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  questionPaperFormat === 'SHORT_ONLY'
+                    ? 'bg-emerald-700 text-white shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>অতি সংক্ষিপ্ত</span>
+              </button>
+            </div>
           </div>
         </div>
 
         {/* ========================================================================= */}
         {/* MODERN QUESTION MANAGEMENT CARDS (ক, খ ও গ বিভাগ)                           */}
         {/* ========================================================================= */}
-        <div className="pt-4 border-t border-slate-100 space-y-4">
+        <div className="pt-2 space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <h4 className="text-xs sm:text-sm font-black text-slate-900 flex items-center gap-2">
@@ -1663,35 +1999,6 @@ export const QuestionPaperGenerator: React.FC = () => {
                   ? 'এই বইয়ের জন্য শুধুমাত্র অতি সংক্ষিপ্ত প্রশ্ন দিয়ে সম্পূর্ণ প্রশ্নপত্র তৈরি হবে (খ ও গ বিভাগ প্রযোজ্য নয়)।'
                   : 'পূর্ণাঙ্গ প্রশ্নপত্র: ক (অতি সংক্ষিপ্ত), খ (সংক্ষিপ্ত) ও গ (রচনামূলক) বিভাগ।'}
               </p>
-            </div>
-
-            {/* FEATURE 1: Question Paper Format Switcher (FULL vs SHORT_ONLY) */}
-            <div className="flex items-center bg-slate-100 p-1 rounded-2xl border border-slate-200/80 self-start sm:self-auto shrink-0">
-              <button
-                type="button"
-                onClick={() => setQuestionPaperFormat('FULL')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                  questionPaperFormat === 'FULL'
-                    ? 'bg-white text-violet-900 shadow-xs border border-slate-200/60'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <Layers className="w-3.5 h-3.5 text-violet-700" />
-                <span>পূর্ণাঙ্গ ফরম্যাট (ক, খ ও গ)</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setQuestionPaperFormat('SHORT_ONLY')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                  questionPaperFormat === 'SHORT_ONLY'
-                    ? 'bg-white text-emerald-900 shadow-xs border border-emerald-300 ring-1 ring-emerald-400'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                <span>শুধুমাত্র অতি সংক্ষিপ্ত প্রশ্ন</span>
-              </button>
             </div>
           </div>
 
@@ -1767,7 +2074,7 @@ export const QuestionPaperGenerator: React.FC = () => {
                   >
                     <div className="flex items-start gap-2 min-w-0">
                       <span className="w-5 text-center font-bold text-slate-500 font-mono shrink-0 pt-0.5">
-                        {toBanglaDigits(idx + 1)}.
+                        {isEnglish ? `${idx + 1}.` : `${toBanglaDigits(idx + 1)}.`}
                       </span>
                       <div className="min-w-0">
                         <QuestionContentRenderer item={q} compact={true} />
@@ -1845,7 +2152,7 @@ export const QuestionPaperGenerator: React.FC = () => {
                       >
                         <div className="flex items-start gap-2 min-w-0">
                           <span className="w-5 text-center font-bold text-slate-500 font-mono shrink-0 pt-0.5">
-                            {toBanglaDigits(groupAQuestions.length + idx + 1)}.
+                            {isEnglish ? `${groupAQuestions.length + idx + 1}.` : `${toBanglaDigits(groupAQuestions.length + idx + 1)}.`}
                           </span>
                           <div className="min-w-0">
                             <QuestionContentRenderer item={q} compact={true} />
@@ -1920,7 +2227,7 @@ export const QuestionPaperGenerator: React.FC = () => {
                       >
                         <div className="flex items-start gap-2 min-w-0">
                           <span className="w-5 text-center font-bold text-slate-500 font-mono shrink-0 pt-0.5">
-                            {toBanglaDigits(groupAQuestions.length + groupBQuestions.length + idx + 1)}.
+                            {isEnglish ? `${groupAQuestions.length + groupBQuestions.length + idx + 1}.` : `${toBanglaDigits(groupAQuestions.length + groupBQuestions.length + idx + 1)}.`}
                           </span>
                           <div className="min-w-0">
                             <QuestionContentRenderer item={q} compact={true} />
@@ -1971,6 +2278,7 @@ export const QuestionPaperGenerator: React.FC = () => {
         onUpdateQuestion={(idx, item) => handleUpdateQuestion('A', idx, item)}
         onRemoveQuestion={(idx) => handleRemoveQuestion('A', idx)}
         startIndex={1}
+        isEnglishNumbering={isEnglish}
       />
 
       <QuestionSectionBottomSheet
@@ -1986,6 +2294,7 @@ export const QuestionPaperGenerator: React.FC = () => {
         onUpdateQuestion={(idx, item) => handleUpdateQuestion('B', idx, item)}
         onRemoveQuestion={(idx) => handleRemoveQuestion('B', idx)}
         startIndex={groupAQuestions.length + 1}
+        isEnglishNumbering={isEnglish}
       />
 
       <QuestionSectionBottomSheet
@@ -2001,6 +2310,7 @@ export const QuestionPaperGenerator: React.FC = () => {
         onUpdateQuestion={(idx, item) => handleUpdateQuestion('C', idx, item)}
         onRemoveQuestion={(idx) => handleRemoveQuestion('C', idx)}
         startIndex={groupAQuestions.length + groupBQuestions.length + 1}
+        isEnglishNumbering={isEnglish}
       />
 
       {/* Multi-Select Bottom Sheet for Department / Technology (Max 3) */}
@@ -2016,6 +2326,7 @@ export const QuestionPaperGenerator: React.FC = () => {
         }}
       />
 
+      {/* Semester Bottom Sheet with Auto-Title Generation */}
       <SelectBottomSheet
         isOpen={semesterSheetOpen}
         onClose={() => setSemesterSheetOpen(false)}
@@ -2027,7 +2338,22 @@ export const QuestionPaperGenerator: React.FC = () => {
           setSelectedSemester(val);
           setSubjectCode('');
           setSubjectName('');
+          if (examType !== 'CUSTOM') {
+            const autoTitle = generateSmartExamTitle(examType, val);
+            if (autoTitle) setExamName(autoTitle);
+          }
         }}
+      />
+
+      {/* Exam Type Bottom Sheet (Smart Auto-Selection) */}
+      <SelectBottomSheet
+        isOpen={examTypeSheetOpen}
+        onClose={() => setExamTypeSheetOpen(false)}
+        title="পরীক্ষার ধরন নির্বাচন করুন"
+        subtitle="পর্ব ও ধরন অনুযায়ী স্বয়ংক্রিয়ভাবে পরীক্ষার শিরোনাম বসবে"
+        options={examTypeOptions}
+        selectedValue={examType}
+        onSelect={(val) => handleSelectExamType(val as ExamTypePreset)}
       />
 
       <SelectBottomSheet
@@ -2055,116 +2381,333 @@ export const QuestionPaperGenerator: React.FC = () => {
         <A4DocumentEngine
           hideDefaultHeader={true}
           showSignatures={false}
+          defaultTemplate={template}
+          onTemplateChange={(tpl) => setTemplate(tpl)}
           fileName={`question-paper-${selectedTechs.join('-')}-${selectedSemester}-${subjectCode}`}
         >
-          {/* Exact Official Question Paper Layout */}
-          <div className="font-bengali text-black px-4 py-2 select-text leading-normal">
-            {/* Header */}
-            <div className="text-center border-b-2 border-black pb-2 mb-4">
-              <h1 className="text-2xl font-black text-black tracking-tight mb-0.5">
-                দক্ষিণবঙ্গ পলিটেকনিক ইনস্টিটিউট, ভোলা
-              </h1>
-              {examName && (
-                <h2 className="text-base font-bold text-black my-0.5">
-                  {examName} {examYear ? `- ${toBanglaDigits(examYear)}` : ''}
-                </h2>
-              )}
-              <h3 className="text-sm font-semibold text-slate-800">
-                টেকনোলজি: {getFormattedTechDisplay()} | পর্ব: {semesterBangla}
-              </h3>
-              <p className="text-sm font-bold mt-1 text-black">
-                বিষয়: {subjectName} (বিষয় কোড: {toBanglaDigits(subjectCode)})
-              </p>
-              <div className="flex justify-between items-center mt-2 font-bold text-xs text-black px-4">
-                <span>সময়: {toBanglaDigits(examTime)}</span>
-                <span>পূর্ণমান: {toBanglaDigits(totalMarks)}</span>
-              </div>
-            </div>
+          {/* Dynamic Template-Driven Examination Question Paper Rendering */}
+          {(() => {
+            const formattedSubjectCode = isEnglish ? subjectCode : toBanglaDigits(subjectCode);
+            const formattedExamTime = isEnglish ? examTime : toBanglaDigits(examTime);
+            const formattedTotalMarks = isEnglish ? totalMarks : toBanglaDigits(totalMarks);
+            const formattedExamYear = isEnglish ? examYear : toBanglaDigits(examYear);
 
-            <div className="text-center text-xs italic text-slate-700 mb-4">
-              {questionPaperFormat === 'SHORT_ONLY'
-                ? '[ দ্রষ্টব্য: ডান পাশের সংখ্যা প্রশ্নের পূর্ণমান জ্ঞাপক। সকল অতি সংক্ষিপ্ত প্রশ্নের উত্তর দাও। ]'
-                : '[ দ্রষ্টব্য: ডান পাশের সংখ্যা প্রশ্নের পূর্ণমান জ্ঞাপক। সকল বিভাগের প্রশ্নের উত্তর দাও। ]'}
-            </div>
+            const noticeText = questionPaperFormat === 'SHORT_ONLY'
+              ? (isEnglish
+                  ? '[ Note: Figures in the right indicate full marks. Answer all short questions. ]'
+                  : '[ দ্রষ্টব্য: ডান পাশের সংখ্যা প্রশ্নের পূর্ণমান জ্ঞাপক। সকল অতি সংক্ষিপ্ত প্রশ্নের উত্তর দাও। ]')
+              : (isEnglish
+                  ? '[ Note: Figures in the right indicate full marks. Answer questions from all sections. ]'
+                  : '[ দ্রষ্টব্য: ডান পাশের সংখ্যা প্রশ্নের পূর্ণমান জ্ঞাপক। সকল বিভাগের প্রশ্নের উত্তর দাও। ]');
 
-            {/* Section A (ক-বিভাগ অথবা শুধুমাত্র অতি সংক্ষিপ্ত প্রশ্ন) */}
-            <div className="mb-5">
-              <div className="text-center mb-2">
-                <h4 className="font-extrabold text-sm text-black">
-                  {questionPaperFormat === 'SHORT_ONLY'
-                    ? 'অতি সংক্ষিপ্ত প্রশ্নাবলি'
-                    : 'ক-বিভাগ (অতি সংক্ষিপ্ত প্রশ্ন)'}
-                </h4>
-                {groupAInstruction && (
-                  <p className="text-xs font-bold text-black mt-0.5">{groupAInstruction}</p>
+            const renderQuestionList = (
+              items: QuestionItem[],
+              startNumber: number,
+              emptyText: string
+            ) => {
+              if (items.length === 0) {
+                return (
+                  <p className="text-xs italic text-slate-400 py-2 text-center">
+                    {emptyText}
+                  </p>
+                );
+              }
+
+              return (
+                <div className={template === 'compact' ? 'space-y-1.5' : 'space-y-2.5'}>
+                  {items.map((q, idx) => {
+                    const qNum = isEnglish ? `${startNumber + idx}.` : `${toBanglaDigits(startNumber + idx)}.`;
+                    return (
+                      <div key={q.id || idx} className="question-item flex items-start gap-2.5 leading-relaxed text-xs text-black">
+                        <span
+                          className={`font-black shrink-0 ${
+                            template === 'modern'
+                              ? 'min-w-[24px] text-teal-900 font-sans'
+                              : template === 'compact'
+                              ? 'min-w-[20px] font-sans'
+                              : 'min-w-[22px] font-serif'
+                          } text-right`}
+                        >
+                          {qNum}
+                        </span>
+                        <div className="question-content flex-1 min-w-0">
+                          <QuestionContentRenderer item={q} compact={template === 'compact'} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            };
+
+            // =========================================================================
+            // TEMPLATE 1: MODERN CLEAN DESIGN
+            // =========================================================================
+            if (template === 'modern') {
+              return (
+                <div className="font-bengali text-black px-4 py-2 select-text leading-normal">
+                  {/* Modern Header */}
+                  <div className="flex items-center justify-between border-b-2 border-teal-700 pb-3 mb-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-2xl bg-teal-800 text-white flex items-center justify-center font-black text-lg shadow-xs">
+                        ডি
+                      </div>
+                      <div>
+                        <h1 className="text-xl font-black text-slate-900 tracking-tight">
+                          দক্ষিণবঙ্গ পলিটেকনিক ইনস্টিটিউট, ভোলা
+                        </h1>
+                        <p className="text-[11px] font-bold text-teal-800 tracking-wide uppercase">
+                          পরীক্ষা ও মূল্যায়ন শাখা • অফিশিয়াল প্রশ্নপত্র
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <span className="inline-block px-3 py-1 bg-teal-50 text-teal-800 border border-teal-200 rounded-xl text-xs font-black">
+                        {examYear ? `${formattedExamYear} শিক্ষাবর্ষ` : '২০২৬'}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="text-center mb-3">
+                    {examName && (
+                      <h2 className="text-base font-black text-slate-900 tracking-tight">
+                        {examName}
+                      </h2>
+                    )}
+                  </div>
+
+                  {/* Modern Meta Pill Cards */}
+                  <div className="bg-slate-50 border border-slate-200/90 rounded-2xl p-2.5 mb-3.5 space-y-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="px-2.5 py-0.5 bg-white border border-slate-200 rounded-lg font-bold text-slate-800">
+                          টেকনোলজি: {getFormattedTechDisplay()}
+                        </span>
+                        <span className="px-2.5 py-0.5 bg-teal-100 text-teal-900 rounded-lg font-black">
+                          পর্ব: {semesterBangla}
+                        </span>
+                        <span className="px-2.5 py-0.5 bg-violet-100 text-violet-900 rounded-lg font-black font-mono">
+                          কোড: {formattedSubjectCode}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-3 font-bold text-xs">
+                        <span className="flex items-center gap-1 text-slate-700">
+                          <Clock className="w-3.5 h-3.5 text-teal-700" />
+                          {formattedExamTime}
+                        </span>
+                        <span className="flex items-center gap-1 text-slate-700">
+                          <Award className="w-3.5 h-3.5 text-violet-700" />
+                          পূর্ণমান: {formattedTotalMarks}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="pt-1.5 border-t border-slate-200/80 text-xs font-bold text-slate-900">
+                      বিষয়: {subjectName}
+                    </div>
+                  </div>
+
+                  <div className="text-center text-xs text-slate-700 bg-teal-50/60 border border-teal-100 rounded-xl py-1 px-3 mb-3.5 font-medium">
+                    {noticeText}
+                  </div>
+
+                  {/* Section A */}
+                  <div className="mb-5">
+                    <div className="flex items-center justify-between pb-1.5 mb-2.5 border-b border-teal-600/60">
+                      <div className="flex items-center gap-2">
+                        <span className="px-2.5 py-0.5 rounded-lg bg-teal-800 text-white text-xs font-black">
+                          {questionPaperFormat === 'SHORT_ONLY' ? 'একক বিভাগ' : 'ক-বিভাগ'}
+                        </span>
+                        <span className="text-sm font-extrabold text-slate-900">
+                          {questionPaperFormat === 'SHORT_ONLY' ? 'অতি সংক্ষিপ্ত প্রশ্নাবলি' : 'অতি সংক্ষিপ্ত প্রশ্নমালা'}
+                        </span>
+                      </div>
+                      {groupAInstruction && (
+                        <span className="text-xs font-bold text-slate-700">{groupAInstruction}</span>
+                      )}
+                    </div>
+                    {renderQuestionList(groupAQuestions, 1, '(উপরে অতি সংক্ষিপ্ত প্রশ্ন এন্ট্রি করুন)')}
+                  </div>
+
+                  {/* Sections B & C (if FULL format) */}
+                  {questionPaperFormat === 'FULL' && (
+                    <>
+                      <div className="mb-5">
+                        <div className="flex items-center justify-between pb-1.5 mb-2.5 border-b border-indigo-600/60">
+                          <div className="flex items-center gap-2">
+                            <span className="px-2.5 py-0.5 rounded-lg bg-indigo-800 text-white text-xs font-black">
+                              খ-বিভাগ
+                            </span>
+                            <span className="text-sm font-extrabold text-slate-900">
+                              সংক্ষিপ্ত প্রশ্নমালা
+                            </span>
+                          </div>
+                          {groupBInstruction && (
+                            <span className="text-xs font-bold text-slate-700">{groupBInstruction}</span>
+                          )}
+                        </div>
+                        {renderQuestionList(groupBQuestions, groupAQuestions.length + 1, '(উপরে খ-বিভাগে প্রশ্ন এন্ট্রি করুন)')}
+                      </div>
+
+                      <div className="mb-6">
+                        <div className="flex items-center justify-between pb-1.5 mb-2.5 border-b border-slate-700">
+                          <div className="flex items-center gap-2">
+                            <span className="px-2.5 py-0.5 rounded-lg bg-slate-900 text-white text-xs font-black">
+                              গ-বিভাগ
+                            </span>
+                            <span className="text-sm font-extrabold text-slate-900">
+                              রচনামূলক প্রশ্নমালা
+                            </span>
+                          </div>
+                          {groupCInstruction && (
+                            <span className="text-xs font-bold text-slate-700">{groupCInstruction}</span>
+                          )}
+                        </div>
+                        {renderQuestionList(groupCQuestions, groupAQuestions.length + groupBQuestions.length + 1, '(উপরে গ-বিভাগে প্রশ্ন এন্ট্রি করুন)')}
+                      </div>
+                    </>
+                  )}
+                </div>
+              );
+            }
+
+            // =========================================================================
+            // TEMPLATE 2: COMPACT HIGH-DENSITY SHEET
+            // =========================================================================
+            if (template === 'compact') {
+              return (
+                <div className="font-bengali text-black px-2 py-1 select-text leading-normal">
+                  {/* Ultra Condensed Header */}
+                  <div className="border-b-2 border-black pb-1 mb-2 text-center">
+                    <div className="flex items-center justify-between text-xs font-black">
+                      <span className="text-sm font-black">দক্ষিণবঙ্গ পলিটেকনিক ইনস্টিটিউট, ভোলা</span>
+                      <span className="font-bold">{examName} {examYear ? `(${formattedExamYear})` : ''}</span>
+                    </div>
+                    <div className="flex flex-wrap items-center justify-between gap-1 text-[11px] font-bold text-slate-900 mt-1 pt-1 border-t border-slate-400">
+                      <span>টেক: {getFormattedTechDisplay()} | পর্ব: {semesterBangla}</span>
+                      <span>বিষয়: {subjectName} (কোড: {formattedSubjectCode})</span>
+                      <span>সময়: {formattedExamTime} | পূর্ণমান: {formattedTotalMarks}</span>
+                    </div>
+                  </div>
+
+                  <div className="text-[10px] italic text-center text-slate-600 mb-1.5">
+                    {noticeText}
+                  </div>
+
+                  {/* Compact Section A */}
+                  <div className="mb-3">
+                    <div className="bg-slate-100 px-2 py-0.5 rounded text-xs font-black text-black mb-1.5 flex items-center justify-between">
+                      <span>{questionPaperFormat === 'SHORT_ONLY' ? 'অতি সংক্ষিপ্ত প্রশ্নাবলি' : 'ক-বিভাগ (অতি সংক্ষিপ্ত)'}</span>
+                      {groupAInstruction && <span className="font-normal text-[11px]">{groupAInstruction}</span>}
+                    </div>
+                    {renderQuestionList(groupAQuestions, 1, '(উপরে অতি সংক্ষিপ্ত প্রশ্ন এন্ট্রি করুন)')}
+                  </div>
+
+                  {/* Compact Sections B & C (if FULL format) */}
+                  {questionPaperFormat === 'FULL' && (
+                    <>
+                      <div className="mb-3">
+                        <div className="bg-slate-100 px-2 py-0.5 rounded text-xs font-black text-black mb-1.5 flex items-center justify-between">
+                          <span>খ-বিভাগ (সংক্ষিপ্ত)</span>
+                          {groupBInstruction && <span className="font-normal text-[11px]">{groupBInstruction}</span>}
+                        </div>
+                        {renderQuestionList(groupBQuestions, groupAQuestions.length + 1, '(উপরে খ-বিভাগে প্রশ্ন এন্ট্রি করুন)')}
+                      </div>
+
+                      <div className="mb-3">
+                        <div className="bg-slate-100 px-2 py-0.5 rounded text-xs font-black text-black mb-1.5 flex items-center justify-between">
+                          <span>গ-বিভাগ (রচনামূলক)</span>
+                          {groupCInstruction && <span className="font-normal text-[11px]">{groupCInstruction}</span>}
+                        </div>
+                        {renderQuestionList(groupCQuestions, groupAQuestions.length + groupBQuestions.length + 1, '(উপরে গ-বিভাগে প্রশ্ন এন্ট্রি করুন)')}
+                      </div>
+                    </>
+                  )}
+                </div>
+              );
+            }
+
+            // =========================================================================
+            // TEMPLATE 3: OFFICIAL BTEB TRADITIONAL STANDARD (DEFAULT)
+            // =========================================================================
+            return (
+              <div className="font-bengali text-black px-4 py-2 select-text leading-normal">
+                {/* Official Classic BTEB Header */}
+                <div className="text-center mb-2">
+                  <h1 className="text-2xl font-black text-black tracking-tight mb-0.5">
+                    দক্ষিণবঙ্গ পলিটেকনিক ইনস্টিটিউট, ভোলা
+                  </h1>
+                  <p className="text-[11px] font-bold text-slate-700 tracking-wider">
+                    বাংলাদেশ কারিগরি শিক্ষা বোর্ড অনুমোদিত • কোড: ২০২৬১
+                  </p>
+                  {examName && (
+                    <h2 className="text-base font-extrabold text-black mt-1 mb-0.5">
+                      {examName} {examYear ? `- ${formattedExamYear}` : ''}
+                    </h2>
+                  )}
+                </div>
+
+                {/* Double black rule */}
+                <div className="border-t-2 border-b border-black py-0.5 my-2"></div>
+
+                {/* Official Framed Exam Meta Table */}
+                <div className="border border-black p-2.5 my-3 text-xs">
+                  <div className="flex justify-between items-center font-bold">
+                    <span>টেকনোলজি: {getFormattedTechDisplay()}</span>
+                    <span>পর্ব: {semesterBangla}</span>
+                  </div>
+                  <div className="text-center font-extrabold text-sm my-1 border-t border-b border-black/40 py-1">
+                    বিষয়: {subjectName} (বিষয় কোড: {formattedSubjectCode})
+                  </div>
+                  <div className="flex justify-between items-center font-bold">
+                    <span>সময়: {formattedExamTime}</span>
+                    <span>পূর্ণমান: {formattedTotalMarks}</span>
+                  </div>
+                </div>
+
+                <div className="text-center text-xs italic font-serif text-slate-800 my-3">
+                  {noticeText}
+                </div>
+
+                {/* Section A */}
+                <div className="mb-5">
+                  <div className="text-center mb-2.5 pb-1 border-b border-black">
+                    <h4 className="font-black text-sm text-black">
+                      {questionPaperFormat === 'SHORT_ONLY' ? 'অতি সংক্ষিপ্ত প্রশ্নাবলি' : 'ক-বিভাগ (অতি সংক্ষিপ্ত প্রশ্ন)'}
+                    </h4>
+                    {groupAInstruction && (
+                      <p className="text-xs font-bold text-black mt-0.5">{groupAInstruction}</p>
+                    )}
+                  </div>
+                  {renderQuestionList(groupAQuestions, 1, '(উপরে অতি সংক্ষিপ্ত প্রশ্ন এন্ট্রি করুন)')}
+                </div>
+
+                {/* Sections B & C (if FULL format) */}
+                {questionPaperFormat === 'FULL' && (
+                  <>
+                    <div className="mb-5">
+                      <div className="text-center mb-2.5 pb-1 border-b border-black">
+                        <h4 className="font-black text-sm text-black">খ-বিভাগ (সংক্ষিপ্ত প্রশ্ন)</h4>
+                        {groupBInstruction && (
+                          <p className="text-xs font-bold text-black mt-0.5">{groupBInstruction}</p>
+                        )}
+                      </div>
+                      {renderQuestionList(groupBQuestions, groupAQuestions.length + 1, '(উপরে খ-বিভাগে প্রশ্ন এন্ট্রি করুন)')}
+                    </div>
+
+                    <div className="mb-6">
+                      <div className="text-center mb-2.5 pb-1 border-b border-black">
+                        <h4 className="font-black text-sm text-black">গ-বিভাগ (রচনামূলক প্রশ্ন)</h4>
+                        {groupCInstruction && (
+                          <p className="text-xs font-bold text-black mt-0.5">{groupCInstruction}</p>
+                        )}
+                      </div>
+                      {renderQuestionList(groupCQuestions, groupAQuestions.length + groupBQuestions.length + 1, '(উপরে গ-বিভাগে প্রশ্ন এন্ট্রি করুন)')}
+                    </div>
+                  </>
                 )}
               </div>
-              {groupAQuestions.length === 0 ? (
-                <p className="text-xs italic text-slate-400 py-2 text-center">
-                  (উপরে অতি সংক্ষিপ্ত প্রশ্ন এন্ট্রি করুন)
-                </p>
-              ) : (
-                <ol className="list-decimal pl-6 space-y-2 text-xs text-black">
-                  {groupAQuestions.map((q) => (
-                    <li key={q.id} className="leading-relaxed">
-                      <QuestionContentRenderer item={q} />
-                    </li>
-                  ))}
-                </ol>
-              )}
-            </div>
-
-            {/* Sections B & C are rendered only if not SHORT_ONLY */}
-            {questionPaperFormat === 'FULL' && (
-              <>
-                {/* Section B */}
-                <div className="mb-5">
-                  <div className="text-center mb-2">
-                    <h4 className="font-extrabold text-sm text-black">খ-বিভাগ (সংক্ষিপ্ত প্রশ্ন)</h4>
-                    {groupBInstruction && (
-                      <p className="text-xs font-bold text-black mt-0.5">{groupBInstruction}</p>
-                    )}
-                  </div>
-                  {groupBQuestions.length === 0 ? (
-                    <p className="text-xs italic text-slate-400 py-2 text-center">
-                      (উপরে খ-বিভাগে প্রশ্ন এন্ট্রি করুন)
-                    </p>
-                  ) : (
-                    <ol className="list-decimal pl-6 space-y-2.5 text-xs text-black" start={groupAQuestions.length + 1}>
-                      {groupBQuestions.map((q) => (
-                        <li key={q.id} className="leading-relaxed">
-                          <QuestionContentRenderer item={q} />
-                        </li>
-                      ))}
-                    </ol>
-                  )}
-                </div>
-
-                {/* Section C */}
-                <div className="mb-6">
-                  <div className="text-center mb-2">
-                    <h4 className="font-extrabold text-sm text-black">গ-বিভাগ (রচনামূলক প্রশ্ন)</h4>
-                    {groupCInstruction && (
-                      <p className="text-xs font-bold text-black mt-0.5">{groupCInstruction}</p>
-                    )}
-                  </div>
-                  {groupCQuestions.length === 0 ? (
-                    <p className="text-xs italic text-slate-400 py-2 text-center">
-                      (উপরে গ-বিভাগে প্রশ্ন এন্ট্রি করুন)
-                    </p>
-                  ) : (
-                    <ol className="list-decimal pl-6 space-y-3 text-xs text-black" start={groupAQuestions.length + groupBQuestions.length + 1}>
-                      {groupCQuestions.map((q) => (
-                        <li key={q.id} className="leading-relaxed">
-                          <QuestionContentRenderer item={q} />
-                        </li>
-                      ))}
-                    </ol>
-                  )}
-                </div>
-              </>
-            )}
-          </div>
+            );
+          })()}
         </A4DocumentEngine>
       )}
     </div>
