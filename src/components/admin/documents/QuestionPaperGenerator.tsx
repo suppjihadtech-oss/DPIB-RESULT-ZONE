@@ -2445,127 +2445,150 @@ export const QuestionPaperGenerator: React.FC = () => {
             // =========================================================================
             if (template === 'modern') {
               return (
-                <div className="font-bengali text-black px-4 py-2 select-text leading-normal">
-                  {/* Modern Header */}
-                  <div className="flex items-center justify-between border-b-2 border-teal-700 pb-3 mb-3">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-2xl bg-teal-800 text-white flex items-center justify-center font-black text-lg shadow-xs">
-                        ডি
-                      </div>
-                      <div>
-                        <h1 className="text-xl font-black text-slate-900 tracking-tight">
-                          দক্ষিণবঙ্গ পলিটেকনিক ইনস্টিটিউট, ভোলা
-                        </h1>
-                        <p className="text-[11px] font-bold text-teal-800 tracking-wide uppercase">
-                          পরীক্ষা ও মূল্যায়ন শাখা • অফিশিয়াল প্রশ্নপত্র
-                        </p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <span className="inline-block px-3 py-1 bg-teal-50 text-teal-800 border border-teal-200 rounded-xl text-xs font-black">
-                        {examYear ? `${formattedExamYear} শিক্ষাবর্ষ` : '২০২৬'}
-                      </span>
-                    </div>
+                <div className="relative font-bengali text-black px-4 py-2 select-text leading-normal">
+                  {/* Subtle DPIB Original Watermark for Modern Clean Template */}
+                  <div
+                    aria-hidden="true"
+                    className="pointer-events-none select-none absolute inset-0 flex items-center justify-center overflow-hidden z-0"
+                    style={{ printColorAdjust: 'exact', WebkitPrintColorAdjust: 'exact' }}
+                  >
+                    <img
+                      src="https://i.postimg.cc/mgyW32Y2/Firefly-Remove-Background.png"
+                      alt=""
+                      className="w-[260px] max-w-[55%] opacity-[0.055] object-contain filter grayscale contrast-125"
+                      style={{
+                        transform: 'translateY(10px)',
+                        printColorAdjust: 'exact',
+                        WebkitPrintColorAdjust: 'exact',
+                      }}
+                    />
                   </div>
 
-                  <div className="text-center mb-3">
-                    {examName && (
-                      <h2 className="text-base font-black text-slate-900 tracking-tight">
-                        {examName}
-                      </h2>
-                    )}
-                  </div>
-
-                  {/* Modern Meta Pill Cards */}
-                  <div className="bg-slate-50 border border-slate-200/90 rounded-2xl p-2.5 mb-3.5 space-y-2">
-                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="px-2.5 py-0.5 bg-white border border-slate-200 rounded-lg font-bold text-slate-800">
-                          টেকনোলজি: {getFormattedTechDisplay()}
-                        </span>
-                        <span className="px-2.5 py-0.5 bg-teal-100 text-teal-900 rounded-lg font-black">
-                          পর্ব: {semesterBangla}
-                        </span>
-                        <span className="px-2.5 py-0.5 bg-violet-100 text-violet-900 rounded-lg font-black font-mono">
-                          কোড: {formattedSubjectCode}
-                        </span>
+                  <div className="relative z-1">
+                    {/* Modern Header */}
+                    <div className="flex items-center justify-between border-b-2 border-teal-700 pb-3 mb-3">
+                      <div className="flex items-center gap-3">
+                        <img
+                          src="https://i.postimg.cc/mgyW32Y2/Firefly-Remove-Background.png"
+                          alt="DPIB Logo"
+                          className="w-11 h-11 object-contain shrink-0"
+                          referrerPolicy="no-referrer"
+                        />
+                        <div>
+                          <h1 className="text-xl font-black text-slate-900 tracking-tight">
+                            দক্ষিণবঙ্গ পলিটেকনিক ইনস্টিটিউট, ভোলা
+                          </h1>
+                          <p className="text-[11px] font-bold text-teal-800 tracking-wide uppercase">
+                            পরীক্ষা ও মূল্যায়ন শাখা • অফিশিয়াল প্রশ্নপত্র
+                          </p>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-3 font-bold text-xs">
-                        <span className="flex items-center gap-1 text-slate-700">
-                          <Clock className="w-3.5 h-3.5 text-teal-700" />
-                          {formattedExamTime}
-                        </span>
-                        <span className="flex items-center gap-1 text-slate-700">
-                          <Award className="w-3.5 h-3.5 text-violet-700" />
-                          পূর্ণমান: {formattedTotalMarks}
+                      <div className="text-right">
+                        <span className="inline-block px-3 py-1 bg-teal-50 text-teal-800 border border-teal-200 rounded-xl text-xs font-black">
+                          {examYear ? `${formattedExamYear} শিক্ষাবর্ষ` : '২০২৬'}
                         </span>
                       </div>
                     </div>
-                    <div className="pt-1.5 border-t border-slate-200/80 text-xs font-bold text-slate-900">
-                      বিষয়: {subjectName}
-                    </div>
-                  </div>
 
-                  <div className="text-center text-xs text-slate-700 bg-teal-50/60 border border-teal-100 rounded-xl py-1 px-3 mb-3.5 font-medium">
-                    {noticeText}
-                  </div>
-
-                  {/* Section A */}
-                  <div className="mb-5">
-                    <div className="flex items-center justify-between pb-1.5 mb-2.5 border-b border-teal-600/60">
-                      <div className="flex items-center gap-2">
-                        <span className="px-2.5 py-0.5 rounded-lg bg-teal-800 text-white text-xs font-black">
-                          {questionPaperFormat === 'SHORT_ONLY' ? 'একক বিভাগ' : 'ক-বিভাগ'}
-                        </span>
-                        <span className="text-sm font-extrabold text-slate-900">
-                          {questionPaperFormat === 'SHORT_ONLY' ? 'অতি সংক্ষিপ্ত প্রশ্নাবলি' : 'অতি সংক্ষিপ্ত প্রশ্নমালা'}
-                        </span>
-                      </div>
-                      {groupAInstruction && (
-                        <span className="text-xs font-bold text-slate-700">{groupAInstruction}</span>
+                    <div className="text-center mb-3">
+                      {examName && (
+                        <h2 className="text-base font-black text-slate-900 tracking-tight">
+                          {examName}
+                        </h2>
                       )}
                     </div>
-                    {renderQuestionList(groupAQuestions, 1, '(উপরে অতি সংক্ষিপ্ত প্রশ্ন এন্ট্রি করুন)')}
+
+                    {/* Modern Meta Pill Cards */}
+                    <div className="bg-slate-50 border border-slate-200/90 rounded-2xl p-2.5 mb-3.5 space-y-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="px-2.5 py-0.5 bg-white border border-slate-200 rounded-lg font-bold text-slate-800">
+                            টেকনোলজি: {getFormattedTechDisplay()}
+                          </span>
+                          <span className="px-2.5 py-0.5 bg-teal-100 text-teal-900 rounded-lg font-black">
+                            পর্ব: {semesterBangla}
+                          </span>
+                          <span className="px-2.5 py-0.5 bg-violet-100 text-violet-900 rounded-lg font-black font-mono">
+                            কোড: {formattedSubjectCode}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-3 font-bold text-xs">
+                          <span className="flex items-center gap-1 text-slate-700">
+                            <Clock className="w-3.5 h-3.5 text-teal-700" />
+                            {formattedExamTime}
+                          </span>
+                          <span className="flex items-center gap-1 text-slate-700">
+                            <Award className="w-3.5 h-3.5 text-violet-700" />
+                            পূর্ণমান: {formattedTotalMarks}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="pt-1.5 border-t border-slate-200/80 text-xs font-bold text-slate-900">
+                        বিষয়: {subjectName}
+                      </div>
+                    </div>
+
+                    <div className="text-center text-xs text-slate-700 bg-teal-50/60 border border-teal-100 rounded-xl py-1 px-3 mb-3.5 font-medium">
+                      {noticeText}
+                    </div>
+
+                    {/* Section A */}
+                    <div className="mb-5">
+                      <div className="flex items-center justify-between pb-1.5 mb-2.5 border-b border-teal-600/60">
+                        <div className="flex items-center gap-2">
+                          <span className="px-2.5 py-0.5 rounded-lg bg-teal-800 text-white text-xs font-black">
+                            {questionPaperFormat === 'SHORT_ONLY' ? 'একক বিভাগ' : 'ক-বিভাগ'}
+                          </span>
+                          <span className="text-sm font-extrabold text-slate-900">
+                            {questionPaperFormat === 'SHORT_ONLY' ? 'অতি সংক্ষিপ্ত প্রশ্নাবলি' : 'অতি সংক্ষিপ্ত প্রশ্নমালা'}
+                          </span>
+                        </div>
+                        {groupAInstruction && (
+                          <span className="text-xs font-bold text-slate-700">{groupAInstruction}</span>
+                        )}
+                      </div>
+                      {renderQuestionList(groupAQuestions, 1, '(উপরে অতি সংক্ষিপ্ত প্রশ্ন এন্ট্রি করুন)')}
+                    </div>
+
+                    {/* Sections B & C (if FULL format) */}
+                    {questionPaperFormat === 'FULL' && (
+                      <>
+                        <div className="mb-5">
+                          <div className="flex items-center justify-between pb-1.5 mb-2.5 border-b border-indigo-600/60">
+                            <div className="flex items-center gap-2">
+                              <span className="px-2.5 py-0.5 rounded-lg bg-indigo-800 text-white text-xs font-black">
+                                খ-বিভাগ
+                              </span>
+                              <span className="text-sm font-extrabold text-slate-900">
+                                সংক্ষিপ্ত প্রশ্নমালা
+                              </span>
+                            </div>
+                            {groupBInstruction && (
+                              <span className="text-xs font-bold text-slate-700">{groupBInstruction}</span>
+                            )}
+                          </div>
+                          {renderQuestionList(groupBQuestions, groupAQuestions.length + 1, '(উপরে খ-বিভাগে প্রশ্ন এন্ট্রি করুন)')}
+                        </div>
+
+                        <div className="mb-6">
+                          <div className="flex items-center justify-between pb-1.5 mb-2.5 border-b border-slate-700">
+                            <div className="flex items-center gap-2">
+                              <span className="px-2.5 py-0.5 rounded-lg bg-slate-900 text-white text-xs font-black">
+                                গ-বিভাগ
+                              </span>
+                              <span className="text-sm font-extrabold text-slate-900">
+                                রচনামূলক প্রশ্নমালা
+                              </span>
+                            </div>
+                            {groupCInstruction && (
+                              <span className="text-xs font-bold text-slate-700">{groupCInstruction}</span>
+                            )}
+                          </div>
+                          {renderQuestionList(groupCQuestions, groupAQuestions.length + groupBQuestions.length + 1, '(উপরে গ-বিভাগে প্রশ্ন এন্ট্রি করুন)')}
+                        </div>
+                      </>
+                    )}
                   </div>
-
-                  {/* Sections B & C (if FULL format) */}
-                  {questionPaperFormat === 'FULL' && (
-                    <>
-                      <div className="mb-5">
-                        <div className="flex items-center justify-between pb-1.5 mb-2.5 border-b border-indigo-600/60">
-                          <div className="flex items-center gap-2">
-                            <span className="px-2.5 py-0.5 rounded-lg bg-indigo-800 text-white text-xs font-black">
-                              খ-বিভাগ
-                            </span>
-                            <span className="text-sm font-extrabold text-slate-900">
-                              সংক্ষিপ্ত প্রশ্নমালা
-                            </span>
-                          </div>
-                          {groupBInstruction && (
-                            <span className="text-xs font-bold text-slate-700">{groupBInstruction}</span>
-                          )}
-                        </div>
-                        {renderQuestionList(groupBQuestions, groupAQuestions.length + 1, '(উপরে খ-বিভাগে প্রশ্ন এন্ট্রি করুন)')}
-                      </div>
-
-                      <div className="mb-6">
-                        <div className="flex items-center justify-between pb-1.5 mb-2.5 border-b border-slate-700">
-                          <div className="flex items-center gap-2">
-                            <span className="px-2.5 py-0.5 rounded-lg bg-slate-900 text-white text-xs font-black">
-                              গ-বিভাগ
-                            </span>
-                            <span className="text-sm font-extrabold text-slate-900">
-                              রচনামূলক প্রশ্নমালা
-                            </span>
-                          </div>
-                          {groupCInstruction && (
-                            <span className="text-xs font-bold text-slate-700">{groupCInstruction}</span>
-                          )}
-                        </div>
-                        {renderQuestionList(groupCQuestions, groupAQuestions.length + groupBQuestions.length + 1, '(উপরে গ-বিভাগে প্রশ্ন এন্ট্রি করুন)')}
-                      </div>
-                    </>
-                  )}
                 </div>
               );
             }
