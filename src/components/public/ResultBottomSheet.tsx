@@ -40,6 +40,8 @@ interface ResultBottomSheetProps {
   result: StudentResult | null;
   onVerifyResult?: (code: string) => void;
   onOpenDigitalCard?: (result: StudentResult) => void;
+  onBackToMultiResults?: () => void;
+  hasMultipleResults?: boolean;
 }
 
 export const ResultBottomSheet: React.FC<ResultBottomSheetProps> = ({
@@ -48,6 +50,8 @@ export const ResultBottomSheet: React.FC<ResultBottomSheetProps> = ({
   result,
   onVerifyResult,
   onOpenDigitalCard,
+  onBackToMultiResults,
+  hasMultipleResults = false,
 }) => {
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
   const [copiedCode, setCopiedCode] = useState(false);
@@ -145,7 +149,23 @@ export const ResultBottomSheet: React.FC<ResultBottomSheetProps> = ({
       onClose={onClose}
       maxHeight="max-h-[86vh]"
     >
-      <div className="space-y-4 pb-4">
+      <div className="space-y-4 pb-4 font-bengali">
+        {/* Multi-result navigation banner */}
+        {hasMultipleResults && onBackToMultiResults && (
+          <div className="flex items-center justify-between px-1 py-1">
+            <button
+              type="button"
+              onClick={onBackToMultiResults}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold transition-all border border-blue-200/90 shadow-2xs active:scale-95 cursor-pointer"
+            >
+              <span>← অন্য পরীক্ষা নির্বাচন করুন</span>
+            </button>
+            <span className="text-[11px] text-slate-500 font-medium">
+              একাধিক ফলাফল সংরক্ষিত
+            </span>
+          </div>
+        )}
+
         {/* The Printable Result Container */}
         <div
           id="printable-result-sheet"

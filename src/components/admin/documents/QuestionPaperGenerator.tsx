@@ -76,10 +76,24 @@ export const EXAM_TYPE_OPTIONS: ExamTypeOption[] = [
 
 /**
  * Checks if a subject is an English medium subject based on subject name and code.
+ * Strictly adheres to rule: ENGLISH, ENGLISH-I, ENGLISH-II (both English & Bangla representations)
+ * use English numbering (1, 2, 3...), while all others use Bangla digits (১, ২, ৩...).
  */
 export const isEnglishSubject = (name: string = '', code: string = ''): boolean => {
-  const norm = `${name} ${code}`.toLowerCase();
-  return /english|ইংরেজি|ইংলিশ|communicative english|technical english|25712|25722/i.test(norm);
+  const normName = name.trim().toLowerCase();
+  const normCode = code.trim().toLowerCase();
+  const combined = `${normName} ${normCode}`;
+
+  // Match English variations: english, english-1, english-i, english-2, english-ii, ইংরেজি, ইংলিশ, communicative english, etc.
+  return (
+    /\benglish\b/i.test(normName) ||
+    /english[-_ ]*(?:i|ii|1|2|১|২)?\b/i.test(normName) ||
+    /ইংরেজি[-_ ]*(?:১|২|1|2|i|ii)?/i.test(normName) ||
+    /ইংলিশ/i.test(normName) ||
+    /communicative english/i.test(combined) ||
+    /technical english/i.test(combined) ||
+    /\b(25712|25722)\b/.test(combined)
+  );
 };
 
 /**
@@ -1343,10 +1357,8 @@ export const QuestionPaperGenerator: React.FC = () => {
   const [lastSavedTime, setLastSavedTime] = useState<number | null>(null);
   const isInitialMount = useRef(true);
 
-  // Effective English Detection (auto or manual override)
-  const isEnglish =
-    numberingMode === 'ENGLISH' ||
-    (numberingMode === 'AUTO' && isEnglishSubject(subjectName, subjectCode));
+  // Purely Automatic English / Bangla Numbering Detection based on Subject
+  const isEnglish = isEnglishSubject(subjectName, subjectCode);
 
   // Check for existing draft on load
   useEffect(() => {
@@ -1805,54 +1817,31 @@ export const QuestionPaperGenerator: React.FC = () => {
             />
           </div>
 
-          {/* FEATURE 1: QUESTION NUMBERING CONTROL */}
+          {/* AUTOMATIC QUESTION NUMBERING STATUS (NO MANUAL SELECTION) */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <label className="block text-xs font-bold text-slate-700 flex items-center gap-1">
                 <Hash className="w-3.5 h-3.5 text-violet-700" />
-                <span>প্রশ্নের নম্বর মোড</span>
+                <span>প্রশ্ন নম্বর বিন্যাস</span>
               </label>
-              <span className="text-[10px] font-bold text-teal-800 bg-teal-50 px-1.5 py-0.2 rounded border border-teal-200 font-mono">
-                {isEnglish ? '1, 2, 3 (Eng)' : '১, ২, ৩ (বাংলা)'}
+              <span className="text-[10px] font-bold text-slate-500">
+                স্বয়ংক্রিয়
               </span>
             </div>
-            <div className="grid grid-cols-3 gap-1 bg-slate-100 p-1 rounded-2xl border border-slate-200/80">
-              <button
-                type="button"
-                onClick={() => setNumberingMode('AUTO')}
-                title="বিষয় অনুযায়ী স্বয়ংক্রিয় (ইংরেজি বিষয়ের জন্য 1, 2, 3 এবং বাংলায় ১, ২, ৩)"
-                className={`py-1.5 text-[11px] font-bold rounded-xl transition-all cursor-pointer text-center ${
-                  numberingMode === 'AUTO'
-                    ? 'bg-white text-violet-900 shadow-2xs border border-slate-200'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                স্বয়ংক্রিয়
-              </button>
-              <button
-                type="button"
-                onClick={() => setNumberingMode('BANGLA')}
-                title="বাধ্যতামূলক বাংলা অঙ্কে নম্বরিং (১, ২, ৩...)"
-                className={`py-1.5 text-[11px] font-bold rounded-xl transition-all cursor-pointer text-center ${
-                  numberingMode === 'BANGLA'
-                    ? 'bg-white text-violet-900 shadow-2xs border border-slate-200'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                বাংলা (১,২)
-              </button>
-              <button
-                type="button"
-                onClick={() => setNumberingMode('ENGLISH')}
-                title="বাধ্যতামূলক ইংরেজি অঙ্কে নম্বরিং (1, 2, 3...)"
-                className={`py-1.5 text-[11px] font-bold rounded-xl transition-all cursor-pointer text-center ${
-                  numberingMode === 'ENGLISH'
-                    ? 'bg-white text-violet-900 shadow-2xs border border-slate-200'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                English (1,2)
-              </button>
+            <div className={`px-3 py-2.5 rounded-2xl border text-xs font-bold flex items-center justify-between shadow-2xs ${
+              isEnglish
+                ? 'bg-amber-50/80 border-amber-200 text-amber-900'
+                : 'bg-emerald-50/80 border-emerald-200 text-emerald-900'
+            }`}>
+              <div className="flex items-center gap-2">
+                <span className={`w-2 h-2 rounded-full ${isEnglish ? 'bg-amber-500' : 'bg-emerald-500'}`} />
+                <span className="truncate">
+                  {isEnglish ? 'ENGLISH বিষয় (ইংরেজি অঙ্ক)' : 'অন্য বিষয় (বাংলা অঙ্ক)'}
+                </span>
+              </div>
+              <span className="px-2 py-0.5 rounded-md bg-white border border-slate-200 font-mono text-[11px] font-extrabold shrink-0">
+                {isEnglish ? '1, 2, 3...' : '১, ২, ৩...'}
+              </span>
             </div>
           </div>
 
@@ -2446,16 +2435,16 @@ export const QuestionPaperGenerator: React.FC = () => {
             if (template === 'modern') {
               return (
                 <div className="relative font-bengali text-black px-4 py-2 select-text leading-normal">
-                  {/* Subtle DPIB Original Watermark for Modern Clean Template */}
+                  {/* Subtle DPIB Original Admission Portal Watermark for Modern Clean Template */}
                   <div
                     aria-hidden="true"
                     className="pointer-events-none select-none absolute inset-0 flex items-center justify-center overflow-hidden z-0"
                     style={{ printColorAdjust: 'exact', WebkitPrintColorAdjust: 'exact' }}
                   >
                     <img
-                      src="https://i.postimg.cc/mgyW32Y2/Firefly-Remove-Background.png"
+                      src="https://i.postimg.cc/j5K3pb0M/sovapoti-images1.png"
                       alt=""
-                      className="w-[260px] max-w-[55%] opacity-[0.055] object-contain filter grayscale contrast-125"
+                      className="w-[240px] max-w-[50%] opacity-[0.06] object-contain"
                       style={{
                         transform: 'translateY(10px)',
                         printColorAdjust: 'exact',
@@ -2469,7 +2458,7 @@ export const QuestionPaperGenerator: React.FC = () => {
                     <div className="flex items-center justify-between border-b-2 border-teal-700 pb-3 mb-3">
                       <div className="flex items-center gap-3">
                         <img
-                          src="https://i.postimg.cc/mgyW32Y2/Firefly-Remove-Background.png"
+                          src="https://i.postimg.cc/j5K3pb0M/sovapoti-images1.png"
                           alt="DPIB Logo"
                           className="w-11 h-11 object-contain shrink-0"
                           referrerPolicy="no-referrer"
@@ -2653,41 +2642,42 @@ export const QuestionPaperGenerator: React.FC = () => {
             // TEMPLATE 3: OFFICIAL BTEB TRADITIONAL STANDARD (DEFAULT)
             // =========================================================================
             return (
-              <div className="font-bengali text-black px-4 py-2 select-text leading-normal">
-                {/* Official Classic BTEB Header */}
-                <div className="text-center mb-2">
-                  <h1 className="text-2xl font-black text-black tracking-tight mb-0.5">
+              <div className="font-bengali text-black px-3 py-1 select-text leading-normal">
+                {/* Official BTEB Institutional Header */}
+                <header className="text-center mb-1.5 pt-1">
+                  <h1 className="text-2xl sm:text-[26px] font-black text-black tracking-tight leading-tight">
                     দক্ষিণবঙ্গ পলিটেকনিক ইনস্টিটিউট, ভোলা
                   </h1>
-                  <p className="text-[11px] font-bold text-slate-700 tracking-wider">
-                    বাংলাদেশ কারিগরি শিক্ষা বোর্ড অনুমোদিত • কোড: ২০২৬১
+                  <p className="text-sm sm:text-base font-bold text-black tracking-normal mt-0.5">
+                    ডিপ্লোমা ইন ইঞ্জিনিয়ারিং
                   </p>
                   {examName && (
-                    <h2 className="text-base font-extrabold text-black mt-1 mb-0.5">
+                    <h2 className="text-base sm:text-lg font-black text-black mt-1 mb-0.5 tracking-normal">
                       {examName} {examYear ? `- ${formattedExamYear}` : ''}
                     </h2>
                   )}
+                </header>
+
+                {/* Double Official Black Separator Rule */}
+                <div className="border-t-2 border-b border-black py-[1px] my-1.5"></div>
+
+                {/* Official Framed Examination Meta Table */}
+                <div className="border-[1.5px] border-black my-2.5 text-xs bg-white">
+                  <div className="flex justify-between items-center px-3 py-1 font-bold border-b border-black/80">
+                    <span className="truncate">টেকনোলজি: <strong className="font-extrabold">{getFormattedTechDisplay()}</strong></span>
+                    <span className="shrink-0 ml-3">পর্ব: <strong className="font-extrabold">{semesterBangla}</strong></span>
+                  </div>
+                  <div className="text-center font-black text-sm px-3 py-1.5 border-b border-black/80 bg-slate-50/50">
+                    বিষয়: {subjectName} {subjectCode ? `(বিষয় কোড: ${formattedSubjectCode})` : ''}
+                  </div>
+                  <div className="flex justify-between items-center px-3 py-1 font-bold">
+                    <span>সময়: <strong className="font-extrabold">{formattedExamTime}</strong></span>
+                    <span>পূর্ণমান: <strong className="font-extrabold">{formattedTotalMarks}</strong></span>
+                  </div>
                 </div>
 
-                {/* Double black rule */}
-                <div className="border-t-2 border-b border-black py-0.5 my-2"></div>
-
-                {/* Official Framed Exam Meta Table */}
-                <div className="border border-black p-2.5 my-3 text-xs">
-                  <div className="flex justify-between items-center font-bold">
-                    <span>টেকনোলজি: {getFormattedTechDisplay()}</span>
-                    <span>পর্ব: {semesterBangla}</span>
-                  </div>
-                  <div className="text-center font-extrabold text-sm my-1 border-t border-b border-black/40 py-1">
-                    বিষয়: {subjectName} (বিষয় কোড: {formattedSubjectCode})
-                  </div>
-                  <div className="flex justify-between items-center font-bold">
-                    <span>সময়: {formattedExamTime}</span>
-                    <span>পূর্ণমান: {formattedTotalMarks}</span>
-                  </div>
-                </div>
-
-                <div className="text-center text-xs italic font-serif text-slate-800 my-3">
+                {/* Centered Instructions Note */}
+                <div className="text-center text-[12px] italic font-serif text-slate-900 my-2.5 px-2">
                   {noticeText}
                 </div>
 

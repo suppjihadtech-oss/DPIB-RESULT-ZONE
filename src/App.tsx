@@ -9,6 +9,7 @@ import {
   getPublishedEvents,
   subscribeToPublishedEvents,
   searchPublicResult,
+  searchAllPublicResults,
 } from './services/db';
 import {
   getCurrentApplicantSession,
@@ -26,6 +27,7 @@ import { BottomSheet } from './components/common/BottomSheet';
 import { NotificationPromptModal } from './components/common/NotificationPromptModal';
 import { NotificationToast } from './components/common/NotificationToast';
 import { PWAInstallBanner } from './components/common/PWAInstallBanner';
+import { DpibAssistantModal } from './components/common/DpibAssistantModal';
 import { PageTransition } from './components/common/PageTransition';
 import { AnimatePresence } from 'motion/react';
 import { usePushNotification } from './hooks/usePushNotification';
@@ -41,6 +43,7 @@ import { AcademicAnalysisPage } from './components/public/AcademicAnalysisPage';
 import { PublicNoticeSection } from './components/public/PublicNoticeSection';
 import { ResultVerification } from './components/public/ResultVerification';
 import { ResultBottomSheet } from './components/public/ResultBottomSheet';
+import { MultiExamResultSelectModal } from './components/public/MultiExamResultSelectModal';
 import { PublicMoreBottomSheet } from './components/public/PublicMoreBottomSheet';
 import { GpaCalculatorPage } from './components/public/GpaCalculatorPage';
 import { SmartCalendarPage } from './components/public/SmartCalendarPage';
@@ -116,6 +119,8 @@ export function App() {
   const [searchAnimationActive, setSearchAnimationActive] = useState(false);
   const [searchStatus, setSearchStatus] = useState<'searching' | 'success' | 'not_found'>('searching');
   const [searchResultData, setSearchResultData] = useState<StudentResult | null>(null);
+  const [multiResultsList, setMultiResultsList] = useState<StudentResult[]>([]);
+  const [multiResultSheetOpen, setMultiResultSheetOpen] = useState(false);
   const [searchedRoll, setSearchedRoll] = useState<string>('');
   const [resultSheetOpen, setResultSheetOpen] = useState(false);
   const [notFoundModalOpen, setNotFoundModalOpen] = useState(false);
@@ -313,11 +318,20 @@ export function App() {
     setSearchAnimationActive(true);
     setSearchStatus('searching');
     setSearchResultData(null);
+    setMultiResultsList([]);
+    setMultiResultSheetOpen(false);
 
     try {
-      const foundResult = await searchPublicResult(params);
-      if (foundResult) {
-        setSearchResultData(foundResult);
+      const allFound = await searchAllPublicResults(params);
+      if (allFound && allFound.length > 0) {
+        setMultiResultsList(allFound);
+        if (allFound.length === 1) {
+          // ঠিক ১টি ফলাফল পাওয়া গেলে সরাসরি প্রদর্শনযোগ্য প্রস্তুত করা
+          setSearchResultData(allFound[0]);
+        } else {
+          // একই রোল নম্বরে একাধিক পরীক্ষার ফলাফল থাকলে কোনো একটি ফলাফল স্বয়ংক্রিয়ভাবে দেখাবে না
+          setSearchResultData(null);
+        }
         setSearchStatus('success');
       } else {
         setSearchStatus('not_found');
@@ -330,7 +344,12 @@ export function App() {
 
   const handleSearchAnimationComplete = () => {
     setSearchAnimationActive(false);
-    if (searchResultData) {
+
+    if (multiResultsList.length > 1) {
+      // একাধিক ফলাফল পাওয়া গেলে নির্বাচন করার BOTTOM SHEET দেখাবে
+      setMultiResultSheetOpen(true);
+    } else if (multiResultsList.length === 1 && searchResultData) {
+      // একটি ফলাফল পাওয়া গেলে সরাসরি সেই ফলাফল দেখাবে
       const isPassed = Boolean(
         searchResultData.isPassed &&
         (searchResultData.gpa || 0) > 0 &&
@@ -346,11 +365,34 @@ export function App() {
         playFailSound();
       }
 
-      // সব শিক্ষার্থীর রেজাল্ট শিট স্বাভাবিকভাবে পূর্ণাঙ্গ তথ্যসহ খুলবে
+      // রেজাল্ট শিট স্বাভাবিকভাবে পূর্ণাঙ্গ তথ্যসহ খুলবে
       setResultSheetOpen(true);
     } else {
+      // কোনো ফলাফল না থাকলে সুন্দর EMPTY STATE দেখাবে
       setNotFoundModalOpen(true);
     }
+  };
+
+  const handleSelectExamResult = (selectedResult: StudentResult) => {
+    // ফলাফল শনাক্ত করার সময় বিদ্যমান DATABASE ID বা নির্ভরযোগ্য UNIQUE IDENTIFIER ব্যবহার করা
+    const matched = multiResultsList.find((r) => r.id === selectedResult.id) || selectedResult;
+    setSearchResultData(matched);
+    setMultiResultSheetOpen(false);
+
+    const isPassed = Boolean(
+      matched.isPassed &&
+      (matched.gpa || 0) > 0 &&
+      matched.letterGrade !== 'F'
+    );
+
+    if (isPassed) {
+      playPassSound();
+      triggerPassConfetti();
+    } else {
+      playFailSound();
+    }
+
+    setResultSheetOpen(true);
   };
 
   const handleLogout = async () => {
@@ -713,11 +755,25 @@ export function App() {
         roll={searchedRoll}
       />
 
+      {/* Multi-Exam Result Selection Bottom Sheet (Glassmorphism) */}
+      <MultiExamResultSelectModal
+        isOpen={multiResultSheetOpen}
+        onClose={() => setMultiResultSheetOpen(false)}
+        results={multiResultsList}
+        roll={searchedRoll}
+        onSelectResult={handleSelectExamResult}
+      />
+
       {/* Result Bottom Sheet Card */}
       <ResultBottomSheet
         isOpen={resultSheetOpen}
         onClose={() => setResultSheetOpen(false)}
         result={searchResultData}
+        hasMultipleResults={multiResultsList.length > 1}
+        onBackToMultiResults={() => {
+          setResultSheetOpen(false);
+          setMultiResultSheetOpen(true);
+        }}
         onVerifyResult={(code) => {
           setVerificationCodeParam(code);
           handleNavigatePublicTab('verify');
@@ -793,6 +849,17 @@ export function App() {
 
       {/* Dedicated Floating Helpline Widget for Admission Portal */}
       {isAdmissionRoute && <FloatingHelplineWidget />}
+
+      {/* DPIB AI Assistant Floating Widget (Student Portal Only) */}
+      <DpibAssistantModal
+        exams={exams}
+        notices={notices}
+        onNavigateTab={handleNavigatePublicTab}
+        onOpenResultModal={(result) => {
+          setSearchResultData(result);
+          setResultSheetOpen(true);
+        }}
+      />
 
       {/* Public Footer (Hidden on /admission route) */}
       {!isAdmissionRoute && (

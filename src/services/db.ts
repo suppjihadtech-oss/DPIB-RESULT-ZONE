@@ -820,14 +820,14 @@ export async function deleteExam(id: string): Promise<void> {
 
 /* ==================== RESULTS ==================== */
 
-export async function searchPublicResult(params: {
+export async function searchAllPublicResults(params: {
   roll: string;
   semesterId?: string;
   examId?: string;
-}): Promise<StudentResult | null> {
+}): Promise<StudentResult[]> {
   try {
     const cleanRoll = toEnglishDigits(params.roll.trim());
-    if (!cleanRoll) return null;
+    if (!cleanRoll) return [];
 
     const ref = collection(db, COLLECTIONS.RESULTS);
     const rawList: any[] = [];
@@ -904,17 +904,10 @@ export async function searchPublicResult(params: {
     }
 
     if (rawList.length === 0) {
-      return null;
+      return [];
     }
 
-    const results = consolidateStudentResults(rawList);
-
-    // Sort immediately by newest published or updated or created date
-    results.sort(
-      (a, b) =>
-        (b.publishedAt || b.updatedAt || b.createdAt || 0) -
-        (a.publishedAt || a.updatedAt || a.createdAt || 0)
-    );
+    let results = consolidateStudentResults(rawList);
 
     // If examId specified, match exact ID or match against exam title
     if (params.examId && params.examId !== 'ALL') {
@@ -928,26 +921,61 @@ export async function searchPublicResult(params: {
         console.warn('Exam lookup error:', e);
       }
 
-      const match = results.find(
+      results = results.filter(
         (r) =>
           r.examId === params.examId ||
           (targetExamTitle && r.examTitle && r.examTitle.trim().toLowerCase() === targetExamTitle)
       );
-      if (match) return match;
     }
 
     // If semesterId specified, match semester
     if (params.semesterId && params.semesterId !== 'ALL') {
-      const match = results.find((r) => r.semesterId === params.semesterId);
-      if (match) return match;
+      results = results.filter((r) => r.semesterId === params.semesterId);
     }
 
-    // Return the latest published result
-    return results[0] || null;
+    // Deduplication: ensure no single exam is duplicated in the list
+    const deduplicatedResults: StudentResult[] = [];
+    const seenExamKeys = new Set<string>();
+
+    for (const res of results) {
+      const examKey = res.examId
+        ? `${res.examId}`
+        : `${(res.examTitle || 'EXAM').trim().toLowerCase()}_${res.departmentId || ''}_${res.semesterId || ''}`;
+
+      if (!seenExamKeys.has(examKey)) {
+        seenExamKeys.add(examKey);
+        if (!res.id) {
+          res.id = generateDynamicResultId(res.examId || 'EXAM', cleanRoll);
+        }
+        deduplicatedResults.push(res);
+      }
+    }
+
+    // Sort: Latest exam first according to exam date or published date
+    const getExamTimestamp = (r: StudentResult): number => {
+      if (r.examDate) {
+        const parsed = new Date(r.examDate).getTime();
+        if (!isNaN(parsed) && parsed > 0) return parsed;
+      }
+      return r.publishedAt || r.updatedAt || r.createdAt || 0;
+    };
+
+    deduplicatedResults.sort((a, b) => getExamTimestamp(b) - getExamTimestamp(a));
+
+    return deduplicatedResults;
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, COLLECTIONS.RESULTS);
-    return null;
+    return [];
   }
+}
+
+export async function searchPublicResult(params: {
+  roll: string;
+  semesterId?: string;
+  examId?: string;
+}): Promise<StudentResult | null> {
+  const allResults = await searchAllPublicResults(params);
+  return allResults[0] || null;
 }
 
 export async function verifyResultByCode(verificationCode: string): Promise<StudentResult | null> {
