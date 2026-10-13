@@ -2381,13 +2381,9 @@ export const QuestionPaperGenerator: React.FC = () => {
             const formattedTotalMarks = isEnglish ? totalMarks : toBanglaDigits(totalMarks);
             const formattedExamYear = isEnglish ? examYear : toBanglaDigits(examYear);
 
-            const noticeText = questionPaperFormat === 'SHORT_ONLY'
-              ? (isEnglish
-                  ? '[ Note: Figures in the right indicate full marks. Answer all short questions. ]'
-                  : '[ দ্রষ্টব্য: ডান পাশের সংখ্যা প্রশ্নের পূর্ণমান জ্ঞাপক। সকল অতি সংক্ষিপ্ত প্রশ্নের উত্তর দাও। ]')
-              : (isEnglish
-                  ? '[ Note: Figures in the right indicate full marks. Answer questions from all sections. ]'
-                  : '[ দ্রষ্টব্য: ডান পাশের সংখ্যা প্রশ্নের পূর্ণমান জ্ঞাপক। সকল বিভাগের প্রশ্নের উত্তর দাও। ]');
+            const noticeText = isEnglish
+              ? 'Answer all questions.'
+              : 'সকল প্রশ্নের উত্তর দাও।';
 
             const renderQuestionList = (
               items: QuestionItem[],
@@ -2643,41 +2639,38 @@ export const QuestionPaperGenerator: React.FC = () => {
             // =========================================================================
             return (
               <div className="font-bengali text-black px-3 py-1 select-text leading-normal">
-                {/* Official BTEB Institutional Header */}
-                <header className="text-center mb-1.5 pt-1">
-                  <h1 className="text-2xl sm:text-[26px] font-black text-black tracking-tight leading-tight">
-                    দক্ষিণবঙ্গ পলিটেকনিক ইনস্টিটিউট, ভোলা
+                {/* Official Institutional Header (Clean Typography matching photo) */}
+                <header className="text-center mb-1 pt-1 space-y-0.5">
+                  <h1 className="text-xl sm:text-2xl font-black text-black tracking-tight leading-tight">
+                    দক্ষিণবঙ্গ পলিটেকনিক ইনস্টিটিউট, ভোলা।
                   </h1>
-                  <p className="text-sm sm:text-base font-bold text-black tracking-normal mt-0.5">
-                    ডিপ্লোমা ইন ইঞ্জিনিয়ারিং
+                  <p className="text-sm sm:text-base font-bold text-black tracking-normal">
+                    {isEnglish ? 'Diploma in Engineering' : 'ডিপ্লোমা ইন-ইঞ্জিনিয়ারিং'}
                   </p>
                   {examName && (
-                    <h2 className="text-base sm:text-lg font-black text-black mt-1 mb-0.5 tracking-normal">
+                    <h2 className="text-sm sm:text-base font-bold text-black tracking-normal">
                       {examName} {examYear ? `- ${formattedExamYear}` : ''}
                     </h2>
                   )}
+                  <p className="text-xs sm:text-sm font-bold text-black">
+                    {isEnglish ? 'Subject: ' : 'বিষয়ঃ '}{subjectName} {subjectCode ? `(${isEnglish ? 'Code: ' : 'কোড: '}${formattedSubjectCode})` : ''}
+                  </p>
+                  <p className="text-xs sm:text-sm font-bold text-black">
+                    {isEnglish ? 'Technology: ' : 'টেকনোলজিঃ '}{getFormattedTechDisplay()}{semesterBangla ? `   (${isEnglish ? 'Semester: ' : 'পর্বঃ '}${semesterBangla})` : ''}
+                  </p>
                 </header>
 
-                {/* Double Official Black Separator Rule */}
-                <div className="border-t-2 border-b border-black py-[1px] my-1.5"></div>
+                {/* Single Clean Official Black Separator Rule */}
+                <div className="border-b border-black my-2"></div>
 
-                {/* Official Framed Examination Meta Table */}
-                <div className="border-[1.5px] border-black my-2.5 text-xs bg-white">
-                  <div className="flex justify-between items-center px-3 py-1 font-bold border-b border-black/80">
-                    <span className="truncate">টেকনোলজি: <strong className="font-extrabold">{getFormattedTechDisplay()}</strong></span>
-                    <span className="shrink-0 ml-3">পর্ব: <strong className="font-extrabold">{semesterBangla}</strong></span>
-                  </div>
-                  <div className="text-center font-black text-sm px-3 py-1.5 border-b border-black/80 bg-slate-50/50">
-                    বিষয়: {subjectName} {subjectCode ? `(বিষয় কোড: ${formattedSubjectCode})` : ''}
-                  </div>
-                  <div className="flex justify-between items-center px-3 py-1 font-bold">
-                    <span>সময়: <strong className="font-extrabold">{formattedExamTime}</strong></span>
-                    <span>পূর্ণমান: <strong className="font-extrabold">{formattedTotalMarks}</strong></span>
-                  </div>
+                {/* Time & Full Marks Row (Clean layout without framed box) */}
+                <div className="flex justify-between items-center text-xs sm:text-sm font-bold text-black px-1 mb-2">
+                  <span>{isEnglish ? 'Time: ' : 'সময়ঃ '}{formattedExamTime}</span>
+                  <span>{isEnglish ? 'Full Marks: ' : 'পূর্ণমানঃ '}{formattedTotalMarks}</span>
                 </div>
 
                 {/* Centered Instructions Note */}
-                <div className="text-center text-[12px] italic font-serif text-slate-900 my-2.5 px-2">
+                <div className="text-center text-xs sm:text-sm font-bold text-black my-2 px-2">
                   {noticeText}
                 </div>
 

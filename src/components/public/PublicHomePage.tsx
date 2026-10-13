@@ -175,7 +175,7 @@ export const PublicHomePage: React.FC<PublicHomePageProps> = ({
 
       {/* ================= QUICK STATS & ACADEMIC TOOLS ================= */}
       <section className="max-w-5xl mx-auto px-4 sm:px-6">
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 sm:gap-3.5">
+        <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-3 sm:gap-3.5">
           {/* GPA Calculator Quick Card */}
           <div
             onClick={() => onNavigateTab('gpa-calculator')}
@@ -240,20 +240,36 @@ export const PublicHomePage: React.FC<PublicHomePageProps> = ({
             </span>
           </div>
 
-          {/* Notices */}
+          {/* Notices - Full Width Horizontal Glass Banner Card */}
           <div
             onClick={() => onNavigateTab('notices')}
-            className="p-4 sm:p-5 bg-white/80 backdrop-blur-xl rounded-[24px] border border-white/90 shadow-xs hover:shadow-md hover:bg-white transition-all cursor-pointer group active:scale-98"
+            className="col-span-2 sm:col-span-2 md:col-span-4 p-4 sm:p-5 bg-gradient-to-r from-orange-50/80 via-white/90 to-amber-50/80 backdrop-blur-xl rounded-[24px] border border-orange-200/80 hover:border-orange-300 hover:bg-white shadow-xs hover:shadow-md transition-all cursor-pointer group active:scale-[0.99] flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 select-none"
           >
-            <div className="w-10 h-10 rounded-2xl bg-orange-50/90 text-orange-600 flex items-center justify-center mb-3 group-hover:scale-105 transition-transform border border-orange-100 shadow-2xs">
-              <Bell className="w-5 h-5" />
+            <div className="flex items-center gap-3.5 min-w-0">
+              <div className="w-11 h-11 rounded-2xl bg-orange-100/90 text-orange-600 flex items-center justify-center shrink-0 border border-orange-200 shadow-2xs group-hover:scale-105 transition-transform">
+                <Bell className="w-5 h-5 animate-pulse" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] text-orange-700 font-extrabold uppercase tracking-wider font-outfit">
+                  NOTICE BOARD • ডিজিটাল নোটিশ
+                </p>
+                <p className="text-xs sm:text-sm font-black text-slate-900 mt-0.5 truncate">
+                  ইনস্টিটিউটের অফিসিয়াল নোটিশ ও একাডেমিক বিজ্ঞপ্তি
+                </p>
+                <p className="text-[11px] text-slate-500 font-medium truncate mt-0.5">
+                  {publishedNotices.length > 0
+                    ? `সর্বশেষ ${toBanglaDigits(publishedNotices.length)}টি প্রকাশিত নোটিশ উপলব্ধ`
+                    : 'পরীক্ষা, ফলাফল ও অ্যাকাডেমিক সকল সার্কুলার'}
+                </p>
+              </div>
             </div>
-            <p className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider font-outfit">NOTICE BOARD</p>
-            <p className="text-xs sm:text-sm font-black text-slate-900 mt-0.5">ডিজিটাল নোটিশ</p>
-            <span className="text-[11px] text-orange-600 font-bold mt-1 inline-flex items-center gap-0.5">
-              <span>বিজ্ঞপ্তি পড়ুন</span>
-              <ChevronRight className="w-3 h-3" />
-            </span>
+
+            <div className="flex items-center self-end sm:self-auto shrink-0">
+              <span className="px-4 py-2 rounded-xl bg-orange-500 group-hover:bg-orange-600 text-white text-xs font-bold transition-all inline-flex items-center gap-1.5 shadow-2xs group-hover:shadow-sm">
+                <span>বিজ্ঞপ্তি পড়ুন</span>
+                <ChevronRight className="w-3.5 h-3.5 stroke-[2.5] transition-transform group-hover:translate-x-0.5" />
+              </span>
+            </div>
           </div>
         </div>
       </section>
