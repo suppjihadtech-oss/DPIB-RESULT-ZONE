@@ -18,14 +18,14 @@ import { toEnglishDigits } from '../utils/bangla';
 export const BOOK_COLLECTION = 'books';
 
 export const SEMESTER_OPTIONS: { id: SemesterId; label: string; en: string }[] = [
-  { id: '1', label: '১ম পর্ব', en: '1st Semester' },
-  { id: '2', label: '২য় পর্ব', en: '2nd Semester' },
-  { id: '3', label: '৩য় পর্ব', en: '3rd Semester' },
-  { id: '4', label: '৪র্থ পর্ব', en: '4th Semester' },
-  { id: '5', label: '৫ম পর্ব', en: '5th Semester' },
-  { id: '6', label: '৬ষ্ঠ পর্ব', en: '6th Semester' },
-  { id: '7', label: '৭ম পর্ব', en: '7th Semester' },
-  { id: '8', label: '৮ম পর্ব', en: '8th Semester' },
+  { id: '1', label: '১ম পর্ব', en: '1ST SEMESTER' },
+  { id: '2', label: '২য় পর্ব', en: '2ND SEMESTER' },
+  { id: '3', label: '৩য় পর্ব', en: '3RD SEMESTER' },
+  { id: '4', label: '৪র্থ পর্ব', en: '4TH SEMESTER' },
+  { id: '5', label: '৫ম পর্ব', en: '5TH SEMESTER' },
+  { id: '6', label: '৬ষ্ঠ পর্ব', en: '6TH SEMESTER' },
+  { id: '7', label: '৭ম পর্ব', en: '7TH SEMESTER' },
+  { id: '8', label: '৮ম পর্ব', en: '8TH SEMESTER' },
 ];
 
 export const DEFAULT_BOOK_TECHNOLOGIES: { id: string; name: string; code: string }[] = [

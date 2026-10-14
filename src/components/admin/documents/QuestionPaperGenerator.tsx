@@ -2519,7 +2519,7 @@ export const QuestionPaperGenerator: React.FC = () => {
 
                     {/* Section A */}
                     <div className="mb-5">
-                      <div className="flex items-center justify-between pb-1.5 mb-2.5 border-b border-teal-600/60">
+                      <div className="flex items-center justify-between pb-1 mb-2">
                         <div className="flex items-center gap-2">
                           <span className="px-2.5 py-0.5 rounded-lg bg-teal-800 text-white text-xs font-black">
                             {questionPaperFormat === 'SHORT_ONLY' ? 'একক বিভাগ' : 'ক-বিভাগ'}
@@ -2539,7 +2539,7 @@ export const QuestionPaperGenerator: React.FC = () => {
                     {questionPaperFormat === 'FULL' && (
                       <>
                         <div className="mb-5">
-                          <div className="flex items-center justify-between pb-1.5 mb-2.5 border-b border-indigo-600/60">
+                          <div className="flex items-center justify-between pb-1 mb-2">
                             <div className="flex items-center gap-2">
                               <span className="px-2.5 py-0.5 rounded-lg bg-indigo-800 text-white text-xs font-black">
                                 খ-বিভাগ
@@ -2556,7 +2556,7 @@ export const QuestionPaperGenerator: React.FC = () => {
                         </div>
 
                         <div className="mb-6">
-                          <div className="flex items-center justify-between pb-1.5 mb-2.5 border-b border-slate-700">
+                          <div className="flex items-center justify-between pb-1 mb-2">
                             <div className="flex items-center gap-2">
                               <span className="px-2.5 py-0.5 rounded-lg bg-slate-900 text-white text-xs font-black">
                                 গ-বিভাগ
@@ -2644,7 +2644,7 @@ export const QuestionPaperGenerator: React.FC = () => {
                   <h1 className="text-xl sm:text-2xl font-black text-black tracking-tight leading-tight">
                     দক্ষিণবঙ্গ পলিটেকনিক ইনস্টিটিউট, ভোলা।
                   </h1>
-                  <p className="text-sm sm:text-base font-bold text-black tracking-normal">
+                  <p className="text-base sm:text-lg font-extrabold text-black tracking-normal">
                     {isEnglish ? 'Diploma in Engineering' : 'ডিপ্লোমা ইন-ইঞ্জিনিয়ারিং'}
                   </p>
                   {examName && (
@@ -2676,7 +2676,7 @@ export const QuestionPaperGenerator: React.FC = () => {
 
                 {/* Section A */}
                 <div className="mb-5">
-                  <div className="text-center mb-2.5 pb-1 border-b border-black">
+                  <div className="text-center mb-2.5 pb-0.5">
                     <h4 className="font-black text-sm text-black">
                       {questionPaperFormat === 'SHORT_ONLY' ? 'অতি সংক্ষিপ্ত প্রশ্নাবলি' : 'ক-বিভাগ (অতি সংক্ষিপ্ত প্রশ্ন)'}
                     </h4>
@@ -2691,7 +2691,7 @@ export const QuestionPaperGenerator: React.FC = () => {
                 {questionPaperFormat === 'FULL' && (
                   <>
                     <div className="mb-5">
-                      <div className="text-center mb-2.5 pb-1 border-b border-black">
+                      <div className="text-center mb-2.5 pb-0.5">
                         <h4 className="font-black text-sm text-black">খ-বিভাগ (সংক্ষিপ্ত প্রশ্ন)</h4>
                         {groupBInstruction && (
                           <p className="text-xs font-bold text-black mt-0.5">{groupBInstruction}</p>
@@ -2701,7 +2701,7 @@ export const QuestionPaperGenerator: React.FC = () => {
                     </div>
 
                     <div className="mb-6">
-                      <div className="text-center mb-2.5 pb-1 border-b border-black">
+                      <div className="text-center mb-2.5 pb-0.5">
                         <h4 className="font-black text-sm text-black">গ-বিভাগ (রচনামূলক প্রশ্ন)</h4>
                         {groupCInstruction && (
                           <p className="text-xs font-bold text-black mt-0.5">{groupCInstruction}</p>

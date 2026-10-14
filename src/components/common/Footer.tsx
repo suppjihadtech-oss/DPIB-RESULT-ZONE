@@ -62,7 +62,7 @@ export const Footer: React.FC<FooterProps> = ({ currentTab, isHome = false, onTa
           <div>
             <h4 className="text-slate-900 font-bold text-sm mb-3.5 uppercase tracking-wider font-outfit flex items-center gap-1.5">
               <span className="w-1.5 h-3.5 bg-blue-600 rounded-full inline-block" />
-              <span>QUICK LINKS / দ্রুত লিঙ্ক</span>
+              <span>QUICK LINKS • দ্রুত লিঙ্ক</span>
             </h4>
             <ul className="space-y-2.5 text-sm font-medium">
               <li>
@@ -112,7 +112,7 @@ export const Footer: React.FC<FooterProps> = ({ currentTab, isHome = false, onTa
           <div>
             <h4 className="text-slate-900 font-bold text-sm mb-3.5 uppercase tracking-wider font-outfit flex items-center gap-1.5">
               <span className="w-1.5 h-3.5 bg-sky-600 rounded-full inline-block" />
-              <span>ACADEMIC TOOLS / সেবাসমূহ</span>
+              <span>ACADEMIC TOOLS • সেবাসমূহ</span>
             </h4>
             <ul className="space-y-2.5 text-sm font-medium">
               <li>

@@ -850,16 +850,18 @@ export function App() {
       {/* Dedicated Floating Helpline Widget for Admission Portal */}
       {isAdmissionRoute && <FloatingHelplineWidget />}
 
-      {/* DPIB AI Assistant Floating Widget (Student Portal Only) */}
-      <DpibAssistantModal
-        exams={exams}
-        notices={notices}
-        onNavigateTab={handleNavigatePublicTab}
-        onOpenResultModal={(result) => {
-          setSearchResultData(result);
-          setResultSheetOpen(true);
-        }}
-      />
+      {/* DPIB AI Assistant Floating Widget (Student Portal Only - NOT in Admission or Admin) */}
+      {!isAdmissionRoute && (
+        <DpibAssistantModal
+          exams={exams}
+          notices={notices}
+          onNavigateTab={handleNavigatePublicTab}
+          onOpenResultModal={(result) => {
+            setSearchResultData(result);
+            setResultSheetOpen(true);
+          }}
+        />
+      )}
 
       {/* Public Footer (Hidden on /admission route) */}
       {!isAdmissionRoute && (

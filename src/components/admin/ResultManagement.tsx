@@ -24,6 +24,13 @@ import {
   RefreshCw,
   AlertTriangle,
   X,
+  ChevronRight,
+  ChevronLeft,
+  Edit3,
+  User,
+  Award,
+  Hash,
+  CalendarDays,
 } from 'lucide-react';
 import {
   Exam,
@@ -124,15 +131,22 @@ export const ResultManagement: React.FC<ResultManagementProps> = ({
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleteSuccessMessage, setDeleteSuccessMessage] = useState<string | null>(null);
 
-  // Manual Entry States
+  // Manual Entry 4-Step States
   const [studentsList, setStudentsList] = useState<Student[]>([]);
+  const [manualStep, setManualStep] = useState<1 | 2 | 3 | 4>(1);
+  const [manualDeptId, setManualDeptId] = useState<string>('');
+  const [manualSemesterId, setManualSemesterId] = useState<SemesterId>('1');
   const [manualExamId, setManualExamId] = useState<string>(exams[0]?.id || '');
   const [manualExamSheetOpen, setManualExamSheetOpen] = useState(false);
   const [manualStudentName, setManualStudentName] = useState('');
   const [manualRoll, setManualRoll] = useState('');
   const [manualStudentId, setManualStudentId] = useState('');
   const [manualReg, setManualReg] = useState('');
-  const [manualSubjectsMarks, setManualSubjectsMarks] = useState<{ [code: string]: number }>({});
+  const [manualSubjectsMarks, setManualSubjectsMarks] = useState<{ [code: string]: number | '' }>({});
+  const [manualCustomFullMarks, setManualCustomFullMarks] = useState<{ [code: string]: number }>({});
+  const [editingFullMarksCode, setEditingFullMarksCode] = useState<string | null>(null);
+  const [studentAutoMatched, setStudentAutoMatched] = useState<boolean>(false);
+  const [matchedStudentDept, setMatchedStudentDept] = useState<string | null>(null);
   const [manualSaving, setManualSaving] = useState(false);
   const [manualError, setManualError] = useState<string | null>(null);
 
@@ -161,28 +175,34 @@ export const ResultManagement: React.FC<ResultManagementProps> = ({
     setManualRoll(val);
     const cleanRoll = toEnglishDigits(val.trim());
     if (!cleanRoll) {
-      setManualStudentName('');
-      setManualReg('');
-      setManualStudentId('');
+      setStudentAutoMatched(false);
+      setMatchedStudentDept(null);
       return;
     }
     if (studentsList && studentsList.length > 0) {
-      const matched = studentsList.find(
-        (s) => toEnglishDigits(s.roll || '').trim() === cleanRoll
-      );
+      const matched = studentsList.find((s) => {
+        const sRoll = toEnglishDigits(s.roll || '').trim();
+        if (sRoll !== cleanRoll) return false;
+        if (manualDeptId && s.departmentId) {
+          return s.departmentId === manualDeptId;
+        }
+        return true;
+      }) || studentsList.find((s) => toEnglishDigits(s.roll || '').trim() === cleanRoll);
+
       if (matched) {
         setManualStudentName(matched.name || '');
         setManualReg(matched.registration || '');
-        setManualStudentId(matched.studentId || '');
+        setManualStudentId(matched.studentId || `DPIB-${cleanRoll}`);
+        setStudentAutoMatched(true);
+        setMatchedStudentDept(matched.departmentName || null);
       } else {
-        setManualStudentName('');
-        setManualReg('');
-        setManualStudentId('');
+        setStudentAutoMatched(false);
+        setMatchedStudentDept(null);
+        // Retain any admin-typed information without auto-wiping
       }
     } else {
-      setManualStudentName('');
-      setManualReg('');
-      setManualStudentId('');
+      setStudentAutoMatched(false);
+      setMatchedStudentDept(null);
     }
   };
 
@@ -196,7 +216,40 @@ export const ResultManagement: React.FC<ResultManagementProps> = ({
     }
   }, [exams]);
 
+  useEffect(() => {
+    if (departments.length > 0 && !manualDeptId) {
+      setManualDeptId(departments[0].id);
+    }
+  }, [departments]);
+
   const activeExamForManual = exams.find((e) => e.id === manualExamId);
+
+  // Initialize or update custom full marks whenever active exam changes
+  useEffect(() => {
+    if (activeExamForManual && activeExamForManual.subjects) {
+      setManualCustomFullMarks((prev) => {
+        const next = { ...prev };
+        activeExamForManual.subjects.forEach((s) => {
+          if (next[s.code] === undefined) {
+            next[s.code] = s.fullMarks;
+          }
+        });
+        return next;
+      });
+    }
+  }, [activeExamForManual]);
+
+  // When technology or semester changes in step 1, select a matching exam if available
+  useEffect(() => {
+    if (manualDeptId && manualSemesterId && exams.length > 0) {
+      const match = exams.find(
+        (e) => e.departmentId === manualDeptId && e.semesterId === manualSemesterId
+      );
+      if (match) {
+        setManualExamId(match.id);
+      }
+    }
+  }, [manualDeptId, manualSemesterId, exams]);
 
   // Options for Exam Filter Sheet
   const examFilterOptions: SelectOption[] = [
@@ -384,30 +437,107 @@ export const ResultManagement: React.FC<ResultManagementProps> = ({
     }
   };
 
-  // Manual Result Save
-  const handleManualSave = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // Construct a previewable StudentResult from current single entry inputs
+  const buildCurrentStudentResult = (): StudentResult | null => {
+    if (!activeExamForManual) return null;
+    const cleanName = manualStudentName.trim() || 'শিক্ষার্থীর নাম';
+    const cleanRoll = toEnglishDigits(manualRoll.trim()) || '০০০০০০';
+    const subjectsList = activeExamForManual.subjects || [];
+
+    const subjectMarksArray: SubjectResult[] = subjectsList.map((sub) => {
+      const full = manualCustomFullMarks[sub.code] ?? sub.fullMarks;
+      const obtained = Number(manualSubjectsMarks[sub.code] || 0);
+      const gradeInfo = calculateSubjectGrade(obtained, full);
+      return {
+        subjectCode: sub.code,
+        subjectName: sub.name,
+        fullMarks: full,
+        obtainedMarks: obtained,
+        grade: gradeInfo.grade,
+        gradePoint: gradeInfo.gradePoint,
+        isPassed: gradeInfo.isPassed,
+      };
+    });
+
+    const calculated = calculateResultGrades(subjectMarksArray);
+
+    return {
+      id: `preview-${cleanRoll}`,
+      examId: activeExamForManual.id,
+      examTitle: activeExamForManual.title,
+      examType: activeExamForManual.examType,
+      examDate: activeExamForManual.examDate,
+      semesterId: activeExamForManual.semesterId,
+      departmentId: activeExamForManual.departmentId,
+      departmentName: activeExamForManual.departmentName,
+      studentName: cleanName,
+      roll: cleanRoll,
+      studentId: manualStudentId.trim() || `DPIB-${cleanRoll}`,
+      registration: manualReg.trim() || undefined,
+      subjects: subjectMarksArray,
+      totalObtainedMarks: calculated.totalObtainedMarks,
+      totalFullMarks: calculated.totalFullMarks,
+      gpa: calculated.gpa,
+      letterGrade: calculated.letterGrade,
+      isPassed: calculated.isPassed,
+      status: 'PUBLISHED',
+      publishedAt: Date.now(),
+      verificationCode: `DPIB-${cleanRoll}-PREVIEW`,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+  };
+
+  // Manual Result Save with Step 4 Validation & Feedback
+  const handleManualSave = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     setManualError(null);
 
     if (!activeExamForManual) {
-      setManualError('অনুগ্রহ করে পরীক্ষা নির্বাচন করুন।');
+      setManualError('অনুগ্রহ করে ধাপ ১-এ একটি পরীক্ষা নির্বাচন করুন।');
+      setManualStep(1);
       return;
     }
 
     const cleanName = manualStudentName.trim();
     const cleanRoll = toEnglishDigits(manualRoll.trim());
     if (!cleanName || !cleanRoll) {
-      setManualError('শিক্ষার্থীর নাম ও রোল নম্বর লিখুন।');
+      setManualError('শিক্ষার্থীর নাম ও রোল নম্বর অবশ্যই পূরণ করতে হবে।');
+      setManualStep(2);
       return;
     }
 
-    const subjectMarksArray: SubjectResult[] = activeExamForManual.subjects.map((sub) => {
-      const obtained = Number(manualSubjectsMarks[sub.code] || 0);
-      const gradeInfo = calculateSubjectGrade(obtained, sub.fullMarks);
+    const subjectsList = activeExamForManual.subjects || [];
+    if (subjectsList.length === 0) {
+      setManualError('নির্বাচিত পরীক্ষায় কোনো বিষয় যুক্ত করা নেই।');
+      setManualStep(3);
+      return;
+    }
+
+    // Validate marks for all subjects
+    for (const sub of subjectsList) {
+      const full = manualCustomFullMarks[sub.code] ?? sub.fullMarks;
+      const obtained = Number(manualSubjectsMarks[sub.code] ?? 0);
+      if (obtained > full) {
+        setManualError(`"${sub.name}" বিষয়ের প্রাপ্ত নম্বর (${obtained}) নির্ধারিত পূর্ণমানের (${full}) চেয়ে বেশি হতে পারে না!`);
+        setManualStep(3);
+        return;
+      }
+      if (obtained < 0) {
+        setManualError(`"${sub.name}" বিষয়ের প্রাপ্ত নম্বর শূন্যের চেয়ে কম হতে পারে না!`);
+        setManualStep(3);
+        return;
+      }
+    }
+
+    const subjectMarksArray: SubjectResult[] = subjectsList.map((sub) => {
+      const full = manualCustomFullMarks[sub.code] ?? sub.fullMarks;
+      const obtained = Number(manualSubjectsMarks[sub.code] ?? 0);
+      const gradeInfo = calculateSubjectGrade(obtained, full);
       return {
         subjectCode: sub.code,
         subjectName: sub.name,
-        fullMarks: sub.fullMarks,
+        fullMarks: full,
         obtainedMarks: obtained,
         grade: gradeInfo.grade,
         gradePoint: gradeInfo.gradePoint,
@@ -447,9 +577,15 @@ export const ResultManagement: React.FC<ResultManagementProps> = ({
       setManualSheetOpen(false);
       setManualStudentName('');
       setManualRoll('');
+      setManualStudentId('');
+      setManualReg('');
       setManualSubjectsMarks({});
+      setManualCustomFullMarks({});
+      setManualStep(1);
+      setDeleteSuccessMessage(`শিক্ষার্থী "${cleanName}" (রোল: ${cleanRoll})-এর ফলাফল সফলভাবে ফায়ারস্টোরে প্রকাশিত হয়েছে!`);
       fetchResults();
       if (onRefreshStats) onRefreshStats();
+      setTimeout(() => setDeleteSuccessMessage(null), 5000);
     } catch (err: any) {
       setManualError(err.message || 'সংরক্ষণ ব্যর্থ হয়েছে');
     } finally {
@@ -575,6 +711,20 @@ export const ResultManagement: React.FC<ResultManagementProps> = ({
           <button
             onClick={() => {
               setManualError(null);
+              setManualStep(1);
+              if (selectedDepartmentId !== 'ALL') {
+                setManualDeptId(selectedDepartmentId);
+              } else if (departments.length > 0 && !manualDeptId) {
+                setManualDeptId(departments[0].id);
+              }
+              if (selectedExamId !== 'ALL') {
+                setManualExamId(selectedExamId);
+                const ex = exams.find((x) => x.id === selectedExamId);
+                if (ex) {
+                  setManualDeptId(ex.departmentId);
+                  setManualSemesterId(ex.semesterId);
+                }
+              }
               setManualSheetOpen(true);
             }}
             className="flex items-center space-x-1.5 px-3.5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs sm:text-sm font-bold transition-all shadow-xs active:scale-95 cursor-pointer"
@@ -1333,142 +1483,754 @@ export const ResultManagement: React.FC<ResultManagementProps> = ({
         </div>
       </BottomSheet>
 
-      {/* Manual Single Result Entry Bottom Sheet */}
+      {/* Manual Single Result Entry Bottom Sheet (4-Step Guided Wizard) */}
       <BottomSheet
         isOpen={manualSheetOpen}
         onClose={() => setManualSheetOpen(false)}
         title="একক ফলাফল এন্ট্রি"
-        subtitle="নির্দিষ্ট শিক্ষার্থীর বিষয়ভিত্তিক নম্বর প্রবেশ করান"
-        maxHeight="max-h-[95vh]"
+        subtitle="৪ ধাপে শিক্ষার্থীর একক ফলাফল যাচাই ও প্রকাশ করুন"
+        maxHeight="max-h-[96vh]"
       >
-        <form onSubmit={handleManualSave} className="space-y-4 pb-6">
+        <div className="space-y-4 pb-6">
           {manualError && (
-            <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs font-semibold text-rose-700">
-              {manualError}
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs font-semibold text-rose-700 flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+              <span>{manualError}</span>
             </div>
           )}
 
-          <SelectTrigger
-            label="পরীক্ষা নির্বাচন করুন"
-            required
-            value={manualExamId}
-            displayValue={activeExamForManual ? `${activeExamForManual.title} (${activeExamForManual.departmentName})` : ''}
-            onClick={() => setManualExamSheetOpen(true)}
-            icon={BookOpen}
-          />
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <label className="block text-xs font-bold text-slate-700 uppercase">
-                শিক্ষার্থীর পুরো নাম <span className="text-rose-500">*</span>
-              </label>
-              <input
-                type="text"
-                placeholder="শিক্ষার্থীর পুরো নাম লিখুন"
-                value={manualStudentName}
-                onChange={(e) => setManualStudentName(e.target.value)}
-                required
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium outline-none"
-              />
-            </div>
-
-            <div className="space-y-1">
-              <label className="block text-xs font-bold text-slate-700 uppercase">
-                রোল নম্বর <span className="text-rose-500">*</span>
-              </label>
-              <input
-                type="text"
-                placeholder="রোল নম্বর লিখুন"
-                value={manualRoll}
-                onChange={(e) => handleManualRollChange(e.target.value)}
-                required
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold font-outfit outline-none"
-              />
-            </div>
-
-            <div className="space-y-1">
-              <label className="block text-xs font-bold text-slate-700 uppercase">শিক্ষার্থী আইডি</label>
-              <input
-                type="text"
-                placeholder="শিক্ষার্থী আইডি লিখুন"
-                value={manualStudentId}
-                onChange={(e) => setManualStudentId(e.target.value)}
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium outline-none"
-              />
-            </div>
-
-            <div className="space-y-1">
-              <label className="block text-xs font-bold text-slate-700 uppercase">রেজিস্ট্রেশন নম্বর</label>
-              <input
-                type="text"
-                placeholder="রেজিস্ট্রেশন নম্বর লিখুন"
-                value={manualReg}
-                onChange={(e) => setManualReg(e.target.value)}
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium outline-none"
-              />
-            </div>
+          {/* 4-Step Visual Progress Bar */}
+          <div className="grid grid-cols-4 gap-1 p-1 bg-slate-100 rounded-2xl select-none">
+            {[
+              { step: 1, label: '১. পরীক্ষা', short: 'পরীক্ষা', icon: BookOpen },
+              { step: 2, label: '২. শিক্ষার্থী', short: 'শিক্ষার্থী', icon: GraduationCap },
+              { step: 3, label: '৩. নম্বর', short: 'নম্বর', icon: Award },
+              { step: 4, label: '৪. যাচাই ও প্রকাশ', short: 'যাচাই', icon: CheckCircle2 },
+            ].map((s) => {
+              const isCurrent = manualStep === s.step;
+              const isDone = manualStep > s.step;
+              return (
+                <button
+                  key={s.step}
+                  type="button"
+                  onClick={() => {
+                    if (s.step < manualStep) {
+                      setManualStep(s.step as any);
+                    } else if (s.step === 2 && activeExamForManual) {
+                      setManualStep(2);
+                    } else if (s.step === 3 && activeExamForManual && manualRoll.trim() && manualStudentName.trim()) {
+                      setManualStep(3);
+                    } else if (s.step === 4 && activeExamForManual && manualRoll.trim() && manualStudentName.trim()) {
+                      setManualStep(4);
+                    }
+                  }}
+                  className={`flex items-center justify-center gap-1.5 py-2 px-1 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    isCurrent
+                      ? 'bg-white text-blue-700 shadow-xs border border-blue-200'
+                      : isDone
+                      ? 'text-emerald-700 hover:bg-white/60'
+                      : 'text-slate-400 hover:text-slate-600'
+                  }`}
+                >
+                  <span
+                    className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 ${
+                      isCurrent
+                        ? 'bg-blue-600 text-white'
+                        : isDone
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-slate-200 text-slate-600'
+                    }`}
+                  >
+                    {isDone ? '✓' : s.step}
+                  </span>
+                  <span className="hidden sm:inline truncate">{s.label}</span>
+                  <span className="sm:hidden text-[10px] truncate">{s.short}</span>
+                </button>
+              );
+            })}
           </div>
 
-          {/* Dynamic Subject Mark Inputs */}
-          {activeExamForManual && (
-            <div className="pt-2">
-              <label className="block text-xs font-bold text-slate-700 uppercase mb-2">
-                বিষয়ভিত্তিক প্রাপ্ত নম্বর প্রদান করুন ({toBanglaDigits(activeExamForManual.subjects.length)}টি বিষয়)
-              </label>
-              <div className="space-y-2 max-h-48 overflow-y-auto p-1">
-                {activeExamForManual.subjects.map((sub) => {
-                  const val = manualSubjectsMarks[sub.code] ?? '';
-                  const gradeInfo = val !== '' ? calculateSubjectGrade(Number(val), sub.fullMarks) : null;
-                  return (
-                    <div
-                      key={sub.code}
-                      className="flex items-center justify-between p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-xs"
-                    >
-                      <div>
-                        <span className="font-mono font-bold text-slate-600 mr-1.5">[{sub.code}]</span>
-                        <span className="font-semibold text-slate-900">{sub.name}</span>
-                        <span className="text-slate-400 block text-[11px]">পূর্ণমান: {sub.fullMarks}</span>
-                      </div>
+          {/* ================= STEP 1: EXAM INFORMATION ================= */}
+          {manualStep === 1 && (
+            <div className="space-y-4">
+              <div className="p-3.5 bg-blue-50/70 border border-blue-200/80 rounded-2xl">
+                <p className="text-xs font-bold text-blue-900 mb-0.5">ধাপ ১: পরীক্ষার তথ্য নির্বাচন</p>
+                <p className="text-[11px] text-blue-700">টেকনোলজি, পর্ব ও কাঙ্ক্ষিত পরীক্ষাটি নির্বাচন করুন।</p>
+              </div>
 
-                      <div className="flex items-center space-x-2">
-                        {gradeInfo && (
-                          <span className="font-bold text-blue-700 font-outfit bg-blue-100 px-2 py-0.5 rounded">
-                            {gradeInfo.grade} ({gradeInfo.gradePoint.toFixed(2)})
-                          </span>
-                        )}
-                        <input
-                          type="number"
-                          placeholder="প্রাপ্ত নম্বর"
-                          value={val}
-                          onChange={(e) =>
-                            setManualSubjectsMarks({
-                              ...manualSubjectsMarks,
-                              [sub.code]: Number(e.target.value),
-                            })
-                          }
-                          max={sub.fullMarks}
-                          min={0}
-                          required
-                          className="w-20 px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-bold text-center outline-none"
-                        />
+              {/* Technology Selection */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-1.5">
+                  টেকনোলজি / বিভাগ <span className="text-rose-500">*</span>
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {departments.map((dept) => {
+                    const isSelected = manualDeptId === dept.id;
+                    return (
+                      <button
+                        key={dept.id}
+                        type="button"
+                        onClick={() => setManualDeptId(dept.id)}
+                        className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                          isSelected
+                            ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                            : 'bg-slate-50 border-slate-200 text-slate-800 hover:bg-slate-100'
+                        }`}
+                      >
+                        <p className={`text-xs font-black truncate ${isSelected ? 'text-white' : 'text-slate-900'}`}>
+                          {dept.name}
+                        </p>
+                        <p className={`text-[10px] font-medium font-outfit uppercase mt-0.5 ${isSelected ? 'text-blue-100' : 'text-slate-500'}`}>
+                          কোড: {dept.code}
+                        </p>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Semester Selection */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-1.5">
+                  পর্ব / সেমিস্টার <span className="text-rose-500">*</span>
+                </label>
+                <div className="grid grid-cols-4 sm:grid-cols-8 gap-1.5">
+                  {(['1', '2', '3', '4', '5', '6', '7', '8'] as SemesterId[]).map((sem) => {
+                    const isSelected = manualSemesterId === sem;
+                    return (
+                      <button
+                        key={sem}
+                        type="button"
+                        onClick={() => setManualSemesterId(sem)}
+                        className={`py-2 px-1 rounded-xl text-center border font-bold text-xs transition-all cursor-pointer ${
+                          isSelected
+                            ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
+                            : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                        }`}
+                      >
+                        <span className="block text-xs font-black">{SEMESTER_MAP[sem]}</span>
+                        <span className={`block text-[9px] font-outfit ${isSelected ? 'text-slate-300' : 'text-slate-400'}`}>
+                          SEM {sem}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Exam Selection (Filtered by Tech & Semester) */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-bold text-slate-700 uppercase">
+                    পরীক্ষার নাম ও ধরন <span className="text-rose-500">*</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setManualExamSheetOpen(true)}
+                    className="text-[11px] font-bold text-blue-600 hover:text-blue-800 underline cursor-pointer"
+                  >
+                    সকল পরীক্ষা দেখুন
+                  </button>
+                </div>
+
+                {(() => {
+                  const matchingExams = exams.filter(
+                    (e) => (!manualDeptId || e.departmentId === manualDeptId) && (!manualSemesterId || e.semesterId === manualSemesterId)
+                  );
+
+                  if (matchingExams.length === 0) {
+                    return (
+                      <div className="p-4 bg-amber-50/80 border border-amber-200 rounded-2xl text-center space-y-2">
+                        <p className="text-xs font-bold text-amber-900">
+                          নির্বাচিত টেকনোলজি ও পর্বের কোনো পরীক্ষা তৈরি নেই।
+                        </p>
+                        <p className="text-[11px] text-amber-700">
+                          নিচের বাটন চেপে সিস্টেমের যেকোনো তৈরি পরীক্ষা থেকে সরাসরি নির্বাচন করতে পারেন।
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => setManualExamSheetOpen(true)}
+                          className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
+                        >
+                          সকল তৈরি পরীক্ষা হতে বাছাই করুন
+                        </button>
                       </div>
+                    );
+                  }
+
+                  return (
+                    <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                      {matchingExams.map((ex) => {
+                        const isSelected = manualExamId === ex.id;
+                        return (
+                          <div
+                            key={ex.id}
+                            onClick={() => {
+                              setManualExamId(ex.id);
+                              setManualDeptId(ex.departmentId);
+                              setManualSemesterId(ex.semesterId);
+                            }}
+                            className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${
+                              isSelected
+                                ? 'bg-blue-50/90 border-blue-500 shadow-2xs'
+                                : 'bg-white border-slate-200 hover:border-slate-300'
+                            }`}
+                          >
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-xs font-black text-slate-900 truncate">
+                                  {ex.title}
+                                </span>
+                                <span className="px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 text-[10px] font-extrabold uppercase font-outfit">
+                                  {ex.examType}
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-slate-500 font-medium mt-0.5">
+                                তারিখ: {ex.examDate} • পূর্ণমান: {ex.totalMarks} • বিষয়: {toBanglaDigits(ex.subjects?.length || 0)}টি
+                              </p>
+                            </div>
+
+                            <div className="shrink-0">
+                              <span
+                                className={`w-5 h-5 rounded-full flex items-center justify-center border ${
+                                  isSelected
+                                    ? 'bg-blue-600 border-blue-600 text-white'
+                                    : 'border-slate-300 bg-white'
+                                }`}
+                              >
+                                {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   );
-                })}
+                })()}
+              </div>
+
+              {/* Selected Exam Information Confirmation Card */}
+              {activeExamForManual && (
+                <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
+                  <div className="flex items-center justify-between border-b border-slate-200/80 pb-2">
+                    <span className="text-xs font-extrabold text-slate-900 flex items-center gap-1.5">
+                      <BookOpen className="w-3.5 h-3.5 text-blue-600" />
+                      {activeExamForManual.title}
+                    </span>
+                    <span className="px-2 py-0.5 rounded-md bg-teal-100 text-teal-900 text-[10px] font-bold">
+                      {activeExamForManual.departmentName}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
+                    <div>
+                      <span className="text-slate-400 block">পর্ব:</span>
+                      <span className="font-bold text-slate-800">{SEMESTER_MAP[activeExamForManual.semesterId]}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block">পরীক্ষার ধরন:</span>
+                      <span className="font-bold text-slate-800">{activeExamForManual.examType}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block">পরীক্ষার তারিখ:</span>
+                      <span className="font-bold text-slate-800 font-outfit">{activeExamForManual.examDate}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block">নির্ধারিত মোট পূর্ণমান:</span>
+                      <span className="font-bold text-slate-800 font-outfit">{activeExamForManual.totalMarks}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Step 1 Actions */}
+              <div className="pt-2 flex justify-end">
+                <button
+                  type="button"
+                  disabled={!activeExamForManual}
+                  onClick={() => {
+                    if (!activeExamForManual) {
+                      setManualError('অনুগ্রহ করে একটি পরীক্ষা নির্বাচন করুন।');
+                      return;
+                    }
+                    setManualError(null);
+                    setManualStep(2);
+                  }}
+                  className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs sm:text-sm font-bold transition-all shadow-xs active:scale-95 disabled:opacity-40 cursor-pointer flex items-center gap-1.5"
+                >
+                  <span>পরবর্তী: শিক্ষার্থীর তথ্য</span>
+                  <ChevronRight className="w-4 h-4" />
+                </button>
               </div>
             </div>
           )}
 
-          <div className="pt-3">
-            <button
-              type="submit"
-              disabled={manualSaving}
-              className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-sm transition-all shadow-md active:scale-98 disabled:opacity-50 cursor-pointer"
-            >
-              {manualSaving ? 'সংরক্ষণ হচ্ছে...' : 'ফলাফল সংরক্ষণ ও প্রকাশ করুন'}
-            </button>
-          </div>
-        </form>
+          {/* ================= STEP 2: STUDENT INFORMATION ================= */}
+          {manualStep === 2 && (
+            <div className="space-y-4">
+              <div className="p-3.5 bg-emerald-50/70 border border-emerald-200/80 rounded-2xl">
+                <p className="text-xs font-bold text-emerald-900 mb-0.5">ধাপ ২: শিক্ষার্থীর তথ্য প্রদান</p>
+                <p className="text-[11px] text-emerald-700">
+                  রোল নম্বর লিখলে ডেটাবেজে বিদ্যমান শিক্ষার্থীর নাম ও তথ্য স্বয়ংক্রিয়ভাবে পূরণ হবে।
+                </p>
+              </div>
+
+              {/* Roll Number Input with Live Match Indicator */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-slate-700 uppercase">
+                  রোল নম্বর <span className="text-rose-500">*</span>
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="শিক্ষার্থীর রোল নম্বর লিখুন (উদাঃ ৬২২৭৫১)"
+                    value={manualRoll}
+                    onChange={(e) => handleManualRollChange(e.target.value)}
+                    required
+                    className="w-full px-3.5 py-3 pl-10 bg-slate-50 border border-slate-200 rounded-xl text-base font-black font-outfit outline-none focus:border-blue-500 focus:bg-white transition-all tracking-wider"
+                  />
+                  <Hash className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
+                </div>
+
+                {/* Auto-Match Feedback Badge */}
+                {manualRoll.trim() && (
+                  <div className="pt-0.5">
+                    {studentAutoMatched ? (
+                      <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center gap-2 text-xs font-bold text-emerald-800">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                        <span>শিক্ষার্থীর তথ্য ডেটাবেজ থেকে স্বয়ংক্রিয়ভাবে যুক্ত হয়েছে ({matchedStudentDept || 'DPIB'})</span>
+                      </div>
+                    ) : (
+                      <div className="p-2.5 bg-slate-100 border border-slate-200 rounded-xl flex items-center gap-2 text-xs font-semibold text-slate-600">
+                        <AlertCircle className="w-4 h-4 text-slate-400 shrink-0" />
+                        <span>নতুন শিক্ষার্থীর জন্য সরাসরি নাম ও তথ্য প্রদান করুন।</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Student Name */}
+              <div className="space-y-1">
+                <label className="block text-xs font-bold text-slate-700 uppercase">
+                  শিক্ষার্থীর পুরো নাম <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="শিক্ষার্থীর পুরো নাম লিখুন"
+                  value={manualStudentName}
+                  onChange={(e) => setManualStudentName(e.target.value)}
+                  required
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium outline-none focus:border-blue-500 focus:bg-white transition-all"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Student ID */}
+                <div className="space-y-1">
+                  <label className="block text-xs font-bold text-slate-700 uppercase">
+                    শিক্ষার্থী আইডি (STUDENT ID)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="উদাঃ DPIB-622751"
+                    value={manualStudentId}
+                    onChange={(e) => setManualStudentId(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium font-outfit outline-none focus:border-blue-500 focus:bg-white transition-all"
+                  />
+                </div>
+
+                {/* Registration Number */}
+                <div className="space-y-1">
+                  <label className="block text-xs font-bold text-slate-700 uppercase">
+                    রেজিস্ট্রেশন নম্বর (REGISTRATION NO)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="উদাঃ ১৫০২১..."
+                    value={manualReg}
+                    onChange={(e) => setManualReg(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium font-outfit outline-none focus:border-blue-500 focus:bg-white transition-all"
+                  />
+                </div>
+              </div>
+
+              {/* Step 2 Actions */}
+              <div className="pt-2 flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => setManualStep(1)}
+                  className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer flex items-center gap-1"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                  <span>পূর্ববর্তী ধাপ</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={!manualRoll.trim() || !manualStudentName.trim()}
+                  onClick={() => {
+                    if (!manualRoll.trim() || !manualStudentName.trim()) {
+                      setManualError('অনুগ্রহ করে শিক্ষার্থীর রোল নম্বর ও নাম লিখুন।');
+                      return;
+                    }
+                    setManualError(null);
+                    setManualStep(3);
+                  }}
+                  className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs sm:text-sm font-bold transition-all shadow-xs active:scale-95 disabled:opacity-40 cursor-pointer flex items-center gap-1.5"
+                >
+                  <span>পরবর্তী: বিষয়ভিত্তিক নম্বর</span>
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* ================= STEP 3: SUBJECT MARKS & FULL MARKS ================= */}
+          {manualStep === 3 && activeExamForManual && (
+            <div className="space-y-4">
+              <div className="p-3.5 bg-indigo-50/70 border border-indigo-200/80 rounded-2xl">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-bold text-indigo-950 mb-0.5">ধাপ ৩: বিষয়ভিত্তিক নম্বর প্রদান</p>
+                    <p className="text-[11px] text-indigo-700">
+                      পরীক্ষার কনফিগারেশন হতে নির্ধারিত পূর্ণমান প্রদর্শিত হচ্ছে। প্রয়োজনে পূর্ণমান সম্পাদনা করতে পারেন।
+                    </p>
+                  </div>
+                  <span className="px-2.5 py-1 rounded-xl bg-white text-indigo-900 border border-indigo-200 text-xs font-black shrink-0">
+                    {toBanglaDigits(activeExamForManual.subjects?.length || 0)}টি বিষয়
+                  </span>
+                </div>
+              </div>
+
+              {/* Subjects Mark Entry List */}
+              <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1">
+                {(activeExamForManual.subjects || []).map((sub) => {
+                  const effectiveFullMarks = manualCustomFullMarks[sub.code] ?? sub.fullMarks;
+                  const obtainedVal = manualSubjectsMarks[sub.code] ?? '';
+                  const numVal = obtainedVal === '' ? null : Number(obtainedVal);
+                  const isOverMark = numVal !== null && numVal > effectiveFullMarks;
+                  const isNegative = numVal !== null && numVal < 0;
+                  const gradeInfo = numVal !== null && !isOverMark && !isNegative
+                    ? calculateSubjectGrade(numVal, effectiveFullMarks)
+                    : null;
+                  const isEditingFull = editingFullMarksCode === sub.code;
+
+                  return (
+                    <div
+                      key={sub.code}
+                      className={`p-3 rounded-2xl border transition-all ${
+                        isOverMark || isNegative
+                          ? 'bg-rose-50/80 border-rose-300'
+                          : 'bg-slate-50/90 border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="px-2 py-0.5 rounded-md bg-slate-200 text-slate-800 font-mono text-[11px] font-bold">
+                              {sub.code}
+                            </span>
+                            <span className="font-bold text-xs sm:text-sm text-slate-900 truncate">
+                              {sub.name}
+                            </span>
+                          </div>
+
+                          {/* Full Marks Display & Edit Toggle */}
+                          <div className="flex items-center gap-2 mt-1 text-[11px]">
+                            <span className="text-slate-500 font-medium">নির্ধারিত পূর্ণমান:</span>
+                            {isEditingFull ? (
+                              <div className="flex items-center gap-1">
+                                <input
+                                  type="number"
+                                  min={1}
+                                  value={effectiveFullMarks}
+                                  onChange={(e) =>
+                                    setManualCustomFullMarks({
+                                      ...manualCustomFullMarks,
+                                      [sub.code]: Number(e.target.value) || 1,
+                                    })
+                                  }
+                                  className="w-16 px-1.5 py-0.5 bg-white border border-blue-400 rounded text-center text-xs font-bold outline-none font-outfit"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingFullMarksCode(null)}
+                                  className="px-2 py-0.5 bg-blue-600 text-white rounded text-[10px] font-bold cursor-pointer"
+                                >
+                                  সংরক্ষণ
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-1">
+                                <span className="font-bold text-slate-800 font-outfit">{effectiveFullMarks}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingFullMarksCode(sub.code)}
+                                  className="text-blue-600 hover:text-blue-800 text-[10px] font-bold inline-flex items-center gap-0.5 cursor-pointer ml-1"
+                                  title="পূর্ণমান পরিবর্তন করুন"
+                                >
+                                  <Edit3 className="w-3 h-3" />
+                                  <span>সম্পাদনা</span>
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Mark Input & Realtime Calculated Grade */}
+                        <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+                          {gradeInfo && (
+                            <span
+                              className={`px-2.5 py-1 rounded-xl text-xs font-black font-outfit border ${
+                                gradeInfo.isPassed
+                                  ? gradeInfo.gradePoint >= 3.5
+                                    ? 'bg-emerald-100 text-emerald-900 border-emerald-200'
+                                    : 'bg-blue-100 text-blue-900 border-blue-200'
+                                  : 'bg-rose-100 text-rose-900 border-rose-200'
+                              }`}
+                            >
+                              {gradeInfo.grade} ({gradeInfo.gradePoint.toFixed(2)})
+                            </span>
+                          )}
+
+                          <div className="space-y-0.5">
+                            <input
+                              type="number"
+                              placeholder="প্রাপ্ত নম্বর"
+                              value={obtainedVal}
+                              onChange={(e) => {
+                                const val = e.target.value === '' ? '' : Number(e.target.value);
+                                setManualSubjectsMarks({
+                                  ...manualSubjectsMarks,
+                                  [sub.code]: val,
+                                });
+                              }}
+                              max={effectiveFullMarks}
+                              min={0}
+                              className={`w-24 px-3 py-2 bg-white border rounded-xl text-sm font-bold text-center outline-none font-outfit ${
+                                isOverMark || isNegative
+                                  ? 'border-rose-500 text-rose-700 bg-rose-50'
+                                  : 'border-slate-300 focus:border-blue-500'
+                              }`}
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {isOverMark && (
+                        <p className="text-[10px] text-rose-600 font-bold mt-1">
+                          প্রাপ্ত নম্বর পূর্ণমানের ({effectiveFullMarks}) চেয়ে বেশি হতে পারে না!
+                        </p>
+                      )}
+                      {isNegative && (
+                        <p className="text-[10px] text-rose-600 font-bold mt-1">
+                          প্রাপ্ত নম্বর শূন্যের চেয়ে কম হতে পারে না!
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Step 3 Actions */}
+              <div className="pt-2 flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => setManualStep(2)}
+                  className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer flex items-center gap-1"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                  <span>পূর্ববর্তী ধাপ</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    // Check for invalid marks
+                    for (const sub of activeExamForManual.subjects || []) {
+                      const full = manualCustomFullMarks[sub.code] ?? sub.fullMarks;
+                      const val = Number(manualSubjectsMarks[sub.code] ?? 0);
+                      if (val > full) {
+                        setManualError(`"${sub.name}" বিষয়ের প্রাপ্ত নম্বর নির্ধারিত পূর্ণমানের চেয়ে বেশি!`);
+                        return;
+                      }
+                      if (val < 0) {
+                        setManualError(`"${sub.name}" বিষয়ের প্রাপ্ত নম্বর নেতিবাচক হতে পারে না!`);
+                        return;
+                      }
+                    }
+                    setManualError(null);
+                    setManualStep(4);
+                  }}
+                  className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs sm:text-sm font-bold transition-all shadow-xs active:scale-95 cursor-pointer flex items-center gap-1.5"
+                >
+                  <span>পরবর্তী: ফলাফল যাচাই ও প্রকাশ</span>
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* ================= STEP 4: VERIFICATION & PUBLISH ================= */}
+          {manualStep === 4 && activeExamForManual && (
+            <div className="space-y-4">
+              <div className="p-3.5 bg-slate-900 text-white rounded-2xl">
+                <p className="text-xs font-bold text-slate-100 mb-0.5">ধাপ ৪: ফলাফল যাচাই ও প্রকাশ</p>
+                <p className="text-[11px] text-slate-300">
+                  নিচের স্বয়ংক্রিয় হিসাব ও মেটাডেটা যাচাই করে চূড়ান্তভাবে ফলাফল প্রকাশ করুন।
+                </p>
+              </div>
+
+              {/* Computed Live Summary Stats */}
+              {(() => {
+                const subArray: SubjectResult[] = (activeExamForManual.subjects || []).map((sub) => {
+                  const full = manualCustomFullMarks[sub.code] ?? sub.fullMarks;
+                  const obtained = Number(manualSubjectsMarks[sub.code] || 0);
+                  const gradeInfo = calculateSubjectGrade(obtained, full);
+                  return {
+                    subjectCode: sub.code,
+                    subjectName: sub.name,
+                    fullMarks: full,
+                    obtainedMarks: obtained,
+                    grade: gradeInfo.grade,
+                    gradePoint: gradeInfo.gradePoint,
+                    isPassed: gradeInfo.isPassed,
+                  };
+                });
+                const calculated = calculateResultGrades(subArray);
+                const percentage = ((calculated.totalObtainedMarks / (calculated.totalFullMarks || 1)) * 100).toFixed(1);
+
+                // Duplicate Check: Check if this roll already has a result in this exam
+                const cleanRoll = toEnglishDigits(manualRoll.trim());
+                const existingResult = results.find(
+                  (r) => r.examId === activeExamForManual.id && toEnglishDigits(r.roll) === cleanRoll
+                );
+
+                return (
+                  <div className="space-y-3">
+                    {/* Student & Exam Header Info */}
+                    <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl flex flex-wrap items-center justify-between gap-2 text-xs">
+                      <div>
+                        <p className="font-black text-slate-900 text-sm">{manualStudentName}</p>
+                        <p className="text-slate-500 font-bold mt-0.5">
+                          রোল: <span className="font-outfit text-slate-900">{manualRoll}</span> • রেজিঃ <span className="font-outfit text-slate-900">{manualReg || 'N/A'}</span>
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <span className="px-2.5 py-1 rounded-lg bg-blue-100 text-blue-900 font-bold text-xs">
+                          {activeExamForManual.title}
+                        </span>
+                        <p className="text-[11px] text-slate-500 font-medium mt-0.5">
+                          {activeExamForManual.departmentName} • {SEMESTER_MAP[activeExamForManual.semesterId]}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Calculated GPA & Metrics Cards */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      <div className="p-3 bg-blue-50/80 border border-blue-200/80 rounded-2xl text-center">
+                        <span className="text-[10px] font-extrabold uppercase text-blue-700 tracking-wider">মোট প্রাপ্ত নম্বর</span>
+                        <p className="text-lg font-black text-blue-950 font-outfit mt-0.5">
+                          {calculated.totalObtainedMarks} <span className="text-xs text-blue-600 font-normal">/ {calculated.totalFullMarks}</span>
+                        </p>
+                        <span className="text-[10px] font-bold text-blue-700 font-outfit">{percentage}%</span>
+                      </div>
+
+                      <div className="p-3 bg-violet-50/80 border border-violet-200/80 rounded-2xl text-center">
+                        <span className="text-[10px] font-extrabold uppercase text-violet-700 tracking-wider">সিজিপিএ (GPA)</span>
+                        <p className="text-xl font-black text-violet-950 font-outfit mt-0.5">
+                          {calculated.gpa.toFixed(2)}
+                        </p>
+                        <span className="text-[10px] font-bold text-violet-700">আউট অফ ৪.০০</span>
+                      </div>
+
+                      <div className="p-3 bg-teal-50/80 border border-teal-200/80 rounded-2xl text-center">
+                        <span className="text-[10px] font-extrabold uppercase text-teal-700 tracking-wider">লেটার গ্রেড</span>
+                        <p className="text-xl font-black text-teal-950 font-outfit mt-0.5">
+                          {calculated.letterGrade}
+                        </p>
+                        <span className="text-[10px] font-bold text-teal-700">বাংলাদেশ কারিগরি বোর্ড</span>
+                      </div>
+
+                      <div className={`p-3 rounded-2xl text-center border ${
+                        calculated.isPassed
+                          ? 'bg-emerald-50/80 border-emerald-200/80 text-emerald-950'
+                          : 'bg-rose-50/80 border-rose-200/80 text-rose-950'
+                      }`}>
+                        <span className="text-[10px] font-extrabold uppercase tracking-wider">ফলাফল স্ট্যাটাস</span>
+                        <p className="text-base font-black mt-0.5">
+                          {calculated.isPassed ? 'উত্তীর্ণ (PASSED)' : 'অকৃতকার্য (FAILED)'}
+                        </p>
+                        <span className="text-[10px] font-bold">
+                          {calculated.isPassed ? 'সফলভাবে উত্তীর্ণ' : 'পুনরায় পরীক্ষা প্রযোজ্য'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Duplicate Result Warning Notification */}
+                    {existingResult && (
+                      <div className="p-3 bg-amber-50 border border-amber-200 rounded-2xl flex items-start gap-2.5 text-xs text-amber-900">
+                        <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                        <div>
+                          <p className="font-bold">সতর্কতা: এই রোল নম্বরের একটি ফলাফল ইতোমধ্যে বিদ্যমান!</p>
+                          <p className="text-[11px] text-amber-800 mt-0.5">
+                            পূর্বের GPA ছিল {existingResult.gpa.toFixed(2)} ({existingResult.letterGrade})। সংরক্ষণ করলে এই রেকর্ডটি নতুন প্রাপ্ত নম্বর দ্বারা হালনাগাদ হবে।
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Interactive Result Card Preview Action */}
+                    <div className="pt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const preview = buildCurrentStudentResult();
+                          if (preview) {
+                            setPreviewResult(preview);
+                          }
+                        }}
+                        className="w-full py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs sm:text-sm font-bold transition-all border border-slate-300 flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        <Eye className="w-4 h-4 text-blue-600" />
+                        <span>অফিসিয়াল মার্কশিট কার্ড প্রিভিউ দেখুন</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Step 4 Actions */}
+              <div className="pt-3 flex items-center justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={() => setManualStep(3)}
+                  className="px-4 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer flex items-center gap-1 shrink-0"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                  <span>নম্বর সংশোধন</span>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={manualSaving}
+                  onClick={() => handleManualSave()}
+                  className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs sm:text-sm transition-all shadow-md active:scale-98 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2"
+                >
+                  {manualSaving ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>সংরক্ষণ ও প্রকাশ হচ্ছে...</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>ফলাফল সংরক্ষণ ও প্রকাশ নিশ্চিত করুন</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </BottomSheet>
 
       {/* Result Card Preview Sheet */}

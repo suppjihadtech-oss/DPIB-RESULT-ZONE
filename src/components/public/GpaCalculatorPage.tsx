@@ -675,17 +675,17 @@ export const GpaCalculatorPage: React.FC = () => {
                 <span className="font-bold text-slate-900 font-mono">{toBanglaDigits(subjects.length)} টি</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-slate-600 font-medium">মোট ক্রেডিট [Σ(Credit)]:</span>
+                <span className="text-slate-600 font-medium">মোট ক্রেডিট [Σ(CREDIT)]:</span>
                 <span className="font-black text-slate-900 font-mono">{toBanglaDigits(result.totalCredits)}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-slate-600 font-medium">মোট অর্জিত ক্রেডিট পয়েন্ট [Σ(Credit × GP)]:</span>
+                <span className="text-slate-600 font-medium">মোট অর্জিত ক্রেডিট পয়েন্ট [Σ(CREDIT × GP)]:</span>
                 <span className="font-black text-slate-900 font-mono">{toBanglaDigits(result.totalCreditPoints)}</span>
               </div>
               <div className="pt-2 border-t border-slate-200 flex items-center justify-between font-bold text-slate-900">
                 <span>হিসাবের সূত্র:</span>
                 <span className="font-mono text-[11px] text-violet-700 bg-white px-2 py-0.5 rounded border border-slate-200">
-                  Σ(Credit × GP) ÷ Σ(Credit)
+                  Σ(CREDIT × GP) ÷ Σ(CREDIT)
                 </span>
               </div>
             </div>
@@ -872,7 +872,7 @@ export const GpaCalculatorPage: React.FC = () => {
                           : 'bg-slate-100 text-slate-700 border-slate-200'
                       }`}
                     >
-                      {toBanglaDigits(opt.credit)} Cr
+                      {toBanglaDigits(opt.credit)} CR
                     </div>
                     <div>
                       <div className="font-bold text-xs sm:text-sm text-slate-900">

@@ -138,7 +138,7 @@ export const StudentBookListPage: React.FC<StudentBookListPageProps> = ({
       value: sem.id,
       label: `${sem.label} (${sem.en})`,
       sublabel: `${sem.label} - ডিপ্লোমা ইঞ্জিনিয়ারিং কারিকুলাম`,
-      badge: `${sem.id}st/th Sem`,
+      badge: `SEM ${sem.id}`,
       icon: Calendar,
     }));
   }, []);

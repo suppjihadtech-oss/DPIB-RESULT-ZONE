@@ -47,6 +47,57 @@ const QUICK_QUESTIONS = [
   'নোটিশ ও ছুটির তথ্য কোথায় পাব?',
 ];
 
+function getClientAssistantFallback(
+  messageText: string,
+  resultContext: StudentResult | null,
+  exams: Exam[],
+  notices: Notice[]
+): string {
+  const clean = (messageText || '').trim().toLowerCase();
+
+  if (resultContext) {
+    const weakSubs = resultContext.subjects.filter(
+      (s) => !s.isPassed || s.grade === 'F' || s.grade === 'D' || s.grade === 'C'
+    );
+    if (clean.includes('উন্নতি') || clean.includes('দুর্বল') || clean.includes('পরামর্শ') || clean.includes('দরকার')) {
+      if (weakSubs.length > 0) {
+        return `শিক্ষার্থী ${resultContext.studentName} (রোল: ${toBanglaDigits(resultContext.roll)})-এর ফলাফল অনুযায়ী দুর্বল বিষয়:\n` +
+          weakSubs.map((s) => `• ${s.subjectName} [${s.subjectCode}]: প্রাপ্ত নম্বর ${toBanglaDigits(s.obtainedMarks)}/${toBanglaDigits(s.fullMarks)} (গ্রেড: ${s.grade})`).join('\n') +
+          `\n\nপরামর্শ ও স্টাডি প্ল্যান:\n১. বিগত ৩-৫ বছরের বিটিইবি বোর্ড সমাপনী প্রশ্ন নিয়মিত সমাধান করুন।\n২. তত্ত্বীয় ও ব্যবহারিক উভয় অংশে নূন্যতম ৪০% নম্বর নিশ্চিত করতে প্রতিদিন খাতায় লিখে অনুশীলন করুন।\n৩. বিষয়ভিত্তিক শিক্ষকের সাথে যোগাযোগ করে কঠিন অধ্যায়গুলো ঝালিয়ে নিন।`;
+      }
+      return `আপনার ফলাফল সন্তোষজনক (GPA: ${toBanglaDigits(resultContext.gpa.toFixed(2))}, গ্রেড: ${resultContext.letterGrade})। এই ভালো অবস্থান ধরে রাখতে লাইব্রেরির রেফারেন্স বই ও নিয়মিত ক্লাস নোট অনুসরণ করুন।`;
+    }
+  }
+
+  if (clean.includes('ফলাফল') && (clean.includes('কীভাবে') || clean.includes('দেখব') || clean.includes('খুঁজব'))) {
+    return `DPIB RESULT ZONE-এ ফলাফল দেখার সহজ নিয়ম:\n\n১. হোম পেজ অথবা উপরের 'ফলাফল অনুসন্ধান' মেনুতে প্রবেশ করুন।\n২. আপনার সঠিক বোর্ড রোল নম্বর লিখুন।\n৩. আপনার সেমিস্টার ও পরীক্ষা নির্বাচন করুন (ঐচ্ছিক)।\n৪. 'ফলাফল অনুসন্ধান করুন' বাটনে ক্লিক করুন।\n\nতৎক্ষণাৎ বিষয়ভিত্তিক নম্বর, মোট নম্বর, জিপিএ ও প্রিন্টযোগ্য ডিজিটাল গ্রেডশিট দেখা যাবে। একই রোলে একাধিক পরীক্ষার ফলাফল থাকলে তালিকা থেকে নির্দিষ্ট পরীক্ষাটি বাছাই করতে পারবেন।`;
+  }
+
+  if (clean.includes('পাসের শর্ত') || clean.includes('পাস মার্ক') || clean.includes('পাস করার নিয়ম')) {
+    return `বিটিইবি ডিপ্লোমা ইন ইঞ্জিনিয়ারিং পাসের সাধারণ নিয়মাবলি:\n\n১. প্রতিটি বিষয়ে তত্ত্বীয় ধারাবাহিক (TC), তত্ত্বীয় সমাপনী (TF), ব্যবহারিক ধারাবাহিক (PC) ও ব্যবহারিক সমাপনী (PF) প্রতিটি অংশে পৃথকভাবে পাস করতে হয়।\n২. প্রতিটি অংশে নূন্যতম ৪০% নম্বর অর্জন আবশ্যক।\n৩. ৪০%-এর কম নম্বর পেলে বা অনুপস্থিত থাকলে উক্ত বিষয়ে 'F' গ্রেড (রেফার্ড) গণ্য হবে।\n৪. রেফার্ড বিষয়ে পরবর্তী নির্ধারিত পর্বে পুনঃপরীক্ষা দিয়ে পাস করা যায়। চূড়ান্ত ডিপ্লোমা সনদের জন্য সকল বিষয়ে উত্তীর্ণ হওয়া আবশ্যক।`;
+  }
+
+  if (clean.includes('রুটিন') || clean.includes('পরীক্ষার তারিখ') || clean.includes('সময়সূচি')) {
+    const pubCount = exams.length;
+    return `পরীক্ষার রুটিন সংক্রান্ত তথ্য:\n\n১. ইনস্টিটিউটের ঘোষিত সকল পরীক্ষা ও সময়সূচি পোর্টালের 'স্মার্ট ক্যালেন্ডার' এবং 'পরীক্ষার তালিকা' মেনুতে পাওয়া যাবে।\n২. বর্তমানে মোট ${toBanglaDigits(pubCount)}টি পরীক্ষার তথ্য ও ফলাফল ডেটাবেসে অন্তর্ভুক্ত রয়েছে।\n৩. চূড়ান্ত অফিসিয়াল রুটিন নোটিশ বোর্ড থেকে সরাসরি ডাউনলোড ও প্রিন্ট করা যাবে।`;
+  }
+
+  if (clean.includes('নোটিশ') || clean.includes('ছুটি') || clean.includes('ক্যালেন্ডার')) {
+    const recentTitle = notices[0]?.title ? `\n\nসর্বশেষ প্রকাশিত নোটিশ: "${notices[0].title}"` : '';
+    return `নোটিশ ও ছুটির তথ্য:\n\n১. ইনস্টিটিউটের সকল সাম্প্রতিক নোটিশ ও অ্যাকাডেমিক আদেশ দেখতে 'নোটিশ' ট্যাবে যান।\n২. সরকারি ছুটি, কলেজ বন্ধের দিন ও অনুষ্ঠান দিনপঞ্জি দেখতে 'স্মার্ট ক্যালেন্ডার' পেজ ব্যবহার করুন।${recentTitle}`;
+  }
+
+  if (clean.includes('বই') || clean.includes('বুক লিস্ট') || clean.includes('পাঠ্যবই')) {
+    return `ডিপ্লোমা পাঠ্যবই ও বুক লিস্ট:\n\n১. আপনার টেকনোলজি ও বর্তমান সেমিস্টারের সকল পাঠ্যবই দেখতে 'বুক লিস্ট' পেজে যান।\n২. সেখানে বিষয় কোড, ক্রেডিট সংখ্যা, আনুমানিক বাজার মূল্য এবং বিটিইবি রেফারেন্স বইয়ের তালিকা দেওয়া আছে।`;
+  }
+
+  if (clean.includes('জিপিএ') || clean.includes('গ্রেড') || clean.includes('ক্যালকুলেটর')) {
+    return `জিপিএ হিসাব ও গ্রেডিং স্কেল:\n\n• ৮০%+ : A+ (৪.০০)\n• ৭৫-৭৯% : A (৩.৭৫)\n• ৭০-৭৪% : A- (৩.৫০)\n• ৬৫-৬৯% : B+ (৩.২৫)\n• ৬০-৬৪% : B (৩.০০)\n• ৫৫-৫৯% : B- (২.৭৫)\n• ৫০-৫৪% : C+ (২.৫০)\n• ৪৫-৪৯% : C (২.২৫)\n• ৪০-৪৪% : D (২.০০)\n• ৪০% এর কম : F (০.০০ - ফেল)\n\nসেমিস্টার জিপিএ হিসাব করতে সরাসরি 'জিপিএ ক্যালকুলেটর' মেনু ব্যবহার করুন।`;
+  }
+
+  return `আপনার প্রশ্নের জন্য ধন্যবাদ। দক্ষিণবঙ্গ পলিটেকনিক ইনস্টিটিউট শিক্ষার্থী সহায়তা কেন্দ্রে আপনাকে স্বাগতম।\n\nআপনার ফলাফল ও বিষয়ভিত্তিক দুর্বলতা দেখতে সরাসরি আপনার বোর্ড রোল নম্বর (যেমন: 589412) লিখুন।\n\nঅন্যান্য তথ্যের জন্য নিচের কুইক অপশনগুলো বেছে নিতে পারেন:\n• আমার ফলাফল কীভাবে দেখব?\n• পাসের শর্ত কী?\n• পরীক্ষার রুটিন কোথায় পাব?\n• নোটিশ ও ছুটির তথ্য কোথায় পাব?\n• কোন বিষয়ে আমার উন্নতি করা দরকার?`;
+}
+
 export const DpibAssistantModal: React.FC<DpibAssistantModalProps> = ({
   exams,
   notices,
@@ -290,30 +341,35 @@ export const DpibAssistantModal: React.FC<DpibAssistantModalProps> = ({
         }),
       });
 
-      if (!response.ok) {
-        throw new Error('Server returned error');
+      let replyContent = '';
+      if (response.ok) {
+        const data = await response.json();
+        replyContent = data.reply || '';
       }
 
-      const data = await response.json();
+      if (!replyContent) {
+        replyContent = getClientAssistantFallback(messageText, currentResultContext, exams, notices);
+      }
+
       setMessages((prev) => [
         ...prev,
         {
           id: `msg-${Date.now()}-assistant`,
           role: 'assistant',
-          text: data.reply || 'দুঃখিত, কোনো উত্তর পাওয়া যায়নি।',
+          text: replyContent,
           timestamp: Date.now(),
         },
       ]);
     } catch (err) {
-      console.error('Error querying DPIB Assistant API:', err);
+      console.warn('Network request to DPIB Assistant failed, using smart local engine:', err);
+      const fallbackReply = getClientAssistantFallback(messageText, currentResultContext, exams, notices);
       setMessages((prev) => [
         ...prev,
         {
-          id: `msg-${Date.now()}-assistant-err`,
+          id: `msg-${Date.now()}-assistant-fb`,
           role: 'assistant',
-          text: 'সহকারী সার্ভারের সাথে সংযোগে সাময়িক সমস্যা হয়েছে। অনুগ্রহ করে ইন্টারনেট সংযোগ পরীক্ষা করে পুনরায় চেষ্টা করুন।',
+          text: fallbackReply,
           timestamp: Date.now(),
-          error: true,
         },
       ]);
     } finally {
@@ -336,7 +392,7 @@ export const DpibAssistantModal: React.FC<DpibAssistantModalProps> = ({
   return (
     <>
       {/* ================= FLOATING GLASSMORPHISM AI BUTTON ================= */}
-      <div className="fixed bottom-20 right-4 sm:bottom-6 sm:right-6 z-40 select-none">
+      <div className="fixed bottom-28 sm:bottom-10 right-4 sm:right-8 z-40 select-none">
         <button
           type="button"
           onClick={() => setIsOpen(true)}

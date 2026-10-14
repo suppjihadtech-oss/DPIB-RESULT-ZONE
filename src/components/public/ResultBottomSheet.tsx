@@ -182,7 +182,7 @@ export const ResultBottomSheet: React.FC<ResultBottomSheetProps> = ({
                 <div className={`inline-block text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider mb-1 font-outfit ${
                   isPassed ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'
                 }`}>
-                  {isPassed ? 'PASSED / উত্তীর্ণ' : 'REFERRED / অকৃতকার্য'}
+                  {isPassed ? 'PASSED • উত্তীর্ণ' : 'REFERRED • অকৃতকার্য'}
                 </div>
                 <h3 className="text-xl sm:text-2xl font-black text-slate-900 leading-tight">
                   {result.studentName}
