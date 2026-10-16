@@ -13,9 +13,25 @@ import {
   GraduationCap,
   Building,
   Clock,
+  FileCode,
+  Upload,
+  Download,
+  Copy,
+  Check,
+  AlertTriangle,
+  AlertCircle,
+  RefreshCw,
+  Eye,
 } from 'lucide-react';
 import { Student, Department, SemesterId } from '../../types';
-import { getStudents, saveStudent, deleteStudent } from '../../services/db';
+import {
+  getStudents,
+  saveStudent,
+  deleteStudent,
+  batchSaveStudents,
+  lookupStudentRecordsByRoll,
+  StudentCandidateInfo,
+} from '../../services/db';
 import { toBanglaDigits, SEMESTER_MAP, toEnglishDigits } from '../../utils/bangla';
 import { EmptyState } from '../common/EmptyState';
 import { LoadingSpinner } from '../common/LoadingSpinner';
@@ -61,6 +77,30 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({ department
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
+  // Roll Auto-Fill states
+  const [rollCandidates, setRollCandidates] = useState<StudentCandidateInfo[]>([]);
+  const [autoMatchedInfo, setAutoMatchedInfo] = useState<{ source: string; details: string } | null>(null);
+
+  // JSON Import States
+  const [jsonSheetOpen, setJsonSheetOpen] = useState(false);
+  const [jsonText, setJsonText] = useState('');
+  const [jsonInputTab, setJsonInputTab] = useState<'PASTE' | 'FILE'>('PASTE');
+  const [jsonDeptId, setJsonDeptId] = useState(departments[0]?.id || 'cmt');
+  const [jsonSemesterId, setJsonSemesterId] = useState<SemesterId>('1');
+  const [jsonSession, setJsonSession] = useState('২০২৩-২৪');
+  const [allowDuplicateOverwrite, setAllowDuplicateOverwrite] = useState(false);
+  const [jsonParseError, setJsonParseError] = useState<string | null>(null);
+  const [parsedStudentList, setParsedStudentList] = useState<{
+    data: Omit<Student, 'id'>;
+    isDuplicate: boolean;
+    error?: string;
+  }[]>([]);
+  const [jsonImportSuccessSummary, setJsonImportSuccessSummary] = useState<string | null>(null);
+  const [isImportingJson, setIsImportingJson] = useState(false);
+  const [jsonDeptSheetOpen, setJsonDeptSheetOpen] = useState(false);
+  const [jsonSemSheetOpen, setJsonSemSheetOpen] = useState(false);
+  const [copiedSample, setCopiedSample] = useState(false);
+
   const fetchStudents = async () => {
     setLoading(true);
     try {
@@ -81,6 +121,222 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({ department
     fetchStudents();
   }, [semesterFilter, departmentFilter, searchQuery]);
 
+  // Roll Number auto-lookup for manual form
+  const handleManualRollChange = async (val: string) => {
+    setFormRoll(val);
+    const cleanRoll = toEnglishDigits(val.trim());
+    if (!cleanRoll) {
+      setRollCandidates([]);
+      setAutoMatchedInfo(null);
+      return;
+    }
+
+    // Lookup in students & past results
+    const candidates = await lookupStudentRecordsByRoll(cleanRoll, students);
+    if (candidates.length === 1) {
+      const match = candidates[0];
+      setRollCandidates([]);
+      setFormName(match.name);
+      setFormStudentId(match.studentId);
+      if (match.registration) setFormReg(match.registration);
+      if (match.departmentId) setFormDepartmentId(match.departmentId);
+      if (match.semesterId) setFormSemesterId(match.semesterId);
+      if (match.session) setFormSession(match.session);
+
+      setAutoMatchedInfo({
+        source: match.source === 'STUDENT_DATABASE' ? 'শিক্ষার্থী ডেটাবেজ' : 'পূর্ববর্তী পরীক্ষার ফলাফল',
+        details: `${match.departmentName} • ${SEMESTER_MAP[match.semesterId]}`,
+      });
+    } else if (candidates.length > 1) {
+      setRollCandidates(candidates);
+      setAutoMatchedInfo(null);
+    } else {
+      setRollCandidates([]);
+      setAutoMatchedInfo(null);
+    }
+  };
+
+  const handleSelectCandidate = (candidate: StudentCandidateInfo) => {
+    setFormName(candidate.name);
+    setFormStudentId(candidate.studentId);
+    if (candidate.registration) setFormReg(candidate.registration);
+    if (candidate.departmentId) setFormDepartmentId(candidate.departmentId);
+    if (candidate.semesterId) setFormSemesterId(candidate.semesterId);
+    if (candidate.session) setFormSession(candidate.session);
+    setRollCandidates([]);
+    setAutoMatchedInfo({
+      source: candidate.source === 'STUDENT_DATABASE' ? 'শিক্ষার্থী ডেটাবেজ' : 'পূর্ববর্তী পরীক্ষার ফলাফল',
+      details: `${candidate.departmentName} • ${SEMESTER_MAP[candidate.semesterId]}`,
+    });
+  };
+
+  // JSON Validation & Parser
+  const validateJson = (rawStr: string, targetDeptId: string, targetSemId: SemesterId) => {
+    setJsonParseError(null);
+    setParsedStudentList([]);
+    if (!rawStr.trim()) return;
+
+    try {
+      const parsed = JSON.parse(rawStr.trim());
+      const items: any[] = Array.isArray(parsed)
+        ? parsed
+        : Array.isArray(parsed.students)
+        ? parsed.students
+        : null;
+
+      if (!items) {
+        setJsonParseError('JSON ফরম্যাট সঠিক নয়। এটি একটি অ্যারে [ ... ] অথবা { "students": [ ... ] } হতে হবে।');
+        return;
+      }
+
+      if (items.length === 0) {
+        setJsonParseError('JSON অ্যারেতে কোনো শিক্ষার্থীর তথ্য নেই।');
+        return;
+      }
+
+      const deptObj = departments.find((d) => d.id === targetDeptId) || departments[0];
+      const deptName = deptObj?.name || 'কম্পিউটার টেকনোলজি';
+
+      const existingRollSet = new Set(
+        students.map((s) => toEnglishDigits(String(s.roll || '').trim()))
+      );
+
+      const seenInBatchRolls = new Set<string>();
+      const processed = items.map((rawItem, idx) => {
+        const itemIndex = idx + 1;
+        const name = String(rawItem.name || rawItem.studentName || '').trim();
+        const rawRoll = rawItem.roll ?? rawItem.rollNumber ?? rawItem.boardRoll ?? '';
+        const roll = toEnglishDigits(String(rawRoll).trim());
+        const studentId =
+          String(rawItem.studentId || rawItem.id || '').trim() || (roll ? `DPIB-${roll}` : '');
+        const reg = String(
+          rawItem.registrationNumber || rawItem.registration || rawItem.regNo || ''
+        ).trim();
+
+        let itemError: string | undefined;
+        if (!roll) {
+          itemError = `আইটেম #${itemIndex}: "roll" (রোল নম্বর) ফিল্ড অনুপস্থিত বা খালি।`;
+        } else if (!name) {
+          itemError = `আইটেম #${itemIndex} (রোল ${roll}): "name" (শিক্ষার্থীর নাম) ফিল্ড অনুপস্থিত বা খালি।`;
+        } else if (seenInBatchRolls.has(roll)) {
+          itemError = `আইটেম #${itemIndex} (রোল ${roll}): এই ফাইলে একই রোল নম্বর একাধিকবার রয়েছে।`;
+        }
+
+        if (roll) {
+          seenInBatchRolls.add(roll);
+        }
+
+        const isDuplicate = Boolean(roll && existingRollSet.has(roll));
+
+        // Use custom department/semester if specified in item, else fallback to batch selection
+        const itemDeptId = rawItem.departmentId || targetDeptId;
+        const itemDeptName = departments.find((d) => d.id === itemDeptId)?.name || deptName;
+        const itemSemId = (rawItem.semesterId || rawItem.semester || targetSemId) as SemesterId;
+
+        const studentData: Omit<Student, 'id'> = {
+          name,
+          roll,
+          studentId,
+          registration: reg || undefined,
+          departmentId: itemDeptId,
+          departmentName: itemDeptName,
+          semesterId: itemSemId,
+          session: rawItem.session || jsonSession,
+          shift: rawItem.shift || '১ম শিফট',
+          status: 'ACTIVE',
+        };
+
+        return {
+          data: studentData,
+          isDuplicate,
+          error: itemError,
+        };
+      });
+
+      setParsedStudentList(processed);
+    } catch (err: any) {
+      setJsonParseError(`ভুল JSON সিনট্যাক্স: ${err.message || 'অনুগ্রহ করে সঠিক JSON ফরম্যাট যাচাই করুন।'}`);
+    }
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const content = event.target?.result as string;
+      setJsonText(content);
+      validateJson(content, jsonDeptId, jsonSemesterId);
+    };
+    reader.readAsText(file);
+  };
+
+  const handleCopySampleJson = () => {
+    const sample = JSON.stringify(
+      [
+        {
+          name: 'মোহাম্মদ জিহাদ',
+          roll: '622751',
+          studentId: 'DPIB-622751',
+          registrationNumber: '1502123456',
+        },
+        {
+          name: 'তানভীর আহমেদ',
+          roll: '622752',
+          studentId: 'DPIB-622752',
+          registrationNumber: '1502123457',
+        },
+      ],
+      null,
+      2
+    );
+    navigator.clipboard.writeText(sample);
+    setCopiedSample(true);
+    setTimeout(() => setCopiedSample(false), 2000);
+  };
+
+  const handleCommitJsonImport = async () => {
+    const validItems = parsedStudentList.filter((item) => !item.error);
+    if (validItems.length === 0) {
+      setJsonParseError('সংরক্ষণ করার মতো কোনো বৈধ শিক্ষার্থী ডেটা নেই।');
+      return;
+    }
+
+    setIsImportingJson(true);
+    setJsonParseError(null);
+    try {
+      const toSave = validItems.map((item) => item.data);
+      const res = await batchSaveStudents(toSave, {
+        overwriteDuplicates: allowDuplicateOverwrite,
+      });
+
+      let summary = `সফলভাবে মোট ${toBanglaDigits(res.successCount)} জন নতুন শিক্ষার্থী যুক্ত হয়েছে!`;
+      if (res.updatedCount > 0) {
+        summary += ` ${toBanglaDigits(res.updatedCount)} জন হালনাগাদ হয়েছে।`;
+      }
+      if (res.skippedCount > 0) {
+        summary += ` ${toBanglaDigits(res.skippedCount)} জন বিদ্যমান ডুপ্লিকেট বাদ রাখা হয়েছে।`;
+      }
+      if (res.errors.length > 0) {
+        summary += ` (${toBanglaDigits(res.errors.length)}টি ত্রুটি)`;
+      }
+
+      setJsonImportSuccessSummary(summary);
+      fetchStudents();
+
+      setTimeout(() => {
+        setJsonSheetOpen(false);
+        setJsonText('');
+        setParsedStudentList([]);
+        setJsonImportSuccessSummary(null);
+      }, 2200);
+    } catch (err: any) {
+      setJsonParseError(err.message || 'ইমপোর্ট করতে সমস্যা হয়েছে');
+    } finally {
+      setIsImportingJson(false);
+    }
+  };
+
   const handleOpenAdd = () => {
     setEditingStudent(null);
     setFormName('');
@@ -92,6 +348,8 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({ department
     setFormSession('২০২৩-২৪');
     setFormStatus('ACTIVE');
     setFormError(null);
+    setRollCandidates([]);
+    setAutoMatchedInfo(null);
     setSheetOpen(true);
   };
 
@@ -106,6 +364,8 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({ department
     setFormSession(student.session || '২০২৩-২৪');
     setFormStatus(student.status);
     setFormError(null);
+    setRollCandidates([]);
+    setAutoMatchedInfo(null);
     setSheetOpen(true);
   };
 
@@ -183,13 +443,32 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({ department
           </p>
         </div>
 
-        <button
-          onClick={handleOpenAdd}
-          className="flex items-center space-x-1.5 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs sm:text-sm font-bold transition-all shadow-xs active:scale-95 self-start sm:self-auto cursor-pointer"
-        >
-          <UserPlus className="w-4 h-4" />
-          <span>নতুন শিক্ষার্থী যোগ করুন</span>
-        </button>
+        <div className="flex items-center gap-2.5 flex-wrap self-start sm:self-auto">
+          <button
+            onClick={() => {
+              setJsonText('');
+              setParsedStudentList([]);
+              setJsonParseError(null);
+              setJsonImportSuccessSummary(null);
+              setAllowDuplicateOverwrite(false);
+              setJsonDeptId(departmentFilter !== 'ALL' ? departmentFilter : departments[0]?.id || 'cmt');
+              setJsonSemesterId(semesterFilter !== 'ALL' ? (semesterFilter as SemesterId) : '1');
+              setJsonSheetOpen(true);
+            }}
+            className="flex items-center space-x-1.5 px-3.5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs sm:text-sm font-bold transition-all shadow-xs active:scale-95 cursor-pointer"
+          >
+            <FileCode className="w-4 h-4 text-emerald-400" />
+            <span>JSON ইমপোর্ট</span>
+          </button>
+
+          <button
+            onClick={handleOpenAdd}
+            className="flex items-center space-x-1.5 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs sm:text-sm font-bold transition-all shadow-xs active:scale-95 cursor-pointer"
+          >
+            <UserPlus className="w-4 h-4" />
+            <span>নতুন শিক্ষার্থী যোগ করুন</span>
+          </button>
+        </div>
       </div>
 
       {/* Filter and Search Bar */}
@@ -376,6 +655,20 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({ department
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1">
               <label className="block text-xs font-bold text-slate-700 uppercase">
+                রোল নম্বর <span className="text-rose-500">*</span>
+              </label>
+              <input
+                type="text"
+                placeholder="রোল নম্বর লিখুন (উদাঃ ৬২২৭৫১)"
+                value={formRoll}
+                onChange={(e) => handleManualRollChange(e.target.value)}
+                required
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold font-outfit focus:bg-white focus:border-blue-500 outline-none"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="block text-xs font-bold text-slate-700 uppercase">
                 শিক্ষার্থীর পুরো নাম <span className="text-rose-500">*</span>
               </label>
               <input
@@ -388,19 +681,45 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({ department
               />
             </div>
 
-            <div className="space-y-1">
-              <label className="block text-xs font-bold text-slate-700 uppercase">
-                রোল নম্বর <span className="text-rose-500">*</span>
-              </label>
-              <input
-                type="text"
-                placeholder="রোল নম্বর লিখুন"
-                value={formRoll}
-                onChange={(e) => setFormRoll(e.target.value)}
-                required
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold font-outfit focus:bg-white focus:border-blue-500 outline-none"
-              />
-            </div>
+            {/* Auto-Match Feedback Badge */}
+            {autoMatchedInfo && (
+              <div className="sm:col-span-2 p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between gap-2 text-xs text-emerald-800">
+                <div className="flex items-center gap-1.5 font-bold">
+                  <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>{autoMatchedInfo.source} হতে তথ্য স্বয়ংক্রিয়ভাবে লোড হয়েছে</span>
+                </div>
+                <span className="text-[11px] font-medium text-emerald-700">{autoMatchedInfo.details}</span>
+              </div>
+            )}
+
+            {/* Roll Disambiguation Candidates */}
+            {rollCandidates.length > 1 && (
+              <div className="sm:col-span-2 p-3 bg-amber-50 border border-amber-300 rounded-xl space-y-2">
+                <p className="text-xs font-bold text-amber-950 flex items-center gap-1.5">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span>এই রোল নম্বরের একাধিক শিক্ষার্থী রেকর্ড রয়েছে! সঠিক শিক্ষার্থী নির্বাচন করুন:</span>
+                </p>
+                <div className="space-y-1.5">
+                  {rollCandidates.map((cand, idx) => (
+                    <div
+                      key={idx}
+                      onClick={() => handleSelectCandidate(cand)}
+                      className="p-2.5 bg-white rounded-lg border border-amber-200 hover:border-amber-400 hover:bg-amber-100/40 transition-all cursor-pointer flex items-center justify-between text-xs"
+                    >
+                      <div>
+                        <span className="font-black text-slate-900">{cand.name}</span>
+                        <p className="text-[11px] text-slate-600 mt-0.5">
+                          {cand.departmentName} • {SEMESTER_MAP[cand.semesterId]} {cand.session ? `• সেশন: ${cand.session}` : ''}
+                        </p>
+                      </div>
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800">
+                        {cand.source === 'STUDENT_DATABASE' ? 'শিক্ষার্থী ডেটাবেজ' : 'ফলাফল রেকর্ড'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div className="space-y-1">
               <label className="block text-xs font-bold text-slate-700 uppercase">শিক্ষার্থী আইডি</label>

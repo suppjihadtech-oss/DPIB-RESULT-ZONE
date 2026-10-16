@@ -192,12 +192,15 @@ app.post('/api/assistant/chat', async (req, res) => {
     // Fast call with strict timeout using Promise.race
     try {
       const modelCall = ai.models.generateContent({
-        model: 'gemini-3.1-flash-lite',
+        model: 'gemini-3.8-flash',
         contents,
+        config: {
+          systemInstruction: DPIB_SYSTEM_INSTRUCTION,
+        },
       });
 
       const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('AI response timed out')), 6500)
+        setTimeout(() => reject(new Error('AI response timed out')), 4000)
       );
 
       const response: any = await Promise.race([modelCall, timeoutPromise]);
@@ -205,7 +208,7 @@ app.post('/api/assistant/chat', async (req, res) => {
         replyText = response.text;
       }
     } catch (aiErr: any) {
-      console.warn('[API /api/assistant/chat] Gemini API failed or timed out:', aiErr?.message || aiErr);
+      console.warn('[API /api/assistant/chat] Gemini API failed or timed out, using intelligent local engine:', aiErr?.message || aiErr);
     }
 
     // If Gemini produced no text or failed, immediately generate smart rule-based answer
@@ -223,10 +226,14 @@ app.post('/api/assistant/chat', async (req, res) => {
 });
 
 async function startServer() {
+  process.env.DISABLE_HMR = 'true';
   // Mount Vite development middlewares in dev mode
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        hmr: false,
+      },
       appType: 'spa',
     });
     app.use(vite.middlewares);

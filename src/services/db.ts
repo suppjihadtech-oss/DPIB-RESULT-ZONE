@@ -720,6 +720,214 @@ export async function deleteStudent(id: string): Promise<void> {
   }
 }
 
+export interface BatchSaveStudentsResult {
+  total: number;
+  successCount: number;
+  updatedCount: number;
+  skippedCount: number;
+  errors: string[];
+}
+
+/**
+ * Batch saves student records into Firestore.
+ * Supports duplicate detection and optional permission-based updating.
+ */
+export async function batchSaveStudents(
+  studentsToSave: Omit<Student, 'id'>[],
+  options?: { overwriteDuplicates?: boolean }
+): Promise<BatchSaveStudentsResult> {
+  const result: BatchSaveStudentsResult = {
+    total: studentsToSave.length,
+    successCount: 0,
+    updatedCount: 0,
+    skippedCount: 0,
+    errors: [],
+  };
+
+  if (!studentsToSave || studentsToSave.length === 0) {
+    return result;
+  }
+
+  try {
+    // 1. Fetch current students to detect duplicates
+    const existingStudents = await getStudents();
+    const existingMap = new Map<string, Student>();
+    existingStudents.forEach((st) => {
+      const cleanRoll = toEnglishDigits(String(st.roll || '').trim());
+      const specificKey = `${st.departmentId || ''}_${cleanRoll}`;
+      existingMap.set(specificKey, st);
+      if (!existingMap.has(cleanRoll)) {
+        existingMap.set(cleanRoll, st);
+      }
+    });
+
+    const overwrite = Boolean(options?.overwriteDuplicates);
+    const BATCH_LIMIT = 400;
+    let currentBatch = writeBatch(db);
+    let operationCountInBatch = 0;
+
+    for (let i = 0; i < studentsToSave.length; i++) {
+      const item = studentsToSave[i];
+      const cleanRoll = toEnglishDigits(String(item.roll || '').trim());
+      const cleanName = String(item.name || '').trim();
+      const cleanStudentId = String(item.studentId || '').trim() || `DPIB-${cleanRoll}`;
+      const cleanReg = item.registration ? String(item.registration).trim() : '';
+
+      if (!cleanRoll) {
+        result.errors.push(`আইটেম #${i + 1}: রোল নম্বর অনুপস্থিত।`);
+        continue;
+      }
+      if (!cleanName) {
+        result.errors.push(`আইটেম #${i + 1} (রোল ${cleanRoll}): শিক্ষার্থীর নাম অনুপস্থিত।`);
+        continue;
+      }
+
+      const specificKey = `${item.departmentId || ''}_${cleanRoll}`;
+      const existingMatch = existingMap.get(specificKey) || existingMap.get(cleanRoll);
+
+      if (existingMatch && !overwrite) {
+        result.skippedCount++;
+        continue;
+      }
+
+      const payload = sanitizeFirestorePayload({
+        ...item,
+        name: cleanName,
+        roll: cleanRoll,
+        studentId: cleanStudentId,
+        registration: cleanReg,
+        departmentId: item.departmentId || 'cmt',
+        departmentName: item.departmentName || 'কম্পিউটার টেকনোলজি',
+        semesterId: item.semesterId || '1',
+        session: item.session || '২০২৩-২৪',
+        status: item.status || 'ACTIVE',
+        updatedAt: Date.now(),
+      });
+
+      if (existingMatch && overwrite) {
+        const docRef = doc(db, COLLECTIONS.STUDENTS, existingMatch.id);
+        currentBatch.set(docRef, payload, { merge: true });
+        result.updatedCount++;
+      } else {
+        payload.createdAt = Date.now();
+        const docRef = doc(collection(db, COLLECTIONS.STUDENTS));
+        currentBatch.set(docRef, payload);
+        result.successCount++;
+        // Keep map updated so repeated entries in the same JSON batch are handled gracefully
+        existingMap.set(specificKey, { id: docRef.id, ...(payload as any) });
+      }
+
+      operationCountInBatch++;
+      if (operationCountInBatch >= BATCH_LIMIT) {
+        await currentBatch.commit();
+        currentBatch = writeBatch(db);
+        operationCountInBatch = 0;
+      }
+    }
+
+    if (operationCountInBatch > 0) {
+      await currentBatch.commit();
+    }
+
+    return result;
+  } catch (error: any) {
+    console.error('Error in batchSaveStudents:', error);
+    result.errors.push(error.message || 'ব্যাচ সংরক্ষণে ত্রুটি ঘটেছে');
+    return result;
+  }
+}
+
+export interface StudentCandidateInfo {
+  id?: string;
+  source: 'STUDENT_DATABASE' | 'PAST_RESULT';
+  name: string;
+  roll: string;
+  studentId: string;
+  registration?: string;
+  departmentId: string;
+  departmentName: string;
+  semesterId: SemesterId;
+  session?: string;
+  shift?: string;
+  examTitle?: string;
+  examDate?: string;
+}
+
+/**
+ * Searches and aggregates student candidate records matching a given roll number
+ * across both the Students collection and past examination results in Firestore.
+ */
+export async function lookupStudentRecordsByRoll(
+  rawRoll: string,
+  cachedStudents?: Student[],
+  cachedResults?: StudentResult[]
+): Promise<StudentCandidateInfo[]> {
+  const cleanRoll = toEnglishDigits(String(rawRoll || '').trim());
+  if (!cleanRoll) return [];
+
+  try {
+    const candidates: StudentCandidateInfo[] = [];
+
+    // 1. Search in Students collection
+    const students = cachedStudents && cachedStudents.length > 0 ? cachedStudents : await getStudents();
+    const matchedStudents = students.filter(
+      (s) => toEnglishDigits(String(s.roll || '').trim()) === cleanRoll
+    );
+
+    matchedStudents.forEach((st) => {
+      candidates.push({
+        id: st.id,
+        source: 'STUDENT_DATABASE',
+        name: st.name || '',
+        roll: cleanRoll,
+        studentId: st.studentId || `DPIB-${cleanRoll}`,
+        registration: st.registration || '',
+        departmentId: st.departmentId || 'cmt',
+        departmentName: st.departmentName || 'কম্পিউটার টেকনোলজি',
+        semesterId: st.semesterId || '1',
+        session: st.session || '২০২৩-২৪',
+        shift: st.shift || '১ম শিফট',
+      });
+    });
+
+    // 2. Search in Results collection (past results)
+    const results = cachedResults && cachedResults.length > 0 ? cachedResults : await getResults();
+    const matchedResults = results.filter(
+      (r) => toEnglishDigits(String(r.roll || '').trim()) === cleanRoll
+    );
+
+    matchedResults.forEach((res) => {
+      // Disambiguate: only add if not already captured with the exact same name, department & semester
+      const exists = candidates.some(
+        (c) =>
+          c.name.trim().toLowerCase() === (res.studentName || '').trim().toLowerCase() &&
+          c.departmentId === res.departmentId &&
+          c.semesterId === res.semesterId
+      );
+      if (!exists) {
+        candidates.push({
+          id: res.id,
+          source: 'PAST_RESULT',
+          name: res.studentName || '',
+          roll: cleanRoll,
+          studentId: res.studentId || `DPIB-${cleanRoll}`,
+          registration: res.registration || '',
+          departmentId: res.departmentId || 'cmt',
+          departmentName: res.departmentName || 'কম্পিউটার টেকনোলজি',
+          semesterId: res.semesterId || '1',
+          examTitle: res.examTitle,
+          examDate: res.examDate,
+        });
+      }
+    });
+
+    return candidates;
+  } catch (error) {
+    console.error('Error looking up student records by roll:', error);
+    return [];
+  }
+}
+
 /* ==================== EXAMS ==================== */
 
 export async function getExams(filters?: { semesterId?: string; departmentId?: string; status?: 'PUBLISHED' | 'DRAFT' | 'ALL' }): Promise<Exam[]> {

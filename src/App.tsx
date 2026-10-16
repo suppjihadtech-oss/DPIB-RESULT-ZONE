@@ -851,7 +851,7 @@ export function App() {
       {isAdmissionRoute && <FloatingHelplineWidget />}
 
       {/* DPIB AI Assistant Floating Widget (Student Portal Only - NOT in Admission or Admin) */}
-      {!isAdmissionRoute && (
+      {!isAdmissionRoute && !isAdminMode && (
         <DpibAssistantModal
           exams={exams}
           notices={notices}

@@ -162,9 +162,8 @@ export const DpibAssistantModal: React.FC<DpibAssistantModalProps> = ({
           {
             id: `msg-${Date.now()}-res`,
             role: 'assistant',
-            text: `দুঃখিত, রোল নম্বর "${toBanglaDigits(cleanRoll)}"-এর কোনো প্রকাশিত ফলাফল বর্তমানে ডেটাবেসে পাওয়া যায়নি। অনুগ্রহ করে নিশ্চিত করুন যে রোল নম্বরটি সঠিক এবং পরীক্ষার ফলাফল ইতিমধ্যে প্রকাশিত হয়েছে।`,
+            text: `রোল নম্বর "${toBanglaDigits(cleanRoll)}"-এর কোনো প্রকাশিত ফলাফল বর্তমানে ডেটাবেসে পাওয়া যায়নি। অনুগ্রহ করে নিশ্চিত করুন যে রোল নম্বরটি সঠিক এবং পরীক্ষার ফলাফল ইতিমধ্যে প্রকাশিত হয়েছে।\n\nআপনি ফলাফল অনুসন্ধানের নিয়ম বা পাসের শর্ত সম্পর্কে জানতে পারেন।`,
             timestamp: Date.now(),
-            error: true,
           },
         ]);
         setIsSearchingRoll(false);
@@ -257,15 +256,14 @@ export const DpibAssistantModal: React.FC<DpibAssistantModalProps> = ({
         ]);
       }
     } catch (err) {
-      console.error('Error during assistant roll search:', err);
+      console.warn('Error during assistant roll search:', err);
       setMessages((prev) => [
         ...prev,
         {
-          id: `msg-${Date.now()}-err`,
+          id: `msg-${Date.now()}-info`,
           role: 'assistant',
-          text: 'ফলাফল অনুসন্ধানের সময় একটি ত্রুটি ঘটেছে। অনুগ্রহ করে ইন্টারনেট সংযোগ পরীক্ষা করে পুনরায় চেষ্টা করুন।',
+          text: `রোল নম্বর "${toBanglaDigits(cleanRoll)}"-এর তথ্য অনুসন্ধানকালে কোনো উত্তর পাওয়া যায়নি। আপনি হোম পেজে 'ফলাফল অনুসন্ধান' মেনু থেকেও ফলাফল দেখতে পারেন।`,
           timestamp: Date.now(),
-          error: true,
         },
       ]);
     } finally {
@@ -392,7 +390,7 @@ export const DpibAssistantModal: React.FC<DpibAssistantModalProps> = ({
   return (
     <>
       {/* ================= FLOATING GLASSMORPHISM AI BUTTON ================= */}
-      <div className="fixed bottom-28 sm:bottom-10 right-4 sm:right-8 z-40 select-none">
+      <div className="fixed bottom-32 sm:bottom-20 right-4 sm:right-8 z-40 select-none">
         <button
           type="button"
           onClick={() => setIsOpen(true)}
