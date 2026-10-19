@@ -1,558 +1,273 @@
-import React, { useState, useEffect } from 'react';
-import { motion } from 'motion/react';
-import {
-  Home,
-  Users,
-  UserCheck,
-  BookOpen,
-  FileSpreadsheet,
-  Bell,
-  CalendarDays,
-  Settings,
-  LogOut,
+import React, { useState } from 'react';
+import { 
+  LayoutDashboard, 
+  Users, 
+  BookOpen, 
+  FileCode, 
+  FileText, 
+  Bell, 
+  Calendar, 
+  Settings, 
+  LogOut, 
+  Menu, 
+  X,
   ExternalLink,
-  ChevronRight,
-  Layers,
-  GraduationCap,
-  Menu as MenuIcon,
-  ShieldCheck,
-  Clock,
+  Sparkles,
+  CheckCircle2,
+  AlertCircle,
+  Info
 } from 'lucide-react';
-import { User } from 'firebase/auth';
-import { getFirebaseStatus } from '../../services/firebase';
-import { toBanglaDigits } from '../../utils/bangla';
-import { subscribeAllAdmissionApplications } from '../../services/admissionService';
+import { useToast } from '../../context/ToastContext';
+
+export type AdminTab = 
+  | 'dashboard' 
+  | 'students' 
+  | 'exams' 
+  | 'results' 
+  | 'documents' 
+  | 'notices' 
+  | 'routines' 
+  | 'settings';
 
 interface AdminLayoutProps {
-  currentSection: string;
-  onSectionChange: (section: string) => void;
-  currentUser: User | { email?: string | null; displayName?: string | null } | null;
+  currentTab: AdminTab;
+  onTabChange: (tab: AdminTab) => void;
   onLogout: () => void;
-  onBackToPublic: () => void;
+  onGoToPublic: () => void;
   children: React.ReactNode;
 }
 
 export const AdminLayout: React.FC<AdminLayoutProps> = ({
-  currentSection,
-  onSectionChange,
-  currentUser,
+  currentTab,
+  onTabChange,
   onLogout,
-  onBackToPublic,
-  children,
+  onGoToPublic,
+  children
 }) => {
-  const fbStatus = getFirebaseStatus();
-  const [totalAdmissionCount, setTotalAdmissionCount] = useState<number>(0);
-  const [pendingAdmissionCount, setPendingAdmissionCount] = useState<number>(0);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const { success, error, info } = useToast();
 
-  useEffect(() => {
-    try {
-      const unsub = subscribeAllAdmissionApplications(
-        (apps) => {
-          setTotalAdmissionCount(apps.length);
-          const pending = apps.filter(
-            (a) => a.status === 'SUBMITTED' || a.status === 'UNDER_REVIEW'
-          ).length;
-          setPendingAdmissionCount(pending);
-        },
-        (err) => console.warn('Admin layout admission sub error:', err)
-      );
-      return () => unsub();
-    } catch (e) {
-      console.warn('Failed to subscribe to admission applications:', e);
-    }
-  }, []);
-
-  const primaryNavItems = [
-    { id: 'dashboard', label: 'ড্যাশবোর্ড', enLabel: 'DASHBOARD', icon: Home },
-    { id: 'admissions', label: 'ভর্তি আবেদন', enLabel: 'ADMISSIONS', icon: GraduationCap },
-    { id: 'teachers', label: 'শিক্ষক ব্যবস্থাপনা', enLabel: 'TEACHERS', icon: UserCheck },
-    { id: 'students', label: 'শিক্ষার্থী ব্যবস্থাপনা', enLabel: 'STUDENTS', icon: Users },
-    { id: 'exams', label: 'পরীক্ষা ব্যবস্থাপনা', enLabel: 'EXAMS', icon: BookOpen },
-    { id: 'results', label: 'ফলাফল ব্যবস্থাপনা', enLabel: 'RESULTS', icon: FileSpreadsheet },
-    { id: 'events', label: 'ইভেন্ট ও ক্যালেন্ডার', enLabel: 'EVENTS', icon: CalendarDays },
-    { id: 'notices', label: 'নোটিশ ব্যবস্থাপনা', enLabel: 'NOTICES', icon: Bell },
-    { id: 'books', label: 'বুক লিস্ট ব্যবস্থাপনা', enLabel: 'BOOK LIST', icon: BookOpen },
-    { id: 'documents', label: 'একাডেমিক ডকুমেন্ট হাব', enLabel: 'DOCUMENTS', icon: Layers },
-    { id: 'shifts', label: 'শিফট ও সময়সূচী', enLabel: 'SHIFTS', icon: Clock },
-    { id: 'security', label: 'নিরাপত্তা ও অ্যাক্সেস', enLabel: 'SECURITY', icon: ShieldCheck },
-    { id: 'settings', label: 'সিস্টেম সেটিংস', enLabel: 'SETTINGS', icon: Settings },
-    { id: 'menu', label: 'মেনু পেজ', enLabel: 'MENU HUB', icon: MenuIcon },
+  const navItems: { id: AdminTab; label: string; icon: React.ElementType }[] = [
+    { id: 'dashboard', label: 'ড্যাশবোর্ড', icon: LayoutDashboard },
+    { id: 'results', label: 'ফলাফল ব্যবস্থাপনা', icon: FileCode },
+    { id: 'students', label: 'শিক্ষার্থী তথ্য', icon: Users },
+    { id: 'exams', label: 'পরীক্ষা পরিচালনা', icon: BookOpen },
+    { id: 'documents', label: 'ডকুমেন্ট জেনারেটর', icon: FileText },
+    { id: 'notices', label: 'নোটিশ বোর্ড', icon: Bell },
+    { id: 'routines', label: 'ক্লাস ও পরীক্ষার রুটিন', icon: Calendar },
+    { id: 'settings', label: 'ইনস্টিটিউট সেটিংস', icon: Settings }
   ];
 
-  // The admission section uses the president's logo; all other admin sections use the new main logo
-  const isAdmissionSection = currentSection === 'admissions';
-  const adminSectionLogoUrl = isAdmissionSection
-    ? 'https://i.postimg.cc/j5K3pb0M/sovapoti-images1.png'
-    : 'https://i.postimg.cc/mgyW32Y2/Firefly-Remove-Background.png';
+  const handleTabClick = (tab: AdminTab) => {
+    onTabChange(tab);
+    setMobileMenuOpen(false);
+  };
 
   return (
-    <div className="min-h-screen bg-slate-50/80 text-slate-900 flex flex-col md:flex-row selection:bg-teal-700 selection:text-white font-bengali w-full max-w-full overflow-x-clip">
-      {/* ================= DESKTOP LIGHT GLASS SIDEBAR ================= */}
-      <aside className="no-print hidden md:flex flex-col w-68 bg-white/75 backdrop-blur-2xl backdrop-saturate-180 text-slate-700 shrink-0 border-r border-slate-200/60 shadow-xs">
-        {/* Brand Header */}
-        <div className="p-5 border-b border-slate-200/50 flex items-center space-x-3 bg-white/50 backdrop-blur-md">
-          <div className="w-11 h-11 rounded-2xl bg-white/90 p-0.5 flex items-center justify-center border border-white/80 shadow-xs">
-            <img
-              src={adminSectionLogoUrl}
-              alt="Logo"
-              className="w-full h-full object-contain"
-              referrerPolicy="no-referrer"
-            />
-          </div>
-          <div>
-            <div className="flex items-center gap-1.5">
-              <span className="font-outfit font-black text-slate-900 text-base tracking-tight block">
-                DPIB <span className="text-teal-700">ADMIN</span>
-              </span>
-              <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-teal-50 text-teal-800 font-outfit border border-teal-200/60">
-                PRO
-              </span>
-            </div>
-            <span className="text-[10px] text-slate-500 font-bold uppercase font-outfit tracking-wider block mt-0.5">
-              DIGITAL ACADEMIC OFFICE
-            </span>
-          </div>
-        </div>
-
-        {/* Navigation items */}
-        <nav className="flex-1 px-3 py-4 space-y-1.5 overflow-y-auto">
-          {primaryNavItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = currentSection === item.id;
-            return (
-              <button
-                key={item.id}
-                id={`admin-nav-${item.id}`}
-                onClick={() => onSectionChange(item.id)}
-                className={`w-full flex items-center space-x-3 px-3.5 py-2 rounded-2xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
-                  isActive
-                    ? 'bg-teal-700 text-white shadow-md shadow-teal-700/20'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/80'
-                }`}
-              >
-                <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-white' : 'text-slate-500'}`} />
-                <div className="flex flex-col text-left min-w-0 flex-1">
-                  <span className="truncate leading-tight">{item.label}</span>
-                  <span
-                    className={`text-[9px] font-outfit uppercase tracking-wider font-bold truncate leading-none mt-0.5 ${
-                      isActive ? 'text-teal-100/90' : 'text-slate-400'
-                    }`}
-                  >
-                    {item.enLabel}
-                  </span>
-                </div>
-                {item.id === 'admissions' && totalAdmissionCount > 0 && (
-                  <span
-                    className={`px-1.5 py-0.5 text-[10px] font-bold rounded-full font-outfit shrink-0 ${
-                      isActive
-                        ? 'bg-white text-teal-800'
-                        : pendingAdmissionCount > 0
-                        ? 'bg-rose-500 text-white'
-                        : 'bg-teal-100 text-teal-800'
-                    }`}
-                  >
-                    {toBanglaDigits(pendingAdmissionCount > 0 ? pendingAdmissionCount : totalAdmissionCount)}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </nav>
-
-        {/* Firebase Live Status Box (Light Glass) */}
-        <div className="p-4 border-t border-slate-200/50 bg-slate-50/70 backdrop-blur-md text-[11px] space-y-2">
-          <div className="flex items-center justify-between text-slate-600">
-            <span className="flex items-center space-x-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span className="font-bold text-[10px] uppercase font-outfit">FIRESTORE DATABASE</span>
-            </span>
-            <span className="font-mono text-emerald-600 font-black text-[10px] bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200/60">
-              CONNECTED
-            </span>
-          </div>
-          <p className="text-[10px] text-slate-500 leading-tight">
-            MASTER CURRICULUM • রেজাল্ট জোন ইঞ্জিন
-          </p>
-        </div>
-
-        {/* User Card & Logout */}
-        <div className="p-4 border-t border-slate-200/50 flex items-center justify-between bg-white/60 backdrop-blur-md">
-          <div className="flex items-center space-x-2.5 min-w-0">
-            <div className="w-8 h-8 rounded-full bg-teal-100 text-teal-800 flex items-center justify-center font-bold text-xs shrink-0 font-outfit border border-teal-200">
-              {currentUser?.email ? currentUser.email.charAt(0).toUpperCase() : 'A'}
-            </div>
-            <div className="min-w-0">
-              <p className="text-xs font-bold text-slate-800 truncate">
-                {currentUser?.displayName || 'অ্যাডমিন'}
-              </p>
-              <p className="text-[10px] text-slate-500 truncate font-mono">
-                {currentUser?.email || 'admin@dpib.edu.bd'}
-              </p>
-            </div>
-          </div>
-
-          <button
-            onClick={onLogout}
-            title="লগআউট"
-            className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-colors cursor-pointer"
-          >
-            <LogOut className="w-4 h-4" />
-          </button>
-        </div>
-      </aside>
-
-      {/* ================= MAIN CONTENT WRAPPER ================= */}
-      <div className="flex-1 flex flex-col min-w-0 pb-20 md:pb-0 w-full max-w-full">
-        {/* Top Header */}
-        <header className="no-print bg-white/80 backdrop-blur-2xl backdrop-saturate-180 border-b border-slate-200/60 py-2 sm:py-3 px-3 sm:px-6 flex items-center justify-between sticky top-0 z-30 shadow-[0_4px_24px_rgba(15,23,42,0.03)] gap-2 w-full max-w-full">
-          <div className="flex items-center space-x-2 sm:space-x-3 min-w-0">
-            {/* Mobile Brand */}
-            <div className="flex items-center space-x-2 md:hidden min-w-0">
-              <div className="w-8 h-8 rounded-xl bg-white/90 p-0.5 flex items-center justify-center border border-white/80 shadow-xs shrink-0">
-                <img
-                  src={adminSectionLogoUrl}
-                  alt="Logo"
-                  className="w-full h-full object-contain"
-                  referrerPolicy="no-referrer"
-                />
+    <div className="min-h-screen bg-slate-100/80 flex flex-col font-sans">
+      {/* Top Bar */}
+      <header className="sticky top-0 z-40 bg-slate-900 text-white border-b border-slate-800 shadow-md">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              className="lg:hidden p-2 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 cursor-pointer"
+              aria-label="মেনু খুলুন"
+            >
+              {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+            </button>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center font-bold text-white shadow-md shadow-emerald-900/40">
+                DPIB
               </div>
-              <span className="font-outfit font-black text-slate-900 text-sm tracking-tight truncate">
-                DPIB <span className="text-teal-700">ADMIN</span>
-              </span>
-            </div>
-
-            <div className="hidden md:flex items-center space-x-2 text-xs text-slate-400">
-              <span className="font-outfit font-bold text-slate-600">DPIB RESULT ZONE</span>
-              <ChevronRight className="w-3.5 h-3.5" />
-              <span className="font-bold text-teal-800 uppercase font-outfit">
-                {primaryNavItems.find((n) => n.id === currentSection)?.enLabel || currentSection}
-              </span>
+              <div>
+                <h1 className="text-base font-bold tracking-tight text-white flex items-center gap-2">
+                  DPIB RESULT ZONE
+                  <span className="bg-emerald-500/20 text-emerald-400 text-[10px] font-semibold px-2 py-0.5 rounded-full border border-emerald-500/30">
+                    এডমিন প্যানেল
+                  </span>
+                </h1>
+                <p className="text-xs text-slate-400 hidden sm:block">
+                  দক্ষিণবঙ্গ পলিটেকনিক ইনস্টিটিউট, ভোলা সদর
+                </p>
+              </div>
             </div>
           </div>
 
-          {/* Quick Nav Bar in Header (Desktop / Tablet) */}
-          <div className="hidden lg:flex items-center space-x-1 bg-slate-100/90 p-1 rounded-2xl border border-slate-200/70 text-xs font-bold">
-            <button
-              onClick={() => onSectionChange('dashboard')}
-              className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center space-x-1.5 ${
-                currentSection === 'dashboard'
-                  ? 'bg-white text-slate-900 shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
-              }`}
-            >
-              <Home className="w-3.5 h-3.5" />
-              <span>ড্যাশবোর্ড</span>
-            </button>
-            <button
-              onClick={() => onSectionChange('admissions')}
-              className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center space-x-1.5 ${
-                currentSection === 'admissions'
-                  ? 'bg-teal-700 text-white shadow-xs'
-                  : 'text-teal-800 hover:bg-teal-50/90'
-              }`}
-            >
-              <GraduationCap className="w-3.5 h-3.5" />
-              <span>ভর্তি আবেদন</span>
-              {pendingAdmissionCount > 0 ? (
-                <span className="px-1.5 py-0.5 bg-rose-500 text-white text-[10px] rounded-full font-outfit">
-                  {toBanglaDigits(pendingAdmissionCount)}
-                </span>
-              ) : totalAdmissionCount > 0 ? (
-                <span className="px-1.5 py-0.5 bg-teal-100 text-teal-800 text-[10px] rounded-full font-outfit">
-                  {toBanglaDigits(totalAdmissionCount)}
-                </span>
-              ) : null}
-            </button>
-            <button
-              onClick={() => onSectionChange('results')}
-              className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center space-x-1.5 ${
-                currentSection === 'results'
-                  ? 'bg-white text-slate-900 shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
-              }`}
-            >
-              <FileSpreadsheet className="w-3.5 h-3.5" />
-              <span>ফলাফল</span>
-            </button>
-            <button
-              onClick={() => onSectionChange('documents')}
-              className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center space-x-1.5 ${
-                currentSection === 'documents'
-                  ? 'bg-white text-slate-900 shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
-              }`}
-            >
-              <Layers className="w-3.5 h-3.5" />
-              <span>ডকুমেন্টস</span>
-            </button>
-            <button
-              onClick={() => onSectionChange('menu')}
-              className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center space-x-1.5 ${
-                currentSection === 'menu'
-                  ? 'bg-white text-slate-900 shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
-              }`}
-            >
-              <MenuIcon className="w-3.5 h-3.5" />
-              <span>মেনু পেজ</span>
-            </button>
-          </div>
+          {/* Quick Toast Test Bar & Public Switch */}
+          <div className="flex items-center gap-2">
+            {/* Interactive Toast Tester */}
+            <div className="hidden xl:flex items-center bg-slate-800/80 rounded-xl px-2.5 py-1 border border-slate-700/60 text-xs gap-1.5">
+              <span className="text-[11px] font-medium text-slate-400 flex items-center gap-1 mr-1">
+                <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                স্মার্ট টোস্ট টেস্ট:
+              </span>
+              <button
+                type="button"
+                onClick={() => success('ডেটা সফলভাবে ডেটাবেসে সংরক্ষিত হয়েছে!', 'সফল সম্পন্ন')}
+                className="px-2 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 font-medium transition cursor-pointer flex items-center gap-1"
+                title="সফল টোস্ট পরীক্ষা করুন"
+              >
+                <CheckCircle2 className="w-3 h-3" />
+                সাকসেস
+              </button>
+              <button
+                type="button"
+                onClick={() => error('প্রয়োজনীয় ফিল্ড পূরণ করা হয়নি অথবা রোল নম্বর অনুপস্থিত!', 'ত্রুটি সনাক্ত')}
+                className="px-2 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 font-medium transition cursor-pointer flex items-center gap-1"
+                title="ত্রুটি টোস্ট পরীক্ষা করুন"
+              >
+                <AlertCircle className="w-3 h-3" />
+                এরর
+              </button>
+              <button
+                type="button"
+                onClick={() => info('নতুন সেমিস্টারের রেজাল্ট শীট পর্যালোচনার জন্য প্রস্তুত রয়েছে।', 'তথ্য')}
+                className="px-2 py-1 rounded-lg bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/30 font-medium transition cursor-pointer flex items-center gap-1"
+                title="তথ্য টোস্ট পরীক্ষা করুন"
+              >
+                <Info className="w-3 h-3" />
+                ইনফো
+              </button>
+            </div>
 
-          <div className="flex items-center space-x-1.5 sm:space-x-3 shrink-0">
-            {/* Quick "ভর্তি আবেদন" Button on Mobile: visible on sm+ screens; on phone screens bottom navigation handles it */}
             <button
-              onClick={() => onSectionChange('admissions')}
-              className={`hidden sm:flex md:hidden items-center space-x-1 px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                currentSection === 'admissions'
-                  ? 'bg-teal-700 text-white shadow-xs'
-                  : 'bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200/70'
-              }`}
+              type="button"
+              onClick={onGoToPublic}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-300 hover:text-white hover:bg-slate-800 transition cursor-pointer"
             >
-              <GraduationCap className="w-3.5 h-3.5 text-teal-600" />
-              <span className="text-[11px]">ভর্তি আবেদন</span>
-              {pendingAdmissionCount > 0 && (
-                <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse ml-0.5" />
-              )}
+              <ExternalLink className="w-3.5 h-3.5 text-emerald-400" />
+              <span className="hidden md:inline">পাবলিক ভিউ</span>
             </button>
-
-            {/* View Public Portal Button */}
             <button
-              onClick={onBackToPublic}
-              className="flex items-center space-x-1 px-2.5 sm:px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0"
-            >
-              <ExternalLink className="w-3.5 h-3.5 shrink-0" />
-              <span className="hidden sm:inline">মূল ওয়েবসাইট দেখুন</span>
-              <span className="sm:hidden text-[11px]">ওয়েবসাইট</span>
-            </button>
-
-            {/* Mobile Logout */}
-            <button
+              type="button"
               onClick={onLogout}
-              title="লগআউট"
-              className="md:hidden p-1.5 sm:p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-colors cursor-pointer shrink-0"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 transition cursor-pointer"
             >
-              <LogOut className="w-4 h-4" />
+              <LogOut className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">লগআউট</span>
             </button>
           </div>
-        </header>
+        </div>
+      </header>
 
-        {/* Dynamic Content Body */}
-        <main className="flex-1 p-3.5 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto min-w-0 max-w-full">
+      {/* Main Container */}
+      <div className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 flex gap-6">
+        {/* Desktop Sidebar Navigation */}
+        <aside className="hidden lg:block w-64 shrink-0">
+          <nav className="bg-white rounded-2xl p-3 border border-slate-200/80 shadow-sm sticky top-22 space-y-1">
+            <div className="px-3 py-2 text-[11px] font-bold tracking-wider text-slate-400 uppercase">
+              নেভিগেশন মেনু
+            </div>
+            {navItems.map((item) => {
+              const Icon = item.icon;
+              const isActive = currentTab === item.id;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => handleTabClick(item.id)}
+                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-semibold transition cursor-pointer text-left ${
+                    isActive
+                      ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-700/20'
+                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                  }`}
+                >
+                  <Icon className={`w-4 h-4 ${isActive ? 'text-white' : 'text-slate-500'}`} />
+                  {item.label}
+                </button>
+              );
+            })}
+
+            {/* Quick Helper Info */}
+            <div className="pt-4 mt-4 border-t border-slate-100 px-3">
+              <div className="rounded-xl bg-emerald-50/80 border border-emerald-100 p-3 text-xs text-emerald-900 leading-relaxed">
+                <p className="font-semibold text-emerald-800 mb-1 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                  সিস্টেম স্ট্যাটাস
+                </p>
+                <p className="text-[11px] text-emerald-700">
+                  স্মার্ট টোস্ট ও সরাসরি JSON কোড ফলাফল ইমপোর্ট সক্রিয়।
+                </p>
+              </div>
+            </div>
+          </nav>
+        </aside>
+
+        {/* Mobile Navigation Drawer */}
+        {mobileMenuOpen && (
+          <div className="fixed inset-0 z-50 lg:hidden bg-slate-900/60 backdrop-blur-sm flex">
+            <div className="w-72 bg-white h-full p-5 shadow-2xl flex flex-col justify-between overflow-y-auto">
+              <div className="space-y-4">
+                <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+                  <div className="font-bold text-slate-800 text-sm">মেনু নির্বাচন করুন</div>
+                  <button
+                    type="button"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+                <div className="space-y-1">
+                  {navItems.map((item) => {
+                    const Icon = item.icon;
+                    const isActive = currentTab === item.id;
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => handleTabClick(item.id)}
+                        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition cursor-pointer text-left ${
+                          isActive
+                            ? 'bg-emerald-600 text-white'
+                            : 'text-slate-600 hover:bg-slate-100'
+                        }`}
+                      >
+                        <Icon className="w-4 h-4" />
+                        {item.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="pt-4 border-t border-slate-200 space-y-2">
+                <div className="text-xs font-semibold text-slate-500 mb-1">দ্রুত টোস্ট পরীক্ষা:</div>
+                <div className="grid grid-cols-3 gap-1 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => success('সফলভাবে সংরক্ষিত হয়েছে!')}
+                    className="p-1.5 text-center bg-emerald-50 text-emerald-700 rounded border border-emerald-200"
+                  >
+                    সফল
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => error('যাচাইকরণ ব্যর্থ হয়েছে!')}
+                    className="p-1.5 text-center bg-rose-50 text-rose-700 rounded border border-rose-200"
+                  >
+                    ত্রুটি
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => info('প্রক্রিয়া চলছে...')}
+                    className="p-1.5 text-center bg-sky-50 text-sky-700 rounded border border-sky-200"
+                  >
+                    তথ্য
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div className="flex-1" onClick={() => setMobileMenuOpen(false)} />
+          </div>
+        )}
+
+        {/* Dynamic Admin Body */}
+        <main className="flex-1 min-w-0">
           {children}
         </main>
-
-        {/* Minimal Admin Footer */}
-        <footer className="mt-auto pt-3 pb-20 md:pb-3 px-6 text-center text-xs text-slate-500 border-t border-slate-200/60 select-none no-print">
-          <p>© ২০২৪-২০২৬ <span className="font-outfit font-bold text-slate-700">DPIB RESULT ZONE</span> • ডিজিটাল একাডেমিক অফিস</p>
-        </footer>
-      </div>
-
-      {/* ================= MOBILE BOTTOM ADMIN NAV ================= */}
-      <div className="fixed bottom-2.5 inset-x-2.5 max-w-md mx-auto z-40 md:hidden pointer-events-none select-none font-bengali no-print">
-        <nav
-          id="admin-mobile-bottom-navbar"
-          aria-label="Admin Mobile Navigation"
-          className="pointer-events-auto relative bg-white/85 backdrop-blur-2xl backdrop-saturate-180 border border-white/80 shadow-[0_16px_45px_rgba(15,23,42,0.16),0_1px_0_1px_rgba(255,255,255,0.9)_inset] ring-1 ring-black/5 rounded-[32px] px-1.5 py-1.5 flex items-center justify-between transition-all"
-          style={{ paddingBottom: 'calc(0.4rem + env(safe-area-inset-bottom, 0px))' }}
-        >
-          {/* 1. ড্যাশবোর্ড */}
-          <button
-            id="admin-bottom-nav-dashboard"
-            type="button"
-            onClick={() => onSectionChange('dashboard')}
-            className="relative flex-1 flex flex-col items-center justify-center py-1 transition-all active:scale-95 cursor-pointer min-w-0"
-          >
-            <div
-              className={`flex items-center justify-center w-8 h-7 sm:w-10 sm:h-8 rounded-xl transition-all ${
-                currentSection === 'dashboard'
-                  ? 'bg-teal-50/90 text-teal-700 font-black border border-teal-200/60 shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <Home className={`w-4 h-4 sm:w-5 sm:h-5 transition-transform ${currentSection === 'dashboard' ? 'scale-110' : ''}`} />
-            </div>
-            <span
-              className={`text-[9px] sm:text-[11px] font-bold mt-0.5 tracking-tight transition-colors truncate max-w-full leading-tight ${
-                currentSection === 'dashboard' ? 'text-teal-700 font-extrabold' : 'text-slate-600'
-              }`}
-            >
-              ড্যাশবোর্ড
-            </span>
-            <span
-              className={`text-[7px] sm:text-[8px] font-outfit uppercase tracking-wider font-bold truncate max-w-full leading-none mt-0.5 ${
-                currentSection === 'dashboard' ? 'text-teal-700' : 'text-slate-400'
-              }`}
-            >
-              HOME
-            </span>
-            {currentSection === 'dashboard' && (
-              <motion.div
-                layoutId="admin-bottom-nav-indicator"
-                className="absolute -bottom-1 w-1.5 h-1.5 rounded-full bg-teal-700"
-                transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-              />
-            )}
-          </button>
-
-          {/* 2. ভর্তি আবেদন */}
-          <button
-            id="admin-bottom-nav-admissions"
-            type="button"
-            onClick={() => onSectionChange('admissions')}
-            className="relative flex-1 flex flex-col items-center justify-center py-1 transition-all active:scale-95 cursor-pointer min-w-0"
-          >
-            <div
-              className={`relative flex items-center justify-center w-8 h-7 sm:w-10 sm:h-8 rounded-xl transition-all ${
-                currentSection === 'admissions'
-                  ? 'bg-teal-50/90 text-teal-700 font-black border border-teal-200/60 shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <GraduationCap className={`w-4 h-4 sm:w-5 sm:h-5 transition-transform ${currentSection === 'admissions' ? 'scale-110' : ''}`} />
-              {pendingAdmissionCount > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-rose-500 ring-2 ring-white animate-pulse" />
-              )}
-            </div>
-            <span
-              className={`text-[9px] sm:text-[11px] font-bold mt-0.5 tracking-tight transition-colors truncate max-w-full leading-tight ${
-                currentSection === 'admissions' ? 'text-teal-700 font-extrabold' : 'text-slate-600'
-              }`}
-            >
-              ভর্তি আবেদন
-            </span>
-            <span
-              className={`text-[7px] sm:text-[8px] font-outfit uppercase tracking-wider font-bold truncate max-w-full leading-none mt-0.5 ${
-                currentSection === 'admissions' ? 'text-teal-700' : 'text-slate-400'
-              }`}
-            >
-              ADMISSION
-            </span>
-            {currentSection === 'admissions' && (
-              <motion.div
-                layoutId="admin-bottom-nav-indicator"
-                className="absolute -bottom-1 w-1.5 h-1.5 rounded-full bg-teal-700"
-                transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-              />
-            )}
-          </button>
-
-          {/* 3. ফলাফল */}
-          <button
-            id="admin-bottom-nav-results"
-            type="button"
-            onClick={() => onSectionChange('results')}
-            className="relative flex-1 flex flex-col items-center justify-center py-1 transition-all active:scale-95 cursor-pointer min-w-0"
-          >
-            <div
-              className={`flex items-center justify-center w-8 h-7 sm:w-10 sm:h-8 rounded-xl transition-all ${
-                currentSection === 'results'
-                  ? 'bg-teal-50/90 text-teal-700 font-black border border-teal-200/60 shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <FileSpreadsheet className={`w-4 h-4 sm:w-5 sm:h-5 transition-transform ${currentSection === 'results' ? 'scale-110' : ''}`} />
-            </div>
-            <span
-              className={`text-[9px] sm:text-[11px] font-bold mt-0.5 tracking-tight transition-colors truncate max-w-full leading-tight ${
-                currentSection === 'results' ? 'text-teal-700 font-extrabold' : 'text-slate-600'
-              }`}
-            >
-              ফলাফল
-            </span>
-            <span
-              className={`text-[7px] sm:text-[8px] font-outfit uppercase tracking-wider font-bold truncate max-w-full leading-none mt-0.5 ${
-                currentSection === 'results' ? 'text-teal-700' : 'text-slate-400'
-              }`}
-            >
-              RESULTS
-            </span>
-            {currentSection === 'results' && (
-              <motion.div
-                layoutId="admin-bottom-nav-indicator"
-                className="absolute -bottom-1 w-1.5 h-1.5 rounded-full bg-teal-700"
-                transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-              />
-            )}
-          </button>
-
-          {/* 4. ইভেন্ট */}
-          <button
-            id="admin-bottom-nav-events"
-            type="button"
-            onClick={() => onSectionChange('events')}
-            className="relative flex-1 flex flex-col items-center justify-center py-1 transition-all active:scale-95 cursor-pointer min-w-0"
-          >
-            <div
-              className={`flex items-center justify-center w-8 h-7 sm:w-10 sm:h-8 rounded-xl transition-all ${
-                currentSection === 'events'
-                  ? 'bg-teal-50/90 text-teal-700 font-black border border-teal-200/60 shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <CalendarDays className={`w-4 h-4 sm:w-5 sm:h-5 transition-transform ${currentSection === 'events' ? 'scale-110' : ''}`} />
-            </div>
-            <span
-              className={`text-[9px] sm:text-[11px] font-bold mt-0.5 tracking-tight transition-colors truncate max-w-full leading-tight ${
-                currentSection === 'events' ? 'text-teal-700 font-extrabold' : 'text-slate-600'
-              }`}
-            >
-              ইভেন্ট
-            </span>
-            <span
-              className={`text-[7px] sm:text-[8px] font-outfit uppercase tracking-wider font-bold truncate max-w-full leading-none mt-0.5 ${
-                currentSection === 'events' ? 'text-teal-700' : 'text-slate-400'
-              }`}
-            >
-              EVENTS
-            </span>
-            {currentSection === 'events' && (
-              <motion.div
-                layoutId="admin-bottom-nav-indicator"
-                className="absolute -bottom-1 w-1.5 h-1.5 rounded-full bg-teal-700"
-                transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-              />
-            )}
-          </button>
-
-          {/* 5. মেনু পেজ */}
-          <button
-            id="admin-bottom-nav-menu"
-            type="button"
-            onClick={() => onSectionChange('menu')}
-            className="relative flex-1 flex flex-col items-center justify-center py-1 transition-all active:scale-95 cursor-pointer min-w-0"
-          >
-            <div
-              className={`flex items-center justify-center w-8 h-7 sm:w-10 sm:h-8 rounded-xl transition-all ${
-                currentSection === 'menu'
-                  ? 'bg-teal-50/90 text-teal-700 font-black border border-teal-200/60 shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <MenuIcon className={`w-4 h-4 sm:w-5 sm:h-5 transition-transform ${currentSection === 'menu' ? 'scale-110' : ''}`} />
-            </div>
-            <span
-              className={`text-[9px] sm:text-[11px] font-bold mt-0.5 tracking-tight transition-colors truncate max-w-full leading-tight ${
-                currentSection === 'menu' ? 'text-teal-700 font-extrabold' : 'text-slate-600'
-              }`}
-            >
-              মেনু পেজ
-            </span>
-            <span
-              className={`text-[7px] sm:text-[8px] font-outfit uppercase tracking-wider font-bold truncate max-w-full leading-none mt-0.5 ${
-                currentSection === 'menu' ? 'text-teal-700' : 'text-slate-400'
-              }`}
-            >
-              MENU
-            </span>
-            {currentSection === 'menu' && (
-              <motion.div
-                layoutId="admin-bottom-nav-indicator"
-                className="absolute -bottom-1 w-1.5 h-1.5 rounded-full bg-teal-700"
-                transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-              />
-            )}
-          </button>
-        </nav>
       </div>
     </div>
   );

@@ -1,305 +1,248 @@
-import React, { useEffect, useState } from 'react';
-import {
-  Users,
-  BookOpen,
-  FileSpreadsheet,
-  CheckCircle2,
-  Clock,
-  Bell,
-  Plus,
-  Upload,
-  ArrowRight,
+import React, { useMemo } from 'react';
+import { 
+  Users, 
+  BookOpen, 
+  FileCode, 
+  CheckCircle2, 
+  Bell, 
+  Plus, 
+  FileText, 
+  Sparkles,
   TrendingUp,
-  Award,
-  GraduationCap,
+  Award
 } from 'lucide-react';
-import { getDashboardStats, DashboardStats } from '../../services/db';
-import { Exam, StudentResult } from '../../types';
-import { toBanglaDigits, formatBanglaDate, SEMESTER_MAP } from '../../utils/bangla';
-import { LoadingSpinner } from '../common/LoadingSpinner';
+import { db } from '../../services/db';
+import { AdminTab } from './AdminLayout';
+import { useToast } from '../../context/ToastContext';
 
 interface AdminDashboardProps {
-  onNavigate: (section: string) => void;
-  exams: Exam[];
+  onNavigate: (tab: AdminTab) => void;
 }
 
-export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, exams }) => {
-  const [stats, setStats] = useState<DashboardStats | null>(null);
-  const [loading, setLoading] = useState(true);
+export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate }) => {
+  const { info, success } = useToast();
 
-  const fetchStats = async () => {
-    setLoading(true);
-    try {
-      const data = await getDashboardStats();
-      setStats(data);
-    } catch (err) {
-      console.error('Stats error:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const students = useMemo(() => db.getStudents(), []);
+  const exams = useMemo(() => db.getExams(), []);
+  const results = useMemo(() => db.getResults(), []);
+  const notices = useMemo(() => db.getNotices(), []);
 
-  useEffect(() => {
-    fetchStats();
-  }, []);
+  const passedResults = results.filter((r) => r.status === 'PASSED').length;
+  const passRate = results.length > 0 ? Math.round((passedResults / results.length) * 100) : 0;
 
   const statCards = [
     {
-      label: 'ভর্তি আবেদন',
-      value: stats?.totalAdmissions ?? 0,
-      icon: GraduationCap,
-      color: 'bg-teal-50 text-teal-700 border-teal-200',
-      section: 'admissions',
-    },
-    {
-      label: 'মোট শিক্ষার্থী',
-      value: stats?.totalStudents ?? 0,
+      label: 'মোট নিবন্ধিত শিক্ষার্থী',
+      value: students.length,
       icon: Users,
       color: 'bg-blue-50 text-blue-700 border-blue-200',
-      section: 'students',
+      action: () => onNavigate('students')
     },
     {
-      label: 'মোট পরীক্ষা',
-      value: stats?.totalExams ?? 0,
-      icon: BookOpen,
-      color: 'bg-indigo-50 text-indigo-700 border-indigo-200',
-      section: 'exams',
-    },
-    {
-      label: 'মোট ফলাফল',
-      value: stats?.totalResults ?? 0,
-      icon: FileSpreadsheet,
+      label: 'মোট ফলাফল এন্ট্রি',
+      value: results.length,
+      icon: FileCode,
       color: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-      section: 'results',
+      action: () => onNavigate('results')
     },
     {
-      label: 'প্রকাশিত ফলাফল',
-      value: stats?.publishedResults ?? 0,
-      icon: CheckCircle2,
-      color: 'bg-teal-50 text-teal-700 border-teal-200',
-      section: 'results',
-    },
-    {
-      label: 'খসড়া ফলাফল',
-      value: stats?.draftResults ?? 0,
-      icon: Clock,
-      color: 'bg-amber-50 text-amber-700 border-amber-200',
-      section: 'results',
-    },
-    {
-      label: 'মোট নোটিশ',
-      value: stats?.totalNotices ?? 0,
-      icon: Bell,
+      label: 'অনুষ্ঠিত পরীক্ষা সমূহ',
+      value: exams.length,
+      icon: BookOpen,
       color: 'bg-purple-50 text-purple-700 border-purple-200',
-      section: 'notices',
+      action: () => onNavigate('exams')
     },
+    {
+      label: 'প্রকাশিত নোটিশ',
+      value: notices.filter((n) => n.published).length,
+      icon: Bell,
+      color: 'bg-amber-50 text-amber-700 border-amber-200',
+      action: () => onNavigate('notices')
+    }
   ];
 
   return (
-    <div className="space-y-6 sm:space-y-8 min-w-0 max-w-full">
-      {/* Top Welcome & Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 min-w-0">
-        <div className="min-w-0">
-          <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
-            অ্যাডমিন ড্যাশবোর্ড
-          </h1>
-          <p className="text-xs sm:text-sm text-slate-500 mt-1">
-            ফলাফল ডেটাবেস, শিক্ষার্থী ও পরীক্ষার রিয়েলটাইম তথ্য সারসংক্ষেপ
-          </p>
+    <div className="space-y-6">
+      {/* Header Banner */}
+      <div className="bg-gradient-to-r from-emerald-800 via-teal-900 to-slate-900 rounded-3xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden">
+        <div className="absolute right-0 top-0 bottom-0 opacity-10 pointer-events-none flex items-center pr-10">
+          <Award className="w-80 h-80" />
         </div>
-
-        {/* Quick Actions Header */}
-        <div className="flex items-center flex-wrap gap-2 w-full sm:w-auto">
-          <button
-            onClick={() => onNavigate('admissions')}
-            className="flex items-center space-x-1.5 px-3.5 py-2 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs sm:text-sm font-bold transition-all shadow-xs active:scale-95 cursor-pointer shrink-0"
-          >
-            <GraduationCap className="w-4 h-4" />
-            <span>ভর্তি আবেদন</span>
-            {(stats?.pendingAdmissions ?? 0) > 0 && (
-              <span className="bg-rose-500 text-white text-[10px] px-1.5 py-0.5 rounded-full font-outfit font-bold">
-                {toBanglaDigits(stats?.pendingAdmissions ?? 0)}
-              </span>
-            )}
-          </button>
-          <button
-            onClick={() => onNavigate('results')}
-            className="flex items-center space-x-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs sm:text-sm font-bold transition-all shadow-xs active:scale-95 cursor-pointer shrink-0"
-          >
-            <Upload className="w-4 h-4" />
-            <span>ফলাফল আপলোড</span>
-          </button>
-          <button
-            onClick={() => onNavigate('exams')}
-            className="flex items-center space-x-1.5 px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs sm:text-sm font-bold transition-all shadow-xs active:scale-95 cursor-pointer shrink-0"
-          >
-            <Plus className="w-4 h-4" />
-            <span>নতুন পরীক্ষা</span>
-          </button>
+        <div className="relative z-10 max-w-2xl space-y-3">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 text-xs font-semibold">
+            <Sparkles className="w-3.5 h-3.5" />
+            স্মার্ট ডিজিটাল প্রশাসন পোর্টাল
+          </div>
+          <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
+            স্বাগতম, DPIB এডমিন ম্যানেজমেন্ট প্যানেল
+          </h2>
+          <p className="text-emerald-100/80 text-sm leading-relaxed">
+            দক্ষিণবঙ্গ পলিটেকনিক ইনস্টিটিউটের ফলাফল প্রক্রিয়াকরণ, শিক্ষার্থী তথ্য সংরক্ষণ, ডিজিটাল প্রবেশপত্র ও মার্কশিট জেনারেশন সরাসরি সম্পন্ন করুন।
+          </p>
+          <div className="flex flex-wrap gap-3 pt-2">
+            <button
+              type="button"
+              onClick={() => onNavigate('results')}
+              className="px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs sm:text-sm flex items-center gap-2 shadow-lg shadow-emerald-950/30 transition cursor-pointer"
+            >
+              <FileCode className="w-4 h-4" />
+              JSON কোড হতে ফলাফল আপলোড
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                info('ড্যাশবোর্ড পরিসংখ্যান সর্বশেষ ডেটার সাথে সিঙ্ক হয়েছে');
+              }}
+              className="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-medium text-xs sm:text-sm backdrop-blur-sm border border-white/10 transition cursor-pointer"
+            >
+              পরিসংখ্যান রিফ্রেশ
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Stats Cards Grid */}
-      {loading ? (
-        <LoadingSpinner message="পরিসংখ্যান লোড হচ্ছে..." />
-      ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-2.5 sm:gap-3.5 min-w-0">
-          {statCards.map((card, idx) => {
-            const Icon = card.icon;
-            return (
-              <div
-                key={idx}
-                onClick={() => onNavigate(card.section)}
-                className="bg-white rounded-2xl border border-slate-200/90 p-3.5 sm:p-4 shadow-2xs hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between min-w-0"
-              >
-                <div className="flex items-center justify-between mb-3">
-                  <div className={`p-2 rounded-xl border ${card.color}`}>
-                    <Icon className="w-4 h-4" />
-                  </div>
-                  <span className="text-[10px] text-slate-400 font-bold group-hover:text-slate-700 uppercase font-outfit">
-                    VIEW
-                  </span>
-                </div>
-                <div>
-                  <span className="text-2xl sm:text-3xl font-black text-slate-900 font-outfit block tracking-tight">
-                    {toBanglaDigits(card.value)}
-                  </span>
-                  <span className="text-xs font-semibold text-slate-500 mt-1 block">
-                    {card.label}
-                  </span>
+      {/* Stats Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        {statCards.map((card, idx) => {
+          const Icon = card.icon;
+          return (
+            <div
+              key={idx}
+              onClick={card.action}
+              className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-xs hover:shadow-md transition cursor-pointer group"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-500">{card.label}</span>
+                <div className={`p-2.5 rounded-xl border ${card.color} group-hover:scale-110 transition-transform`}>
+                  <Icon className="w-5 h-5" />
                 </div>
               </div>
-            );
-          })}
-        </div>
-      )}
+              <div className="mt-4 flex items-baseline gap-2">
+                <span className="text-3xl font-extrabold text-slate-800 tracking-tight">
+                  {card.value}
+                </span>
+                <span className="text-xs text-slate-400">রেকর্ড</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
 
-      {/* Quick Launchpad Action Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div
-          onClick={() => onNavigate('admissions')}
-          className="bg-gradient-to-br from-teal-800 to-teal-900 text-white p-6 rounded-3xl shadow-md cursor-pointer hover:shadow-lg hover:-translate-y-0.5 transition-all group"
-        >
-          <div className="w-10 h-10 rounded-2xl bg-white/20 flex items-center justify-center mb-4">
-            <GraduationCap className="w-5 h-5 text-white" />
-          </div>
-          <h3 className="font-bold text-lg mb-1">ভর্তি আবেদন ও যাচাইকরণ</h3>
-          <p className="text-xs text-teal-100/90 leading-relaxed mb-4">
-            শিক্ষার্থীদের নতুন অনলাইন ভর্তি আবেদন যাচাই, অনুমোদন ও প্রিন্ট স্লিপ নিয়ন্ত্রণ করুন
-          </p>
-          <span className="inline-flex items-center text-xs font-bold text-white group-hover:translate-x-1 transition-transform">
-            <span>আবেদন তালিকা দেখুন</span>
-            <ArrowRight className="w-4 h-4 ml-1" />
-          </span>
-        </div>
-
+      {/* Quick Action Cards Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
         <div
           onClick={() => onNavigate('results')}
           className="bg-gradient-to-br from-emerald-700 to-teal-800 text-white p-6 rounded-3xl shadow-md cursor-pointer hover:shadow-lg transition-all group"
         >
-          <div className="w-10 h-10 rounded-2xl bg-white/20 flex items-center justify-center mb-4">
-            <FileSpreadsheet className="w-5 h-5 text-white" />
+          <div className="w-12 h-12 rounded-2xl bg-white/10 flex items-center justify-center mb-4 group-hover:scale-105 transition-transform">
+            <FileCode className="w-6 h-6 text-white" />
           </div>
-          <h3 className="font-bold text-lg mb-1">এক্সেল ও JSON থেকে ফলাফল আপলোড</h3>
+          <h3 className="font-bold text-lg mb-1">JSON ফলাফল আপলোড</h3>
           <p className="text-xs text-emerald-100/80 leading-relaxed mb-4">
-            এক ক্লিকে সম্পূর্ণ ব্যাচ রেজাল্ট শিট আপলোড করে সরাসরি ফায়ারস্টোরে সংরক্ষণ ও প্রকাশ করুন
+            কোনো জটিলতা ছাড়াই সরাসরি JSON কোড পেস্ট করে নিমেষেই শিক্ষার্থীদের ফলাফল যাচাই ও প্রকাশ করুন।
           </p>
-          <span className="inline-flex items-center text-xs font-bold text-white group-hover:translate-x-1 transition-transform">
-            <span>ফলাফল আপলোড প্যানেলে যান</span>
-            <ArrowRight className="w-4 h-4 ml-1" />
+          <span className="inline-flex items-center text-xs font-bold text-emerald-200 group-hover:translate-x-1 transition-transform">
+            আপলোড প্যানেল খুলুন &rarr;
           </span>
         </div>
 
         <div
           onClick={() => onNavigate('students')}
-          className="bg-white border border-slate-200/90 p-6 rounded-3xl shadow-xs cursor-pointer hover:shadow-md transition-all group"
+          className="bg-white border border-slate-200/80 p-6 rounded-3xl shadow-xs hover:shadow-md cursor-pointer transition-all group"
         >
-          <div className="w-10 h-10 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mb-4">
-            <Users className="w-5 h-5" />
+          <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mb-4 group-hover:scale-105 transition-transform">
+            <Users className="w-6 h-6" />
           </div>
-          <h3 className="font-bold text-slate-900 text-lg mb-1">শিক্ষার্থী ডাটাবেজ</h3>
+          <h3 className="font-bold text-lg text-slate-800 mb-1">নতুন শিক্ষার্থী যোগ</h3>
           <p className="text-xs text-slate-500 leading-relaxed mb-4">
-            সেমিস্টার ও বিভাগভিত্তিক শিক্ষার্থীদের রোল, রেজিস্ট্রেশন ও তথ্য ফিল্টার ও পরিচালনা করুন
+            রোল, রেজিস্ট্রেশন, টেকনোলজি ও পর্বভিত্তিক নতুন শিক্ষার্থীর তথ্য এন্ট্রি বা পূর্বের তথ্য সংশোধন করুন।
           </p>
-          <span className="inline-flex items-center text-xs font-bold text-emerald-600 group-hover:translate-x-1 transition-transform">
-            <span>শিক্ষার্থী তালিকা দেখুন</span>
-            <ArrowRight className="w-4 h-4 ml-1" />
+          <span className="inline-flex items-center text-xs font-bold text-blue-600 group-hover:translate-x-1 transition-transform">
+            শিক্ষার্থী পরিচালনা &rarr;
           </span>
         </div>
 
         <div
-          onClick={() => onNavigate('settings')}
-          className="bg-white border border-slate-200/90 p-6 rounded-3xl shadow-xs cursor-pointer hover:shadow-md transition-all group"
+          onClick={() => onNavigate('documents')}
+          className="bg-white border border-slate-200/80 p-6 rounded-3xl shadow-xs hover:shadow-md cursor-pointer transition-all group"
         >
-          <div className="w-10 h-10 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center mb-4">
-            <Award className="w-5 h-5" />
+          <div className="w-12 h-12 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center mb-4 group-hover:scale-105 transition-transform">
+            <FileText className="w-6 h-6" />
           </div>
-          <h3 className="font-bold text-slate-900 text-lg mb-1">গ্রেডিং ও সিস্টেম নিয়ম</h3>
+          <h3 className="font-bold text-lg text-slate-800 mb-1">ডকুমেন্ট জেনারেটর</h3>
           <p className="text-xs text-slate-500 leading-relaxed mb-4">
-            বোর্ড মানদণ্ড অনুযায়ী জিপিএ গ্রেডিং রেঞ্জ, সেমিস্টার ও টেকনোলজি কাস্টমাইজ করুন
+            শিক্ষার্থীদের পরীক্ষার প্রবেশপত্র, মার্কশিট ও প্রশংসাপত্র স্বয়ংক্রিয়ভাবে জেনারেট ও সরাসরি প্রিন্ট করুন।
           </p>
-          <span className="inline-flex items-center text-xs font-bold text-emerald-600 group-hover:translate-x-1 transition-transform">
-            <span>সেটিংস পরিবর্তন করুন</span>
-            <ArrowRight className="w-4 h-4 ml-1" />
+          <span className="inline-flex items-center text-xs font-bold text-purple-600 group-hover:translate-x-1 transition-transform">
+            ডকুমেন্ট তৈরি করুন &rarr;
           </span>
         </div>
       </div>
 
-      {/* Recent Exams Table */}
-      <div className="bg-white rounded-3xl border border-slate-200/90 p-4 sm:p-6 shadow-xs min-w-0 max-w-full">
-        <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-4 min-w-0 gap-2">
-          <div className="min-w-0">
-            <h3 className="text-base sm:text-lg font-bold text-slate-900 truncate">সাম্প্রতিক পরীক্ষাসমূহ</h3>
-            <p className="text-xs text-slate-400 truncate">তৈরিকৃত পরীক্ষার সর্বশেষ অবস্থা</p>
+      {/* Summary Box & Pass Rate */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-xs">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2">
+              <TrendingUp className="w-4 h-4 text-emerald-600" />
+              ফলাফল পরিসংখ্যান ও পাসের হার
+            </h3>
+            <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+              {passRate}% উত্তীর্ণ
+            </span>
           </div>
-          <button
-            onClick={() => onNavigate('exams')}
-            className="text-xs font-bold text-emerald-600 hover:text-emerald-700 shrink-0 cursor-pointer"
-          >
-            সকল পরীক্ষা দেখুন
-          </button>
+
+          <div className="space-y-3">
+            <div>
+              <div className="flex justify-between text-xs text-slate-600 mb-1">
+                <span>উত্তীর্ণ শিক্ষার্থী ({passedResults} জন)</span>
+                <span className="font-bold text-emerald-600">{passRate}%</span>
+              </div>
+              <div className="w-full bg-slate-100 rounded-full h-3 overflow-hidden">
+                <div
+                  className="bg-emerald-500 h-full rounded-full transition-all duration-500"
+                  style={{ width: `${passRate}%` }}
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 pt-3 border-t border-slate-100 text-xs">
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/60">
+                <span className="text-slate-400 block text-[11px]">কৃতকার্য</span>
+                <span className="text-lg font-bold text-slate-800">{passedResults} জন</span>
+              </div>
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/60">
+                <span className="text-slate-400 block text-[11px]">রেফার্ড/অকৃতকার্য</span>
+                <span className="text-lg font-bold text-slate-800">{results.length - passedResults} জন</span>
+              </div>
+            </div>
+          </div>
         </div>
 
-        {exams.length === 0 ? (
-          <div className="py-8 text-center text-xs text-slate-400">
-            এখনও কোনো পরীক্ষা তৈরি করা হয়নি। &quot;নতুন পরীক্ষা&quot; বাটনে ক্লিক করে পরীক্ষা তৈরি করুন।
+        {/* Institute Info Box */}
+        <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-xs flex flex-col justify-between">
+          <div>
+            <h3 className="font-bold text-slate-800 text-sm mb-2">প্রতিষ্ঠান তথ্য</h3>
+            <p className="text-xs text-slate-500 leading-relaxed">
+              দক্ষিণবঙ্গ পলিটেকনিক ইনস্টিটিউট (DPIB) — বীরশ্রেষ্ঠ মোস্তফা কামাল বাস স্ট্যান্ড সংলগ্ন, ভোলা সদর, ভোলা। বাংলাদেশ কারিগরি শিক্ষা বোর্ড (BTEB) অনুমোদিত।
+            </p>
+            <div className="mt-4 space-y-1.5 text-xs text-slate-600">
+              <p><span className="font-semibold text-slate-700">অনুমোদিত টেকনোলজি:</span> কম্পিউটার, সিভিল, ইলেকট্রিক্যাল, মেকানিক্যাল, ইলেকট্রনিক্স</p>
+              <p><span className="font-semibold text-slate-700">এডমিন নিরাপত্তা পিন:</span> সংরক্ষিত (ডিফল্ট: 123456)</p>
+            </div>
           </div>
-        ) : (
-          <div className="overflow-x-auto w-full max-w-full -mx-2 px-2 sm:mx-0 sm:px-0">
-            <table className="min-w-[480px] w-full text-left text-xs sm:text-sm">
-              <thead>
-                <tr className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200">
-                  <th className="py-2.5 px-3">পরীক্ষার নাম</th>
-                  <th className="py-2.5 px-3">বিভাগ ও সেমিস্টার</th>
-                  <th className="py-2.5 px-3">পরীক্ষার তারিখ</th>
-                  <th className="py-2.5 px-3 text-center">অবস্থা</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {exams.slice(0, 5).map((exam) => (
-                  <tr key={exam.id} className="hover:bg-slate-50/60">
-                    <td className="py-3 px-3 font-semibold text-slate-800">{exam.title}</td>
-                    <td className="py-3 px-3 text-slate-600 text-xs">
-                      {exam.departmentName} • {SEMESTER_MAP[exam.semesterId]}
-                    </td>
-                    <td className="py-3 px-3 text-slate-500 text-xs">{formatBanglaDate(exam.examDate)}</td>
-                    <td className="py-3 px-3 text-center">
-                      <span
-                        className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
-                          exam.status === 'PUBLISHED'
-                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                            : 'bg-amber-50 text-amber-700 border border-amber-200'
-                        }`}
-                      >
-                        {exam.status === 'PUBLISHED' ? 'প্রকাশিত' : 'খসড়া'}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+
+          <div className="pt-4 border-t border-slate-100 flex items-center justify-between text-xs">
+            <span className="text-slate-400">সর্বশেষ ডাটাবেস আপডেট: আজ</span>
+            <button
+              type="button"
+              onClick={() => onNavigate('settings')}
+              className="text-emerald-700 font-semibold hover:underline cursor-pointer"
+            >
+              সেটিংস পরিবর্তন &rarr;
+            </button>
           </div>
-        )}
+        </div>
       </div>
     </div>
   );
