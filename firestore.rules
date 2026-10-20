@@ -1,0 +1,126 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isBootstrappedAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email == 'techjihad6825@gmail.com'
+      );
+    }
+
+    function isAdmin() {
+      return isBootstrappedAdmin() || (
+        isSignedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // Admins registry
+    match /admins/{adminId} {
+      allow read, write: if true;
+    }
+
+    // System settings
+    match /settings/{settingId} {
+      allow read, write: if true;
+    }
+
+    // Exams
+    match /exams/{examId} {
+      allow read, write: if true;
+    }
+
+    // Notices
+    match /notices/{noticeId} {
+      allow read, write: if true;
+    }
+
+    // Events
+    match /events/{eventId} {
+      allow read, write: if true;
+    }
+
+    // Results
+    match /results/{resultId} {
+      allow read, write: if true;
+    }
+
+    // Curriculum Master
+    match /curriculum/{curriculumId} {
+      allow read, write: if true;
+    }
+
+    // Students
+    match /students/{studentId} {
+      allow read, write: if true;
+    }
+
+    // Teachers
+    match /teachers/{teacherId} {
+      allow read, write: if true;
+    }
+
+    // Notification Push Subscriptions (FCM Tokens)
+    match /notification_subscriptions/{subscriptionId} {
+      allow read, write: if true;
+    }
+
+    // Class Routines
+    match /class_routines/{routineId} {
+      allow read, write: if true;
+    }
+
+    // Exam Routines
+    match /exam_routines/{routineId} {
+      allow read, write: if true;
+    }
+
+    // Question Papers
+    match /question_papers/{paperId} {
+      allow read, write: if true;
+    }
+
+    // Academic Books & Textbooks
+    match /books/{bookId} {
+      allow read, write: if true;
+    }
+
+    // Admission Applicants & Profiles
+    match /admission_applicants/{applicantId} {
+      allow read, write: if true;
+    }
+
+    // Admission Applications Submissions
+    match /admission_applications/{applicationId} {
+      allow read, write: if true;
+    }
+
+    // Admission Settings & Helpline Configuration
+    match /admission_settings/{settingId} {
+      allow read, write: if true;
+    }
+
+    // Admission Security & Fraud Audit Logs
+    match /admission_security_logs/{logId} {
+      allow read, write: if true;
+    }
+
+    // Admission Rate Limits
+    match /admission_rate_limits/{limitId} {
+      allow read, write: if true;
+    }
+
+    // Catch-all default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
+

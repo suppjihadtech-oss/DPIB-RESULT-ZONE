@@ -1,0 +1,25 @@
+{
+  "name": "DPIB RESULT ZONE",
+  "short_name": "DPIB Result",
+  "description": "দক্ষিণবঙ্গ পলিটেকনিক ইনস্টিটিউট আধুনিক ডিজিটাল ফলাফল ও নোটিশ পোর্টাল",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#2563eb",
+  "orientation": "portrait",
+  "lang": "bn",
+  "icons": [
+    {
+      "src": "https://i.postimg.cc/mgyW32Y2/Firefly-Remove-Background.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "https://i.postimg.cc/mgyW32Y2/Firefly-Remove-Background.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
