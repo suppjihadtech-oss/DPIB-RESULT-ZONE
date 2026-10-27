@@ -1161,11 +1161,95 @@ export function parseJsonResults(
     let targetExam: Exam | null = exam || null;
     let autoCreated = false;
 
-    // Detect exam info from top-level JSON
-    const topExamTitle = parsed.examTitle || parsed.examName || parsed.title || '';
-    const topSemester = normalizeSemester(parsed.semester || parsed.semesterId);
-    const topDept = normalizeDepartment(parsed.department || parsed.departmentName || parsed.departmentId);
-    const explicitTopFullMarks = Number(parsed.fullMarks || parsed.defaultFullMarks || parsed.subjectFullMarks) || undefined;
+    // Detect exam info from top-level JSON or item objects
+    let rawDetectedExamTitle = '';
+    let rawDetectedSemester = '';
+    let rawDetectedDept = '';
+    let explicitTopFullMarks: number | undefined;
+
+    // Check top-level properties if parsed is an object
+    if (!Array.isArray(parsed) && typeof parsed === 'object' && parsed !== null) {
+      rawDetectedExamTitle =
+        parsed.examTitle ||
+        parsed.exam_title ||
+        parsed.examName ||
+        parsed.exam_name ||
+        parsed.exam ||
+        parsed.title ||
+        parsed['পরীক্ষার নাম'] ||
+        parsed['পরীক্ষা'] ||
+        '';
+      rawDetectedSemester =
+        parsed.semester ||
+        parsed.semester_id ||
+        parsed.semesterId ||
+        parsed.sem ||
+        parsed['সেমিস্টার'] ||
+        parsed['পর্ব'] ||
+        '';
+      rawDetectedDept =
+        parsed.department ||
+        parsed.department_name ||
+        parsed.departmentName ||
+        parsed.dept ||
+        parsed.technology ||
+        parsed.tech ||
+        parsed['টেকনোলজি'] ||
+        parsed['বিভাগ'] ||
+        parsed.departmentId ||
+        '';
+      const rawF = parsed.fullMarks || parsed.defaultFullMarks || parsed.subjectFullMarks || parsed.maxMarks;
+      if (Number(rawF) > 0) explicitTopFullMarks = Number(rawF);
+    }
+
+    // If any metadata is still empty, scan each item in dataList
+    for (const item of dataList) {
+      if (!item || typeof item !== 'object') continue;
+      if (!rawDetectedExamTitle) {
+        rawDetectedExamTitle =
+          item.examTitle ||
+          item.exam_title ||
+          item.examName ||
+          item.exam_name ||
+          item.exam ||
+          item.title ||
+          item['পরীক্ষার নাম'] ||
+          item['পরীক্ষা'] ||
+          '';
+      }
+      if (!rawDetectedSemester) {
+        rawDetectedSemester =
+          item.semester ||
+          item.semester_id ||
+          item.semesterId ||
+          item.sem ||
+          item['সেমিস্টার'] ||
+          item['পর্ব'] ||
+          '';
+      }
+      if (!rawDetectedDept) {
+        rawDetectedDept =
+          item.department ||
+          item.department_name ||
+          item.departmentName ||
+          item.dept ||
+          item.technology ||
+          item.tech ||
+          item['টেকনোলজি'] ||
+          item['বিভাগ'] ||
+          item.departmentId ||
+          '';
+      }
+      if (!explicitTopFullMarks) {
+        const rawF = item.fullMarks || item.defaultFullMarks || item.subjectFullMarks || item.maxMarks;
+        if (Number(rawF) > 0) explicitTopFullMarks = Number(rawF);
+      }
+      if (rawDetectedExamTitle && rawDetectedSemester && rawDetectedDept) break;
+    }
+
+    const topExamTitle = String(rawDetectedExamTitle || '').trim();
+    const topSemester = normalizeSemester(rawDetectedSemester);
+    const topDept = normalizeDepartment(rawDetectedDept);
 
     if (!targetExam && topExamTitle) {
       const match = allExams.find(
@@ -1299,11 +1383,35 @@ export function parseJsonResults(
       const registration = item.registration || item.reg || item.registrationNo || item['রেজিস্ট্রেশন'] || '';
 
       // Check item-level department and semester if present
-      const itemDeptRaw = item.department || item.dept || item.technology || item.departmentName || item.departmentId;
+      const itemDeptRaw =
+        item.department ||
+        item.department_name ||
+        item.departmentName ||
+        item.dept ||
+        item.technology ||
+        item.tech ||
+        item['টেকনোলজি'] ||
+        item['বিভাগ'] ||
+        item.departmentId;
       const itemDept = itemDeptRaw ? normalizeDepartment(String(itemDeptRaw).trim()) : topDept;
-      const itemSemRaw = item.semester || item.semesterId || item.sem;
+      const itemSemRaw =
+        item.semester ||
+        item.semester_id ||
+        item.semesterId ||
+        item.sem ||
+        item['সেমিস্টার'] ||
+        item['পর্ব'];
       const itemSemester = itemSemRaw ? normalizeSemester(String(itemSemRaw).trim()) : topSemester;
-      const itemExamTitle = item.examTitle || item.examName || item.title || topExamTitle;
+      const itemExamTitle =
+        item.examTitle ||
+        item.exam_title ||
+        item.examName ||
+        item.exam_name ||
+        item.exam ||
+        item.title ||
+        item['পরীক্ষার নাম'] ||
+        item['পরীক্ষা'] ||
+        topExamTitle;
 
       if (!roll) rowErrors.push(`সারি ${rowNumber}: রোল নম্বর অনুপস্থিত`);
       if (!studentName) rowErrors.push(`সারি ${rowNumber}: শিক্ষার্থীর নাম অনুপস্থিত`);

@@ -207,6 +207,10 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
         ? parsed
         : Array.isArray(parsed.students)
         ? parsed.students
+        : Array.isArray(parsed.data)
+        ? parsed.data
+        : Array.isArray(parsed.studentList)
+        ? parsed.studentList
         : null;
 
       if (!items) {
@@ -219,7 +223,7 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
         return;
       }
 
-      const deptObj = departments.find((d) => d.id === targetDeptId) || departments[0];
+      const deptObj = effectiveDepartments.find((d) => d.id === targetDeptId) || effectiveDepartments[0];
       const deptName = deptObj?.name || 'কম্পিউটার টেকনোলজি';
 
       const existingRollSet = new Set(
@@ -229,13 +233,13 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
       const seenInBatchRolls = new Set<string>();
       const processed = items.map((rawItem, idx) => {
         const itemIndex = idx + 1;
-        const name = String(rawItem.name || rawItem.studentName || '').trim();
-        const rawRoll = rawItem.roll ?? rawItem.rollNumber ?? rawItem.boardRoll ?? '';
+        const name = String(rawItem.name || rawItem.studentName || rawItem.Name || rawItem['নাম'] || rawItem['শিক্ষার্থীর নাম'] || '').trim();
+        const rawRoll = rawItem.roll ?? rawItem.rollNumber ?? rawItem.boardRoll ?? rawItem.Roll ?? rawItem['রোল'] ?? '';
         const roll = toEnglishDigits(String(rawRoll).trim());
         const studentId =
-          String(rawItem.studentId || rawItem.id || '').trim() || (roll ? `DPIB-${roll}` : '');
+          String(rawItem.studentId || rawItem.student_id || rawItem.id || '').trim() || (roll ? `DPIB-${roll}` : '');
         const reg = String(
-          rawItem.registrationNumber || rawItem.registration || rawItem.regNo || ''
+          rawItem.registrationNumber || rawItem.registration || rawItem.regNo || rawItem.reg || rawItem['রেজিস্ট্রেশন'] || ''
         ).trim();
 
         let itemError: string | undefined;
@@ -255,7 +259,7 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
 
         // Use custom department/semester if specified in item, else fallback to batch selection
         const itemDeptId = rawItem.departmentId || targetDeptId;
-        const itemDeptName = departments.find((d) => d.id === itemDeptId)?.name || deptName;
+        const itemDeptName = effectiveDepartments.find((d) => d.id === itemDeptId)?.name || deptName;
         const itemSemId = (rawItem.semesterId || rawItem.semester || targetSemId) as SemesterId;
 
         const studentData: Omit<Student, 'id'> = {
@@ -863,6 +867,314 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
           </div>
         </form>
       </BottomSheet>
+
+      {/* JSON Import Bottom Sheet */}
+      <BottomSheet
+        isOpen={jsonSheetOpen}
+        onClose={() => setJsonSheetOpen(false)}
+        title="শিক্ষার্থী ডেটাবেজ JSON ইমপোর্ট"
+        subtitle="JSON কোড ইনপুট অথবা .json ফাইল আপলোড করে এক ক্লিকে বহু শিক্ষার্থীর তথ্য ডেটাবেজে যুক্ত করুন"
+        maxHeight="max-h-[92vh]"
+      >
+        <div className="space-y-4 pb-4">
+          {/* Success Banner */}
+          {jsonImportSuccessSummary && (
+            <div className="p-3.5 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl flex items-center gap-2 text-xs sm:text-sm font-bold shadow-xs animate-fadeIn">
+              <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>{jsonImportSuccessSummary}</span>
+            </div>
+          )}
+
+          {/* Error Banner */}
+          {jsonParseError && (
+            <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs font-semibold flex items-start gap-2 shadow-xs">
+              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+              <span>{jsonParseError}</span>
+            </div>
+          )}
+
+          {/* Department, Semester & Session Defaults */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 p-3 bg-slate-50 border border-slate-200/90 rounded-2xl">
+            <SelectTrigger
+              label="ডিফল্ট বিভাগ"
+              value={jsonDeptId}
+              displayValue={effectiveDepartments.find((d) => d.id === jsonDeptId)?.name || jsonDeptId}
+              onClick={() => setJsonDeptSheetOpen(true)}
+              icon={Building}
+            />
+
+            <SelectTrigger
+              label="ডিফল্ট সেমিস্টার"
+              value={jsonSemesterId}
+              displayValue={SEMESTER_MAP[jsonSemesterId] || `${jsonSemesterId}ম পর্ব`}
+              onClick={() => setJsonSemSheetOpen(true)}
+              icon={GraduationCap}
+            />
+
+            <div className="space-y-1">
+              <label className="block text-[11px] font-bold text-slate-700 uppercase">সেশন</label>
+              <input
+                type="text"
+                value={jsonSession}
+                onChange={(e) => {
+                  setJsonSession(e.target.value);
+                  if (jsonText.trim()) validateJson(jsonText, jsonDeptId, jsonSemesterId);
+                }}
+                className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium focus:border-blue-500 outline-none"
+                placeholder="২০২৩-২৪"
+              />
+            </div>
+          </div>
+
+          {/* Input Method Switcher Tabs */}
+          <div className="flex border-b border-slate-200">
+            <button
+              type="button"
+              onClick={() => setJsonInputTab('PASTE')}
+              className={`py-2 px-4 text-xs font-bold border-b-2 transition-all cursor-pointer flex items-center gap-1.5 ${
+                jsonInputTab === 'PASTE'
+                  ? 'border-blue-600 text-blue-700'
+                  : 'border-transparent text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <FileCode className="w-3.5 h-3.5" />
+              <span>JSON কোড পেস্ট করুন</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setJsonInputTab('FILE')}
+              className={`py-2 px-4 text-xs font-bold border-b-2 transition-all cursor-pointer flex items-center gap-1.5 ${
+                jsonInputTab === 'FILE'
+                  ? 'border-blue-600 text-blue-700'
+                  : 'border-transparent text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <Upload className="w-3.5 h-3.5" />
+              <span>JSON ফাইল আপলোড</span>
+            </button>
+          </div>
+
+          {/* Tab 1: Textarea Paste */}
+          {jsonInputTab === 'PASTE' && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-[11px] text-slate-500">শিক্ষার্থীর roll ও name ফিল্ড থাকা আবশ্যক</span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleCopySampleJson}
+                    className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-blue-700 bg-blue-50 hover:bg-blue-100/80 rounded-lg cursor-pointer transition-colors"
+                  >
+                    {copiedSample ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                    <span>{copiedSample ? 'কপি হয়েছে!' : 'নমুনা কোড কপি'}</span>
+                  </button>
+                  {jsonText && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setJsonText('');
+                        setParsedStudentList([]);
+                        setJsonParseError(null);
+                      }}
+                      className="px-2 py-1 text-[11px] text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                    >
+                      মুছুন
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <textarea
+                rows={7}
+                value={jsonText}
+                onChange={(e) => {
+                  setJsonText(e.target.value);
+                  validateJson(e.target.value, jsonDeptId, jsonSemesterId);
+                }}
+                placeholder={`[\n  {\n    "name": "মোঃ আরিয়ান আহমেদ",\n    "roll": "601234",\n    "studentId": "DPIB-601234",\n    "registrationNumber": "1502123456"\n  }\n]`}
+                className="w-full p-3 font-mono text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-blue-500 outline-none leading-relaxed transition-all resize-y text-slate-800"
+                spellCheck={false}
+              />
+            </div>
+          )}
+
+          {/* Tab 2: File Upload Dropzone */}
+          {jsonInputTab === 'FILE' && (
+            <div className="p-6 border-2 border-dashed border-slate-300 hover:border-blue-400 bg-slate-50/60 rounded-2xl text-center space-y-2 transition-all">
+              <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto">
+                <Upload className="w-5 h-5" />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-slate-800">.json ফাইল ড্রপ করুন বা ব্রাউজ করুন</p>
+                <p className="text-[11px] text-slate-500 mt-0.5">শিক্ষার্থীদের তথ্য সম্বলিত স্ট্যান্ডার্ড JSON ফাইল সমর্থন করে</p>
+              </div>
+              <label className="inline-block px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl cursor-pointer shadow-xs transition-colors">
+                <span>ফাইল বাছাই করুন</span>
+                <input
+                  type="file"
+                  accept=".json,application/json"
+                  onChange={handleFileUpload}
+                  className="hidden"
+                />
+              </label>
+              {jsonText && (
+                <p className="text-[11px] text-emerald-700 font-bold pt-1">
+                  ✓ ফাইল লোড সম্পন্ন হয়েছে ({toBanglaDigits(parsedStudentList.length)} জন শিক্ষার্থী পাওয়া গেছে)
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Parsed List Preview */}
+          {parsedStudentList.length > 0 && (
+            <div className="space-y-2.5 pt-1">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                <div>
+                  <span className="font-bold text-slate-900">
+                    মোট শিক্ষার্থী: {toBanglaDigits(parsedStudentList.length)} জন
+                  </span>
+                  <span className="text-slate-500 ml-2">
+                    (বৈধ: <strong className="text-emerald-700">{toBanglaDigits(parsedStudentList.filter((s) => !s.error).length)}</strong>
+                    {parsedStudentList.some((s) => s.error) && (
+                      <span className="text-rose-600 font-bold ml-1">
+                        • ত্রুটি: {toBanglaDigits(parsedStudentList.filter((s) => s.error).length)}
+                      </span>
+                    )}
+                    {parsedStudentList.some((s) => s.isDuplicate) && (
+                      <span className="text-amber-700 font-bold ml-1">
+                        • ডুপ্লিকেট: {toBanglaDigits(parsedStudentList.filter((s) => s.isDuplicate).length)}
+                      </span>
+                    )}
+                    )
+                  </span>
+                </div>
+
+                {parsedStudentList.some((s) => s.isDuplicate) && (
+                  <label className="flex items-center gap-1.5 text-xs text-amber-900 font-semibold cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={allowDuplicateOverwrite}
+                      onChange={(e) => setAllowDuplicateOverwrite(e.target.checked)}
+                      className="rounded text-blue-600 focus:ring-blue-500 w-3.5 h-3.5"
+                    />
+                    <span>বিদ্যমান রোল হালনাগাদ (Overwrite) করুন</span>
+                  </label>
+                )}
+              </div>
+
+              {/* Preview Table */}
+              <div className="max-h-52 overflow-y-auto rounded-xl border border-slate-200 text-xs shadow-2xs">
+                <table className="w-full text-left">
+                  <thead className="bg-slate-100 text-slate-600 font-semibold sticky top-0">
+                    <tr>
+                      <th className="py-2 px-3 text-center">রোল</th>
+                      <th className="py-2 px-3">নাম</th>
+                      <th className="py-2 px-3">আইডি</th>
+                      <th className="py-2 px-3">বিভাগ</th>
+                      <th className="py-2 px-3 text-center">অবস্থা</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {parsedStudentList.map((item, idx) => (
+                      <tr key={idx} className={item.error ? 'bg-rose-50/60' : 'hover:bg-slate-50'}>
+                        <td className="py-1.5 px-3 text-center font-bold font-outfit text-blue-700">
+                          {toBanglaDigits(item.data.roll || '—')}
+                        </td>
+                        <td className="py-1.5 px-3 font-medium text-slate-900">{item.data.name || '—'}</td>
+                        <td className="py-1.5 px-3 text-slate-600 font-outfit text-[11px]">{item.data.studentId}</td>
+                        <td className="py-1.5 px-3 text-slate-600 text-[11px]">{item.data.departmentName}</td>
+                        <td className="py-1.5 px-3 text-center">
+                          {item.error ? (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800" title={item.error}>
+                              ত্রুটি
+                            </span>
+                          ) : item.isDuplicate ? (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800">
+                              বিদ্যমান
+                            </span>
+                          ) : (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                              নতুন
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Action buttons */}
+          <div className="grid grid-cols-2 gap-3 pt-2">
+            <button
+              type="button"
+              disabled={isImportingJson}
+              onClick={() => setJsonSheetOpen(false)}
+              className="w-full py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs sm:text-sm transition-colors cursor-pointer"
+            >
+              বাতিল করুন
+            </button>
+            <button
+              type="button"
+              disabled={isImportingJson || parsedStudentList.filter((s) => !s.error).length === 0}
+              onClick={handleCommitJsonImport}
+              className="w-full py-2.5 px-4 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs sm:text-sm transition-all shadow-xs disabled:opacity-50 flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              {isImportingJson ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  <span>ইমপোর্ট হচ্ছে...</span>
+                </>
+              ) : (
+                <>
+                  <Check className="w-4 h-4" />
+                  <span>
+                    ইমপোর্ট সম্পন্ন করুন ({toBanglaDigits(parsedStudentList.filter((s) => !s.error).length)})
+                  </span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      </BottomSheet>
+
+      {/* Select Bottom Sheets for JSON Import Department & Semester */}
+      <SelectBottomSheet
+        isOpen={jsonDeptSheetOpen}
+        onClose={() => setJsonDeptSheetOpen(false)}
+        title="ইমপোর্টের ডিফল্ট বিভাগ"
+        subtitle="JSON শিক্ষার্থীদের জন্য বিভাগ নির্বাচন করুন"
+        options={effectiveDepartments.map((d) => ({
+          value: d.id,
+          label: d.name,
+          badge: d.code,
+          icon: Building,
+        }))}
+        selectedValue={jsonDeptId}
+        onSelect={(val) => {
+          setJsonDeptId(val);
+          if (jsonText.trim()) validateJson(jsonText, val, jsonSemesterId);
+        }}
+      />
+
+      <SelectBottomSheet
+        isOpen={jsonSemSheetOpen}
+        onClose={() => setJsonSemSheetOpen(false)}
+        title="ইমপোর্টের ডিফল্ট সেমিস্টার"
+        subtitle="JSON শিক্ষার্থীদের জন্য সেমিস্টার নির্বাচন করুন"
+        options={(['1', '2', '3', '4', '5', '6', '7', '8'] as SemesterId[]).map((semId) => ({
+          value: semId,
+          label: SEMESTER_MAP[semId],
+          icon: GraduationCap,
+        }))}
+        selectedValue={jsonSemesterId}
+        onSelect={(val) => {
+          setJsonSemesterId(val as SemesterId);
+          if (jsonText.trim()) validateJson(jsonText, jsonDeptId, val as SemesterId);
+        }}
+      />
 
       {/* Select Bottom Sheets for Filter & Form */}
       <SelectBottomSheet

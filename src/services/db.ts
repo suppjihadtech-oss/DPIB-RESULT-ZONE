@@ -1401,11 +1401,19 @@ export async function batchSaveResults(
       const chunk = rankedResults.slice(i, i + chunkSize);
       const batch = writeBatch(db);
       for (const item of chunk) {
-        const docRef = doc(db, COLLECTIONS.RESULTS, item.id);
+        const safeId = (item.id || '').replace(/[^a-zA-Z0-9_-]/g, '_') || `res_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+        const docRef = doc(db, COLLECTIONS.RESULTS, safeId);
         batch.set(docRef, item.payload, { merge: true });
         successCount++;
       }
-      await batch.commit();
+
+      // Commit with 15s timeout protection against indefinite network hang
+      const commitPromise = batch.commit();
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('ফায়ারস্টোরে ব্যাচ সংরক্ষণে টাইমআউট হয়েছে। ইন্টারনেট বা সংযোগ যাচাই করুন।')), 15000)
+      );
+
+      await Promise.race([commitPromise, timeoutPromise]);
     }
     return { successCount, errors };
   } catch (error: any) {

@@ -341,9 +341,15 @@ export const ResultManagement: React.FC<ResultManagementProps> = ({
 
   // Commit Batch Upload to Firestore (creates exam if auto-created, then saves results)
   const handleCommitBatchSave = async () => {
-    if (parsedPreviewList.length === 0) return;
+    if (parsedPreviewList.length === 0) {
+      setUploadErrors(['সংরক্ষণ করার মতো কোনো ফলাফল তালিকা নেই।']);
+      return;
+    }
 
     setIsProcessingUpload(true);
+    setUploadErrors([]);
+    setUploadSuccessSummary(null);
+
     try {
       let finalExamId = detectedExam?.id;
 
@@ -381,17 +387,21 @@ export const ResultManagement: React.FC<ResultManagementProps> = ({
       await batchSaveResults(finalResults, finalExamId, uploadPublishStatus === 'PUBLISHED');
       
       setUploadSuccessSummary(`সফলভাবে ${toBanglaDigits(finalResults.length)}টি ফলাফল ফায়ারস্টোরে সংরক্ষিত ও প্রকাশিত হয়েছে!`);
+      await fetchResults();
+      if (onRefreshStats) onRefreshStats();
+
       setTimeout(() => {
         setUploadSheetOpen(false);
         setParsedPreviewList([]);
         setDetectedExam(null);
         setUploadErrors([]);
         setUploadSuccessSummary(null);
-      }, 1500);
-      fetchResults();
-      if (onRefreshStats) onRefreshStats();
+        setJsonInputText('');
+        setUploadStep('FILE');
+      }, 1800);
     } catch (err: any) {
-      setUploadErrors([`সংরক্ষণে সমস্যা: ${err.message}`]);
+      console.error('Batch save error:', err);
+      setUploadErrors([`সংরক্ষণে সমস্যা হয়েছে: ${err.message || 'নেটওয়ার্ক সংযোগ বা ফায়ারবেস পারমিশন যাচাই করুন।'}`]);
     } finally {
       setIsProcessingUpload(false);
     }
@@ -938,6 +948,21 @@ export const ResultManagement: React.FC<ResultManagementProps> = ({
                 </button>
               </div>
 
+              {/* Step 1 Error Feedback */}
+              {uploadErrors.length > 0 && (
+                <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-2xl text-xs text-rose-800 space-y-1">
+                  <div className="font-bold flex items-center gap-1.5 text-rose-700">
+                    <AlertTriangle className="w-4 h-4 shrink-0" />
+                    <span>JSON প্রসেসিংয়ে ত্রুটি পাওয়া গেছে:</span>
+                  </div>
+                  <ul className="list-disc pl-5 space-y-0.5">
+                    {uploadErrors.map((err, idx) => (
+                      <li key={idx}>{err}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
               {/* Notice if data is already loaded */}
               {parsedReport && (
                 <div className="p-4 bg-emerald-50 border border-emerald-200/90 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs shadow-2xs">
@@ -1395,6 +1420,29 @@ export const ResultManagement: React.FC<ResultManagementProps> = ({
                       </div>
                     )}
                   </div>
+
+                  {/* Success Feedback Banner */}
+                  {uploadSuccessSummary && (
+                    <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center gap-2.5 text-xs sm:text-sm font-bold text-emerald-800 shadow-xs">
+                      <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                      <span>{uploadSuccessSummary}</span>
+                    </div>
+                  )}
+
+                  {/* Error Feedback Banner */}
+                  {uploadErrors.length > 0 && (
+                    <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl text-xs text-rose-800 space-y-1.5 shadow-xs">
+                      <div className="font-bold flex items-center gap-2 text-rose-900">
+                        <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                        <span>সংরক্ষণে ত্রুটি হয়েছে:</span>
+                      </div>
+                      <ul className="list-disc pl-5 space-y-0.5 font-medium">
+                        {uploadErrors.map((err, i) => (
+                          <li key={i}>{err}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
 
                   <div className="space-y-2.5 pt-1">
                     <button

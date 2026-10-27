@@ -489,16 +489,6 @@ export const OfficialNoticeGenerator: React.FC = () => {
         <div className="font-bengali text-black px-6 py-4 select-text leading-relaxed">
           {/* Exact Top Letterhead Header */}
           <div className="relative text-center border-b-[1.5px] border-black pb-2.5 mb-6">
-            {getStoredDocSettings().logoUrl && (
-              <div className="absolute left-1 top-0 w-16 h-16 flex items-center justify-center pointer-events-none">
-                <img
-                  src={getStoredDocSettings().logoUrl}
-                  alt="DPIB Logo"
-                  className="w-14 h-14 object-contain"
-                  referrerPolicy="no-referrer"
-                />
-              </div>
-            )}
             <h1 className="text-2xl font-black text-black tracking-tight mb-0.5 font-bengali">
               দক্ষিণবঙ্গ পলিটেকনিক ইনস্টিটিউট
             </h1>
