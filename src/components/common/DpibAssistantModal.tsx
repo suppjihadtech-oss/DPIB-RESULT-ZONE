@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Bot,
   X,
@@ -14,14 +14,23 @@ import {
   Calendar,
   AlertCircle,
   ChevronRight,
-  TrendingDown,
   Award,
   CheckCircle2,
   GraduationCap,
+  Copy,
+  Check,
+  Volume2,
+  VolumeX,
+  Mic,
+  MicOff,
+  Building2,
+  Layers,
+  Trash2,
+  Info,
 } from 'lucide-react';
 import { StudentResult, Exam, Notice } from '../../types';
 import { toBanglaDigits, toEnglishDigits, SEMESTER_MAP } from '../../utils/bangla';
-import { searchPublicResult, searchAllPublicResults } from '../../services/db';
+import { searchAllPublicResults } from '../../services/db';
 
 interface ChatMessage {
   id: string;
@@ -39,12 +48,54 @@ interface DpibAssistantModalProps {
   onOpenResultModal?: (result: StudentResult) => void;
 }
 
-const QUICK_QUESTIONS = [
-  'আমার ফলাফল কীভাবে দেখব?',
-  'কোন বিষয়ে আমার উন্নতি করা দরকার?',
-  'পাসের শর্ত কী?',
-  'পরীক্ষার রুটিন কোথায় পাব?',
-  'নোটিশ ও ছুটির তথ্য কোথায় পাব?',
+// Available DPIB Technologies / Departments with UPPERCASE English
+const DPIB_DEPARTMENTS = [
+  { id: 'cmt', code: 'CMT', name: 'কম্পিউটার টেকনোলজি (COMPUTER TECHNOLOGY - CMT)' },
+  { id: 'ct', code: 'CT', name: 'সিভিল টেকনোলজি (CIVIL TECHNOLOGY - CT)' },
+  { id: 'et', code: 'ET', name: 'ইলেকট্রিক্যাল টেকনোলজি (ELECTRICAL TECHNOLOGY - ET)' },
+  { id: 'mt', code: 'MT', name: 'মেকানিক্যাল টেকনোলজি (MECHANICAL TECHNOLOGY - MT)' },
+  { id: 'ent', code: 'ENT', name: 'ইলেকট্রনিক্স টেকনোলজি (ELECTRONICS TECHNOLOGY - ENT)' },
+  { id: 'rac', code: 'RAC', name: 'আরএসি টেকনোলজি (REFRIGERATION & AIR CONDITIONING - RAC)' },
+];
+
+// Quick Action Prompts with beautiful SVG icons (NO EMOJIS)
+const QUICK_ACTIONS = [
+  {
+    id: 'result',
+    label: 'আমার রেজাল্ট বিশ্লেষণ',
+    prompt: 'আমার বোর্ড রোলের ফলাফল ও বিষয়ভিত্তিক দুর্বলতা বিশ্লেষণ দেখতে চাই।',
+    icon: Search,
+  },
+  {
+    id: 'pass',
+    label: 'পাসের শর্ত কী?',
+    prompt: 'BTEB ডিপ্লোমা পরীক্ষায় পাসের সাধারণ শর্ত ও নিয়ম কী?',
+    icon: CheckCircle2,
+  },
+  {
+    id: 'routine',
+    label: 'পরীক্ষার রুটিন ও সময়সূচি',
+    prompt: 'বর্তমান পরীক্ষার তালিকা ও সময়সূচি সম্পর্কে জানতে চাই।',
+    icon: Calendar,
+  },
+  {
+    id: 'notice',
+    label: 'সাম্প্রতিক নোটিশসমূহ',
+    prompt: 'ইনস্টিটিউটের সর্বশেষ প্রকাশিত গুরুত্বপূর্ণ নোটিশগুলো কী কী?',
+    icon: FileText,
+  },
+  {
+    id: 'technology',
+    label: 'টেকনোলজি ও বিভাগসমূহ',
+    prompt: 'দক্ষিণবঙ্গ পলিটেকনিক ইনস্টিটিউটে কোন কোন টেকনোলজি বা বিভাগ রয়েছে?',
+    icon: Building2,
+  },
+  {
+    id: 'grading',
+    label: 'গ্রেডিং স্কেল ও GPA',
+    prompt: 'BTEB ডিপ্লোমা গ্রেডিং সিস্টেম এবং GPA হিসাব করার নিয়ম কী?',
+    icon: Award,
+  },
 ];
 
 function getClientAssistantFallback(
@@ -59,43 +110,133 @@ function getClientAssistantFallback(
     const weakSubs = resultContext.subjects.filter(
       (s) => !s.isPassed || s.grade === 'F' || s.grade === 'D' || s.grade === 'C'
     );
-    if (clean.includes('উন্নতি') || clean.includes('দুর্বল') || clean.includes('পরামর্শ') || clean.includes('দরকার')) {
+    if (
+      clean.includes('উন্নতি') ||
+      clean.includes('দুর্বল') ||
+      clean.includes('পরামর্শ') ||
+      clean.includes('দরকার') ||
+      clean.includes('পড়াশোনা')
+    ) {
       if (weakSubs.length > 0) {
-        return `শিক্ষার্থী ${resultContext.studentName} (রোল: ${toBanglaDigits(resultContext.roll)})-এর ফলাফল অনুযায়ী দুর্বল বিষয়:\n` +
-          weakSubs.map((s) => `• ${s.subjectName} [${s.subjectCode}]: প্রাপ্ত নম্বর ${toBanglaDigits(s.obtainedMarks)}/${toBanglaDigits(s.fullMarks)} (গ্রেড: ${s.grade})`).join('\n') +
-          `\n\nপরামর্শ ও স্টাডি প্ল্যান:\n১. বিগত ৩-৫ বছরের বিটিইবি বোর্ড সমাপনী প্রশ্ন নিয়মিত সমাধান করুন।\n২. তত্ত্বীয় ও ব্যবহারিক উভয় অংশে নূন্যতম ৪০% নম্বর নিশ্চিত করতে প্রতিদিন খাতায় লিখে অনুশীলন করুন।\n৩. বিষয়ভিত্তিক শিক্ষকের সাথে যোগাযোগ করে কঠিন অধ্যায়গুলো ঝালিয়ে নিন।`;
+        return (
+          `শিক্ষার্থী ${resultContext.studentName} (রোল: ${toBanglaDigits(resultContext.roll)})-এর ফলাফল পর্যালোচনার ভিত্তিতে পরামর্শ:\n\n` +
+          `নিম্নোক্ত বিষয়গুলোতে উন্নয়ন প্রয়োজন:\n` +
+          weakSubs
+            .map(
+              (s) =>
+                `• ${s.subjectName} [${s.subjectCode}]: প্রাপ্ত নম্বর ${toBanglaDigits(s.obtainedMarks)}/${toBanglaDigits(s.fullMarks)} (গ্রেড: ${s.grade})`
+            )
+            .join('\n') +
+          `\n\nগঠনমূলক স্টাডি প্ল্যান:\n` +
+          `১. বিগত ৩-৫ বছরের BTEB বোর্ড সমাপনী পরীক্ষার প্রশ্ন নিয়মিত সমাধান করুন।\n` +
+          `২. তত্ত্বীয় ও ব্যবহারিক উভয় অংশে নূন্যতম ৪০% নম্বর নিশ্চিত করতে প্রতিদিন খাতায় লিখে অনুশীলন করুন।\n` +
+          `৩. বিষয়ভিত্তিক সম্মানিত শিক্ষকের সাথে যোগাযোগ করে কঠিন অধ্যায়গুলো ঝালিয়ে নিন।`
+        );
       }
-      return `আপনার ফলাফল সন্তোষজনক (GPA: ${toBanglaDigits(resultContext.gpa.toFixed(2))}, গ্রেড: ${resultContext.letterGrade})। এই ভালো অবস্থান ধরে রাখতে লাইব্রেরির রেফারেন্স বই ও নিয়মিত ক্লাস নোট অনুসরণ করুন।`;
+      return `আপনার ফলাফল অত্যন্ত সন্তোষজনক (GPA: ${toBanglaDigits(resultContext.gpa.toFixed(2))}, গ্রেড: ${resultContext.letterGrade})। এই ভালো অবস্থান ধরে রাখতে লাইব্রেরির রেফারেন্স বই ও নিয়মিত ক্লাস নোট অনুসরণ করুন।`;
     }
   }
 
   if (clean.includes('ফলাফল') && (clean.includes('কীভাবে') || clean.includes('দেখব') || clean.includes('খুঁজব'))) {
-    return `DPIB RESULT ZONE-এ ফলাফল দেখার সহজ নিয়ম:\n\n১. হোম পেজ অথবা উপরের 'ফলাফল অনুসন্ধান' মেনুতে প্রবেশ করুন।\n২. আপনার সঠিক বোর্ড রোল নম্বর লিখুন।\n৩. আপনার সেমিস্টার ও পরীক্ষা নির্বাচন করুন (ঐচ্ছিক)।\n৪. 'ফলাফল অনুসন্ধান করুন' বাটনে ক্লিক করুন।\n\nতৎক্ষণাৎ বিষয়ভিত্তিক নম্বর, মোট নম্বর, জিপিএ ও প্রিন্টযোগ্য ডিজিটাল গ্রেডশিট দেখা যাবে। একই রোলে একাধিক পরীক্ষার ফলাফল থাকলে তালিকা থেকে নির্দিষ্ট পরীক্ষাটি বাছাই করতে পারবেন।`;
+    return (
+      `DPIB RESULT ZONE-এ ফলাফল দেখার সহজ নিয়ম:\n\n` +
+      `১. হোম পেজ অথবা উপরের 'ফলাফল অনুসন্ধান' মেনুতে প্রবেশ করুন।\n` +
+      `২. আপনার সঠিক বোর্ড রোল নম্বর লিখুন।\n` +
+      `৩. আপনার সেমিস্টার ও পরীক্ষা নির্বাচন করুন (ঐচ্ছিক)।\n` +
+      `৪. 'ফলাফল অনুসন্ধান করুন' বাটনে ক্লিক করুন।\n\n` +
+      `তৎক্ষণাৎ বিষয়ভিত্তিক নম্বর, মোট নম্বর, GPA ও প্রিন্টযোগ্য ডিজিটাল গ্রেডশিট দেখতে পাবেন।`
+    );
   }
 
-  if (clean.includes('পাসের শর্ত') || clean.includes('পাস মার্ক') || clean.includes('পাস করার নিয়ম')) {
-    return `বিটিইবি ডিপ্লোমা ইন ইঞ্জিনিয়ারিং পাসের সাধারণ নিয়মাবলি:\n\n১. প্রতিটি বিষয়ে তত্ত্বীয় ধারাবাহিক (TC), তত্ত্বীয় সমাপনী (TF), ব্যবহারিক ধারাবাহিক (PC) ও ব্যবহারিক সমাপনী (PF) প্রতিটি অংশে পৃথকভাবে পাস করতে হয়।\n২. প্রতিটি অংশে নূন্যতম ৪০% নম্বর অর্জন আবশ্যক।\n৩. ৪০%-এর কম নম্বর পেলে বা অনুপস্থিত থাকলে উক্ত বিষয়ে 'F' গ্রেড (রেফার্ড) গণ্য হবে।\n৪. রেফার্ড বিষয়ে পরবর্তী নির্ধারিত পর্বে পুনঃপরীক্ষা দিয়ে পাস করা যায়। চূড়ান্ত ডিপ্লোমা সনদের জন্য সকল বিষয়ে উত্তীর্ণ হওয়া আবশ্যক।`;
+  if (clean.includes('পাসের শর্ত') || clean.includes('পাস মার্ক') || clean.includes('পাস করার নিয়ম') || clean.includes('রেফার্ড')) {
+    return (
+      `BTEB ডিপ্লোমা ইন ইঞ্জিনিয়ারিং পাসের সাধারণ নিয়মাবলি:\n\n` +
+      `১. প্রতিটি বিষয়ে তত্ত্বীয় ধারাবাহিক (TC), তত্ত্বীয় সমাপনী (TF), ব্যবহারিক ধারাবাহিক (PC) ও ব্যবহারিক সমাপনী (PF) প্রতিটি অংশে পৃথকভাবে পাস করতে হয়।\n` +
+      `২. সার্বিকভাবে প্রতিটি অংশে নূন্যতম ৪০% নম্বর অর্জন আবশ্যক।\n` +
+      `৩. ৪০%-এর কম নম্বর পেলে বা অনুপস্থিত থাকলে উক্ত বিষয়ে 'F' গ্রেড (রেফার্ড) গণ্য হবে।\n` +
+      `৪. রেফার্ড বিষয়ে পরবর্তী নির্ধারিত পর্বে পুনঃপরীক্ষা দিয়ে উত্তীর্ণ হওয়া যায়। চূড়ান্ত ডিপ্লোমা সনদের জন্য সকল বিষয়ে উত্তীর্ণ হওয়া আবশ্যক।`
+    );
   }
 
-  if (clean.includes('রুটিন') || clean.includes('পরীক্ষার তারিখ') || clean.includes('সময়সূচি')) {
+  if (clean.includes('রুটিন') || clean.includes('পরীক্ষার তারিখ') || clean.includes('সময়সূচি') || clean.includes('পরীক্ষা')) {
     const pubCount = exams.length;
-    return `পরীক্ষার রুটিন সংক্রান্ত তথ্য:\n\n১. ইনস্টিটিউটের ঘোষিত সকল পরীক্ষা ও সময়সূচি পোর্টালের 'স্মার্ট ক্যালেন্ডার' এবং 'পরীক্ষার তালিকা' মেনুতে পাওয়া যাবে।\n২. বর্তমানে মোট ${toBanglaDigits(pubCount)}টি পরীক্ষার তথ্য ও ফলাফল ডেটাবেসে অন্তর্ভুক্ত রয়েছে।\n৩. চূড়ান্ত অফিসিয়াল রুটিন নোটিশ বোর্ড থেকে সরাসরি ডাউনলোড ও প্রিন্ট করা যাবে।`;
+    let details = `পরীক্ষার রুটিন ও সময়সূচি সংক্রান্ত তথ্য:\n\n`;
+    if (pubCount > 0) {
+      details += `বর্তমানে ডেটাবেসে অন্তর্ভুক্ত পরীক্ষাসমূহ:\n`;
+      exams.slice(0, 5).forEach((ex, idx) => {
+        details += `${idx + 1}. ${ex.title} (পর্ব: ${SEMESTER_MAP[ex.semesterId] || ex.semesterId}) - তারিখ: ${toBanglaDigits(ex.examDate)}\n`;
+      });
+      details += `\nসকল পরীক্ষার বিস্তারিত তালিকা ও ফলাফল দেখতে 'পরীক্ষার তালিকা' মেনুতে যান।`;
+    } else {
+      details += `১. ইনস্টিটিউটের সকল পরীক্ষা ও রুটিনের তথ্য পোর্টালের 'স্মার্ট ক্যালেন্ডার' এবং 'পরীক্ষার তালিকা' মেনুতে পাওয়া যাবে।\n`;
+      details += `২. চূড়ান্ত অফিসিয়াল রুটিন নোটিশ বোর্ড থেকে সরাসরি ডাউনলোড ও প্রিন্ট করা যাবে।`;
+    }
+    return details;
   }
 
-  if (clean.includes('নোটিশ') || clean.includes('ছুটি') || clean.includes('ক্যালেন্ডার')) {
-    const recentTitle = notices[0]?.title ? `\n\nসর্বশেষ প্রকাশিত নোটিশ: "${notices[0].title}"` : '';
-    return `নোটিশ ও ছুটির তথ্য:\n\n১. ইনস্টিটিউটের সকল সাম্প্রতিক নোটিশ ও অ্যাকাডেমিক আদেশ দেখতে 'নোটিশ' ট্যাবে যান।\n২. সরকারি ছুটি, কলেজ বন্ধের দিন ও অনুষ্ঠান দিনপঞ্জি দেখতে 'স্মার্ট ক্যালেন্ডার' পেজ ব্যবহার করুন।${recentTitle}`;
+  if (clean.includes('নোটিশ') || clean.includes('বিজ্ঞপ্তি') || clean.includes('ছুটি') || clean.includes('ক্যালেন্ডার')) {
+    let noticeText = `ইনস্টিটিউটের সাম্প্রতিক নোটিশ ও সার্কুলার:\n\n`;
+    if (notices.length > 0) {
+      noticeText += `সর্বশেষ প্রকাশিত নোটিশসমূহ:\n`;
+      notices.slice(0, 5).forEach((n, idx) => {
+        noticeText += `${idx + 1}. ${n.title} [${toBanglaDigits(n.publishedDate)}]\n`;
+      });
+      noticeText += `\nসম্পূর্ণ নোটিশ পড়তে পোর্টালের 'নোটিশ' ট্যাবে যান। সরকারি ছুটির দিনপঞ্জি দেখতে 'স্মার্ট ক্যালেন্ডার' ব্যবহার করুন।`;
+    } else {
+      noticeText += `১. ইনস্টিটিউটের সকল সাম্প্রতিক নোটিশ ও অ্যাকাডেমিক আদেশ দেখতে 'নোটিশ' ট্যাবে যান।\n` +
+        `২. সরকারি ছুটি, কলেজ বন্ধের দিন ও অনুষ্ঠান দিনপঞ্জি দেখতে 'স্মার্ট ক্যালেন্ডার' পেজ ব্যবহার করুন।`;
+    }
+    return noticeText;
+  }
+
+  if (clean.includes('টেকনোলজি') || clean.includes('বিভাগ') || clean.includes('ডিপার্টমেন্ট') || clean.includes('সিভিল') || clean.includes('কম্পিউটার')) {
+    return (
+      `দক্ষিণবঙ্গ পলিটেকনিক ইনস্টিটিউটের অনুমোদিত ডিপ্লোমা টেকনোলজিসমূহ:\n\n` +
+      `১. কম্পিউটার টেকনোলজি (COMPUTER TECHNOLOGY - CMT)\n` +
+      `২. সিভিল টেকনোলজি (CIVIL TECHNOLOGY - CT)\n` +
+      `৩. ইলেকট্রিক্যাল টেকনোলজি (ELECTRICAL TECHNOLOGY - ET)\n` +
+      `৪. মেকানিক্যাল টেকনোলজি (MECHANICAL TECHNOLOGY - MT)\n` +
+      `৫. ইলেকট্রনিক্স টেকনোলজি (ELECTRONICS TECHNOLOGY - ENT)\n` +
+      `৬. আরএসি টেকনোলজি (REFRIGERATION & AIR CONDITIONING - RAC)\n\n` +
+      `প্রতিটি টেকনোলজির ১ম থেকে ৮ম পর্বের বিষয়ভিত্তিক সিলেবাস ও পাঠ্যবই দেখতে 'বুক লিস্ট' পেজ ভিজিট করতে পারেন।`
+    );
   }
 
   if (clean.includes('বই') || clean.includes('বুক লিস্ট') || clean.includes('পাঠ্যবই')) {
-    return `ডিপ্লোমা পাঠ্যবই ও বুক লিস্ট:\n\n১. আপনার টেকনোলজি ও বর্তমান সেমিস্টারের সকল পাঠ্যবই দেখতে 'বুক লিস্ট' পেজে যান।\n২. সেখানে বিষয় কোড, ক্রেডিট সংখ্যা, আনুমানিক বাজার মূল্য এবং বিটিইবি রেফারেন্স বইয়ের তালিকা দেওয়া আছে।`;
+    return (
+      `ডিপ্লোমা পাঠ্যবই ও বুক লিস্ট:\n\n` +
+      `১. আপনার টেকনোলজি ও বর্তমান সেমিস্টারের সকল পাঠ্যবই দেখতে 'বুক লিস্ট' পেজে যান।\n` +
+      `২. সেখানে বিষয় কোড, ক্রেডিট সংখ্যা, আনুমানিক বাজার মূল্য এবং BTEB রেফারেন্স বইয়ের তালিকা দেওয়া আছে।`
+    );
   }
 
   if (clean.includes('জিপিএ') || clean.includes('গ্রেড') || clean.includes('ক্যালকুলেটর')) {
-    return `জিপিএ হিসাব ও গ্রেডিং স্কেল:\n\n• ৮০%+ : A+ (৪.০০)\n• ৭৫-৭৯% : A (৩.৭৫)\n• ৭০-৭৪% : A- (৩.৫০)\n• ৬৫-৬৯% : B+ (৩.২৫)\n• ৬০-৬৪% : B (৩.০০)\n• ৫৫-৫৯% : B- (২.৭৫)\n• ৫০-৫৪% : C+ (২.৫০)\n• ৪৫-৪৯% : C (২.২৫)\n• ৪০-৪৪% : D (২.০০)\n• ৪০% এর কম : F (০.০০ - ফেল)\n\nসেমিস্টার জিপিএ হিসাব করতে সরাসরি 'জিপিএ ক্যালকুলেটর' মেনু ব্যবহার করুন।`;
+    return (
+      `GPA হিসাব ও BTEB গ্রেডিং স্কেল:\n\n` +
+      `• ৮০%+ : A+ (৪.০০)\n` +
+      `• ৭৫-৭৯% : A (৩.৭৫)\n` +
+      `• ৭০-৭৪% : A- (৩.৫০)\n` +
+      `• ৬৫-৬৯% : B+ (৩.২৫)\n` +
+      `• ৬০-৬৪% : B (৩.০০)\n` +
+      `• ৫৫-৫৯% : B- (২.৭৫)\n` +
+      `• ৫০-৫৪% : C+ (২.৫০)\n` +
+      `• ৪৫-৪৯% : C (২.২৫)\n` +
+      `• ৪০-৪৪% : D (২.০০)\n` +
+      `• ৪০% এর কম : F (০.০০ - ফেল)\n\n` +
+      `সেমিস্টার GPA সরাসরি গণনা করতে 'জিপিএ ক্যালকুলেটর' মেনু ব্যবহার করুন।`
+    );
   }
 
-  return `আপনার প্রশ্নের জন্য ধন্যবাদ। দক্ষিণবঙ্গ পলিটেকনিক ইনস্টিটিউট শিক্ষার্থী সহায়তা কেন্দ্রে আপনাকে স্বাগতম।\n\nআপনার ফলাফল ও বিষয়ভিত্তিক দুর্বলতা দেখতে সরাসরি আপনার বোর্ড রোল নম্বর (যেমন: 589412) লিখুন।\n\nঅন্যান্য তথ্যের জন্য নিচের কুইক অপশনগুলো বেছে নিতে পারেন:\n• আমার ফলাফল কীভাবে দেখব?\n• পাসের শর্ত কী?\n• পরীক্ষার রুটিন কোথায় পাব?\n• নোটিশ ও ছুটির তথ্য কোথায় পাব?\n• কোন বিষয়ে আমার উন্নতি করা দরকার?`;
+  return (
+    `আপনার প্রশ্নের জন্য ধন্যবাদ। দক্ষিণবঙ্গ পলিটেকনিক ইনস্টিটিউট শিক্ষার্থী সহায়তা কেন্দ্রে আপনাকে স্বাগতম।\n\n` +
+    `আপনার ফলাফল ও বিষয়ভিত্তিক দুর্বলতা দেখতে সরাসরি আপনার বোর্ড রোল নম্বর (যেমন: 601234) লিখুন।\n\n` +
+    `অন্যান্য তথ্যের জন্য নিচের কুইক অপশনগুলো বেছে নিতে পারেন:\n` +
+    `• আমার ফলাফল কীভাবে দেখব?\n` +
+    `• পাসের শর্ত কী?\n` +
+    `• পরীক্ষার রুটিন কোথায় পাব?\n` +
+    `• নোটিশ ও ছুটির তথ্য কোথায় পাব?\n` +
+    `• কোন বিষয়ে আমার উন্নতি করা দরকার?`
+  );
 }
 
 export const DpibAssistantModal: React.FC<DpibAssistantModalProps> = ({
@@ -110,7 +251,7 @@ export const DpibAssistantModal: React.FC<DpibAssistantModalProps> = ({
     {
       id: 'welcome',
       role: 'assistant',
-      text: 'আসসালামু আলাইকুম। আমি DPIB অ্যাসিস্ট্যান্ট। দক্ষিণবঙ্গ পলিটেকনিক ইনস্টিটিউটের শিক্ষার্থী পোর্টালে আপনাকে স্বাগতম। আপনি আপনার রোল নম্বর দিয়ে পরীক্ষার ফলাফল বিশ্লেষণ দেখতে পারেন, অথবা নিচের কুইক প্রশ্নগুলো থেকে সরাসরি জানতে পারেন।',
+      text: 'আসসালামু আলাইকুম। আমি DPIB AI ACADEMIC ASSISTANT। দক্ষিণবঙ্গ পলিটেকনিক ইনস্টিটিউটের পোর্টাল সংক্রান্ত যেকোনো প্রশ্ন—ফলাফল (RESULT), পরীক্ষা (EXAM), পর্ব/সেমিস্টার (SEMESTER), টেকনোলজি (TECHNOLOGY) ও নোটিশ (NOTICE) সম্পর্কে জানতে পারেন। আপনার বোর্ড রোল নম্বর লিখে সরাসরি ফলাফল বিশ্লেষণও দেখতে পারেন।',
       timestamp: Date.now(),
     },
   ]);
@@ -122,7 +263,20 @@ export const DpibAssistantModal: React.FC<DpibAssistantModalProps> = ({
   const [isSearchingRoll, setIsSearchingRoll] = useState(false);
   const [currentResultContext, setCurrentResultContext] = useState<StudentResult | null>(null);
 
+  // Copy feedback state
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  // Text-To-Speech (TTS) states
+  const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
+  const [ttsSupported, setTtsSupported] = useState(false);
+
+  // Voice Input (Speech-to-Text) states
+  const [isListening, setIsListening] = useState(false);
+  const [sttSupported, setSttSupported] = useState(false);
+  const recognitionRef = useRef<any>(null);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -132,7 +286,187 @@ export const DpibAssistantModal: React.FC<DpibAssistantModalProps> = ({
     if (isOpen) {
       scrollToBottom();
     }
-  }, [messages, isOpen]);
+  }, [messages, isOpen, isLoading]);
+
+  // Check TTS and STT support on client
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      if ('speechSynthesis' in window) {
+        setTtsSupported(true);
+      }
+      const SpeechRecognition =
+        (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        setSttSupported(true);
+      }
+    }
+  }, []);
+
+  // Cleanup TTS on modal close or unmount
+  const stopSpeech = useCallback(() => {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+      setSpeakingMessageId(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) {
+      stopSpeech();
+      if (isListening && recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch {}
+        setIsListening(false);
+      }
+    }
+  }, [isOpen, stopSpeech, isListening]);
+
+  // Handle Copy Message Text
+  const handleCopyMessage = async (msgId: string, text: string) => {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+      }
+      setCopiedId(msgId);
+      setTimeout(() => setCopiedId(null), 2500);
+    } catch (err) {
+      console.warn('Failed to copy to clipboard:', err);
+    }
+  };
+
+  // Handle Text-to-Speech (TTS)
+  const handleToggleSpeech = (msgId: string, text: string) => {
+    if (!ttsSupported) return;
+
+    if (speakingMessageId === msgId) {
+      stopSpeech();
+      return;
+    }
+
+    stopSpeech();
+
+    // Clean text of bullets and markdown symbols for cleaner narration
+    const cleanSpeechText = text
+      .replace(/[•\*\#\_\[\]]/g, ' ')
+      .replace(/\n+/g, '. ')
+      .trim();
+
+    const utterance = new SpeechSynthesisUtterance(cleanSpeechText);
+    utterance.lang = 'bn-BD';
+    utterance.rate = 0.95;
+    utterance.pitch = 1.0;
+
+    // Pick Bengali voice if available in browser
+    const voices = window.speechSynthesis.getVoices();
+    const bnVoice = voices.find(
+      (v) => v.lang === 'bn-BD' || v.lang === 'bn-IN' || v.lang.startsWith('bn')
+    );
+    if (bnVoice) {
+      utterance.voice = bnVoice;
+    }
+
+    utterance.onend = () => {
+      setSpeakingMessageId(null);
+    };
+
+    utterance.onerror = () => {
+      setSpeakingMessageId(null);
+    };
+
+    setSpeakingMessageId(msgId);
+    window.speechSynthesis.speak(utterance);
+  };
+
+  // Handle Voice Input (Speech-to-Text)
+  const toggleVoiceInput = () => {
+    if (!sttSupported) {
+      alert('আপনার ব্রাউজারে ভয়েস ইনপুট সমর্থিত নয়। ক্রোম বা এজ ব্রাউজার ব্যবহার করুন।');
+      return;
+    }
+
+    const SpeechRecognition =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
+    if (isListening) {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch {}
+      }
+      setIsListening(false);
+      return;
+    }
+
+    try {
+      const recognition = new SpeechRecognition();
+      recognition.lang = 'bn-BD';
+      recognition.continuous = false;
+      recognition.interimResults = true;
+
+      recognition.onstart = () => {
+        setIsListening(true);
+      };
+
+      recognition.onresult = (event: any) => {
+        let transcript = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          transcript += event.results[i][0].transcript;
+        }
+        if (transcript.trim()) {
+          setInputText((prev) => (prev ? `${prev} ${transcript.trim()}` : transcript.trim()));
+        }
+      };
+
+      recognition.onerror = (event: any) => {
+        console.warn('Speech recognition error:', event.error);
+        setIsListening(false);
+      };
+
+      recognition.onend = () => {
+        setIsListening(false);
+      };
+
+      recognitionRef.current = recognition;
+      recognition.start();
+    } catch (err) {
+      console.warn('Error starting speech recognition:', err);
+      setIsListening(false);
+    }
+  };
+
+  // Build live app context with factual data and UPPERCASE English
+  const buildLiveAppContext = () => {
+    return {
+      instituteName: 'দক্ষিণবঙ্গ পলিটেকনিক ইনস্টিটিউট, ভোলা',
+      departments: DPIB_DEPARTMENTS,
+      activeExamsCount: exams.length,
+      exams: exams.slice(0, 8).map((e) => ({
+        id: e.id,
+        title: e.title,
+        semesterId: e.semesterId,
+        departmentName: e.departmentName,
+        examDate: e.examDate,
+        totalMarks: e.totalMarks,
+        status: e.status,
+      })),
+      recentNotices: notices.slice(0, 6).map((n) => ({
+        id: n.id,
+        title: n.title,
+        date: n.publishedDate,
+        category: n.category,
+      })),
+      semesters: ['১ম', '২য়', '৩য়', '৪র্থ', '৫ম', '৬ষ্ঠ', '৭ম', '৮ম'],
+      defaultPassMark: '৪০%',
+    };
+  };
 
   // Handle Roll Search
   const handleRollSearch = async (rollToSearch?: string) => {
@@ -142,11 +476,10 @@ export const DpibAssistantModal: React.FC<DpibAssistantModalProps> = ({
     const cleanRoll = toEnglishDigits(targetRoll);
     setIsSearchingRoll(true);
 
-    // Add user query
     const userMsg: ChatMessage = {
       id: `msg-${Date.now()}-user`,
       role: 'user',
-      text: `রোল নম্বর: ${toBanglaDigits(cleanRoll)}-এর পরীক্ষার ফলাফল ও বিস্তারিত বিশ্লেষণ জানতে চাই।`,
+      text: `বোর্ড রোল: ${toBanglaDigits(cleanRoll)}-এর পরীক্ষার ফলাফল ও বিস্তারিত বিশ্লেষণ দেখতে চাই।`,
       timestamp: Date.now(),
     };
     setMessages((prev) => [...prev, userMsg]);
@@ -162,7 +495,7 @@ export const DpibAssistantModal: React.FC<DpibAssistantModalProps> = ({
           {
             id: `msg-${Date.now()}-res`,
             role: 'assistant',
-            text: `রোল নম্বর "${toBanglaDigits(cleanRoll)}"-এর কোনো প্রকাশিত ফলাফল বর্তমানে ডেটাবেসে পাওয়া যায়নি। অনুগ্রহ করে নিশ্চিত করুন যে রোল নম্বরটি সঠিক এবং পরীক্ষার ফলাফল ইতিমধ্যে প্রকাশিত হয়েছে।\n\nআপনি ফলাফল অনুসন্ধানের নিয়ম বা পাসের শর্ত সম্পর্কে জানতে পারেন।`,
+            text: `বোর্ড রোল নম্বর "${toBanglaDigits(cleanRoll)}"-এর কোনো প্রকাশিত ফলাফল বর্তমানে ডেটাবেসে পাওয়া যায়নি।\n\nঅনুগ্রহ করে নিশ্চিত করুন যে:\n১. রোল নম্বরটি সঠিক রয়েছে।\n২. উক্ত রোল নম্বরের পরীক্ষার ফলাফল ইতিমধ্যে কর্তৃপক্ষ কর্তৃক প্রকাশিত হয়েছে।\n\nআপনি পাসের শর্ত, নোটিশ বা পরীক্ষার তালিকা সম্পর্কে জানতে পারেন।`,
             timestamp: Date.now(),
           },
         ]);
@@ -176,20 +509,32 @@ export const DpibAssistantModal: React.FC<DpibAssistantModalProps> = ({
       const failedSubjects = result.subjects.filter((s) => !s.isPassed || s.grade === 'F');
       const weakSubjects = result.subjects.filter((s) => s.isPassed && (s.grade === 'D' || s.grade === 'C'));
 
-      let analysisSummary = `শিক্ষার্থীর নাম: ${result.studentName}\nরোল: ${toBanglaDigits(result.roll)}\nটেকনোলজি: ${result.departmentName}\nপর্ব: ${SEMESTER_MAP[result.semesterId] || result.semesterId}\nপরীক্ষা: ${result.examTitle}\n\nমোট প্রাপ্ত নম্বর: ${toBanglaDigits(result.totalObtainedMarks)} / ${toBanglaDigits(result.totalFullMarks)}\nজিপিএ (GPA): ${toBanglaDigits(result.gpa.toFixed(2))} (গ্রেড: ${result.letterGrade})\nফলাফল অবস্থা: ${result.isPassed ? 'উত্তীর্ণ (পাস)' : 'অনুত্তীর্ণ (ফেল)'}\n`;
+      let analysisSummary = `শিক্ষার্থীর নাম: ${result.studentName}\nরোল: ${toBanglaDigits(result.roll)}\nটেকনোলজি: ${result.departmentName}\nপর্ব: ${SEMESTER_MAP[result.semesterId] || result.semesterId + 'ম সেমিস্টার'}\nপরীক্ষা: ${result.examTitle}\n\nমোট প্রাপ্ত নম্বর: ${toBanglaDigits(result.totalObtainedMarks)} / ${toBanglaDigits(result.totalFullMarks)}\nGPA: ${toBanglaDigits(result.gpa.toFixed(2))} (গ্রেড: ${result.letterGrade})\nফলাফল অবস্থা: ${result.isPassed ? 'উত্তীর্ণ (পাস)' : 'অনুত্তীর্ণ (ফেল)'}\n`;
 
       if (allResults.length > 1) {
-        analysisSummary += `\n📌 দ্রষ্টব্য: এই রোল নম্বরে মোট ${toBanglaDigits(allResults.length)}টি পরীক্ষার ফলাফল প্রকাশিত রয়েছে। এখানে সর্বশেষ পরীক্ষা "${result.examTitle}"-এর বিশ্লেষণ দেওয়া হলো।\n`;
+        analysisSummary += `\n[দ্রষ্টব্য]: এই রোল নম্বরে মোট ${toBanglaDigits(allResults.length)}টি পরীক্ষার ফলাফল প্রকাশিত রয়েছে। এখানে সর্বশেষ পরীক্ষা "${result.examTitle}"-এর বিশ্লেষণ দেওয়া হলো।\n`;
       }
 
       if (failedSubjects.length > 0) {
-        analysisSummary += `\nঅনুত্তীর্ণ বিষয় (${toBanglaDigits(failedSubjects.length)}টি):\n` +
-          failedSubjects.map((s) => `• ${s.subjectName} (${s.subjectCode}): প্রাপ্ত নম্বর ${toBanglaDigits(s.obtainedMarks)} / ${toBanglaDigits(s.fullMarks)} (গ্রেড: ${s.grade})`).join('\n');
+        analysisSummary +=
+          `\nঅনুত্তীর্ণ বিষয় (${toBanglaDigits(failedSubjects.length)}টি):\n` +
+          failedSubjects
+            .map(
+              (s) =>
+                `• ${s.subjectName} (${s.subjectCode}): প্রাপ্ত নম্বর ${toBanglaDigits(s.obtainedMarks)} / ${toBanglaDigits(s.fullMarks)} (গ্রেড: ${s.grade})`
+            )
+            .join('\n');
       }
 
       if (weakSubjects.length > 0) {
-        analysisSummary += `\n\nউন্নতি প্রয়োজন এমন বিষয়:\n` +
-          weakSubjects.map((s) => `• ${s.subjectName}: প্রাপ্ত নম্বর ${toBanglaDigits(s.obtainedMarks)} / ${toBanglaDigits(s.fullMarks)} (গ্রেড: ${s.grade})`).join('\n');
+        analysisSummary +=
+          `\n\nউন্নতি প্রয়োজন এমন বিষয়:\n` +
+          weakSubjects
+            .map(
+              (s) =>
+                `• ${s.subjectName}: প্রাপ্ত নম্বর ${toBanglaDigits(s.obtainedMarks)} / ${toBanglaDigits(s.fullMarks)} (গ্রেড: ${s.grade})`
+            )
+            .join('\n');
       }
 
       // Query AI for personalized study advice based on real DB result
@@ -207,6 +552,7 @@ export const DpibAssistantModal: React.FC<DpibAssistantModalProps> = ({
               examTitle: result.examTitle,
               gpa: result.gpa,
               isPassed: result.isPassed,
+              letterGrade: result.letterGrade,
               subjects: result.subjects.map((s) => ({
                 code: s.subjectCode,
                 name: s.subjectName,
@@ -216,6 +562,7 @@ export const DpibAssistantModal: React.FC<DpibAssistantModalProps> = ({
                 isPassed: s.isPassed,
               })),
             },
+            appContext: buildLiveAppContext(),
           }),
         });
 
@@ -237,7 +584,9 @@ export const DpibAssistantModal: React.FC<DpibAssistantModalProps> = ({
             {
               id: `msg-${Date.now()}-res`,
               role: 'assistant',
-              text: analysisSummary + '\n\nপরামর্শ: উল্লেখিত বিষয়গুলোতে নিয়মিত অনুশীলনের পাশাপাশি পূর্ববর্তী সেমিস্টারের প্রশ্ন সমাধান করুন।',
+              text:
+                analysisSummary +
+                '\n\nপরামর্শ: উল্লেখিত বিষয়গুলোতে নিয়মিত অনুশীলনের পাশাপাশি পূর্ববর্তী সেমিস্টারের প্রশ্ন সমাধান করুন।',
               timestamp: Date.now(),
               resultData: result,
             },
@@ -262,7 +611,7 @@ export const DpibAssistantModal: React.FC<DpibAssistantModalProps> = ({
         {
           id: `msg-${Date.now()}-info`,
           role: 'assistant',
-          text: `রোল নম্বর "${toBanglaDigits(cleanRoll)}"-এর তথ্য অনুসন্ধানকালে কোনো উত্তর পাওয়া যায়নি। আপনি হোম পেজে 'ফলাফল অনুসন্ধান' মেনু থেকেও ফলাফল দেখতে পারেন।`,
+          text: `রোল নম্বর "${toBanglaDigits(cleanRoll)}"-এর তথ্য অনুসন্ধানকালে ডেটাবেস থেকে কোনো উত্তর পাওয়া যায়নি।`,
           timestamp: Date.now(),
         },
       ]);
@@ -276,12 +625,25 @@ export const DpibAssistantModal: React.FC<DpibAssistantModalProps> = ({
     const messageText = (textToSend || inputText).trim();
     if (!messageText || isLoading) return;
 
-    // Check if input looks like a raw roll number (5-7 digits)
+    // Check if input directly looks like a roll number (5-7 digits)
     const englishDigits = toEnglishDigits(messageText);
     if (/^\d{5,7}$/.test(englishDigits)) {
       handleRollSearch(englishDigits);
       setInputText('');
       return;
+    }
+
+    // Check if input contains roll query (e.g., "রোল 601234 এর রেজাল্ট কি")
+    const embeddedRollMatch = englishDigits.match(/(?:রোল|roll|বোর্ড রোল)\s*[:=]?\s*(\d{5,7})/i) ||
+      englishDigits.match(/\b(\d{6})\b/);
+    if (embeddedRollMatch && embeddedRollMatch[1] && !currentResultContext) {
+      // Auto-fetch roll result first to enrich context
+      try {
+        const found = await searchAllPublicResults({ roll: embeddedRollMatch[1] });
+        if (found && found.length > 0) {
+          setCurrentResultContext(found[0]);
+        }
+      } catch {}
     }
 
     const userMessage: ChatMessage = {
@@ -299,23 +661,13 @@ export const DpibAssistantModal: React.FC<DpibAssistantModalProps> = ({
       // Build conversation history (excluding greeting)
       const conversationHistory = messages
         .filter((m) => m.id !== 'welcome')
-        .slice(-6)
+        .slice(-8)
         .map((m) => ({
           role: m.role,
           text: m.text,
         }));
 
-      // Basic app context for real answers
-      const appContext = {
-        instituteName: 'দক্ষিণবঙ্গ পলিটেকনিক ইনস্টিটিউট, ভোলা',
-        activeExamsCount: exams.length,
-        recentNotices: notices.slice(0, 5).map((n) => ({
-          title: n.title,
-          date: n.publishedDate,
-          category: n.category,
-        })),
-        defaultPassMark: '৪০%',
-      };
+      const appContext = buildLiveAppContext();
 
       const response = await fetch('/api/assistant/chat', {
         method: 'POST',
@@ -331,6 +683,7 @@ export const DpibAssistantModal: React.FC<DpibAssistantModalProps> = ({
                 semester: currentResultContext.semesterId,
                 examTitle: currentResultContext.examTitle,
                 gpa: currentResultContext.gpa,
+                letterGrade: currentResultContext.letterGrade,
                 isPassed: currentResultContext.isPassed,
                 subjects: currentResultContext.subjects,
               }
@@ -375,16 +728,20 @@ export const DpibAssistantModal: React.FC<DpibAssistantModalProps> = ({
     }
   };
 
+  // Reset / Clear Chat session
   const handleResetChat = () => {
+    stopSpeech();
     setMessages([
       {
         id: 'welcome',
         role: 'assistant',
-        text: 'চ্যাটটি নতুন করে শুরু করা হয়েছে। আপনি আপনার রোল নম্বর দিয়ে পরীক্ষার ফলাফল বিশ্লেষণ দেখতে পারেন অথবা যেকোনো প্রশ্ন জিজ্ঞাসা করতে পারেন।',
+        text: 'নতুন চ্যাট শুরু করা হয়েছে। আপনি আপনার রোল নম্বর লিখে ফলাফল বিশ্লেষণ দেখতে পারেন অথবা পরীক্ষা, সেমিস্টার, টেকনোলজি ও নোটিশ সম্পর্কে যেকোনো প্রশ্ন করতে পারেন।',
         timestamp: Date.now(),
       },
     ]);
     setCurrentResultContext(null);
+    setRollInput('');
+    setInputText('');
   };
 
   return (
@@ -394,8 +751,8 @@ export const DpibAssistantModal: React.FC<DpibAssistantModalProps> = ({
         <button
           type="button"
           onClick={() => setIsOpen(true)}
-          aria-label="DPIB অ্যাসিস্ট্যান্ট ওপেন করুন"
-          title="DPIB অ্যাসিস্ট্যান্ট"
+          aria-label="DPIB AI ACADEMIC ASSISTANT"
+          title="DPIB AI ACADEMIC ASSISTANT"
           className="relative group flex items-center justify-center w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-gradient-to-tr from-teal-700 via-teal-600 to-emerald-500 text-white shadow-xl shadow-teal-900/25 border-2 border-white/60 backdrop-blur-xl hover:scale-105 active:scale-95 transition-all duration-300 cursor-pointer"
         >
           {/* Subtle pulse ring */}
@@ -404,9 +761,12 @@ export const DpibAssistantModal: React.FC<DpibAssistantModalProps> = ({
           {/* SVG Bot Icon */}
           <Bot className="w-7 h-7 sm:w-8 sm:h-8 text-white relative z-10 transition-transform duration-300 group-hover:rotate-6" />
 
+          {/* Status badge */}
+          <span className="absolute top-1 right-1 w-3 h-3 bg-emerald-400 rounded-full border-2 border-teal-800 z-20" />
+
           {/* Label tooltip */}
           <span className="absolute bottom-full mb-2 right-0 bg-slate-900/90 text-white text-[11px] font-bold px-3 py-1 rounded-xl shadow-md whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none border border-slate-700 font-bengali">
-            DPIB অ্যাসিস্ট্যান্ট
+            DPIB AI ASSISTANT
           </span>
         </button>
       </div>
@@ -425,7 +785,7 @@ export const DpibAssistantModal: React.FC<DpibAssistantModalProps> = ({
             className={`relative w-full bg-white flex flex-col overflow-hidden shadow-2xl transition-all duration-300 z-10 border border-slate-200/90 ${
               isExpanded
                 ? 'h-[92vh] sm:h-[88vh] sm:max-w-3xl sm:rounded-3xl rounded-t-3xl'
-                : 'h-[82vh] sm:h-[680px] sm:max-w-xl sm:rounded-3xl rounded-t-3xl'
+                : 'h-[85vh] sm:h-[700px] sm:max-w-xl sm:rounded-3xl rounded-t-3xl'
             }`}
           >
             {/* Header with Glassmorphism */}
@@ -437,10 +797,11 @@ export const DpibAssistantModal: React.FC<DpibAssistantModalProps> = ({
                 <div>
                   <div className="flex items-center gap-2">
                     <h3 className="font-black text-sm sm:text-base tracking-tight leading-tight">
-                      DPIB অ্যাসিস্ট্যান্ট
+                      DPIB AI ACADEMIC ASSISTANT
                     </h3>
-                    <span className="px-2 py-0.2 rounded-full bg-emerald-400/20 text-emerald-200 text-[10px] font-bold border border-emerald-300/30">
-                      স্মার্ট এআই
+                    <span className="px-2 py-0.5 rounded-full bg-emerald-400/25 text-emerald-100 text-[10px] font-bold border border-emerald-300/30 flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-300 animate-pulse" />
+                      LIVE AI
                     </span>
                   </div>
                   <p className="text-[11px] text-teal-100/90 font-medium">
@@ -455,9 +816,10 @@ export const DpibAssistantModal: React.FC<DpibAssistantModalProps> = ({
                   type="button"
                   onClick={handleResetChat}
                   title="নতুন চ্যাট শুরু করুন"
-                  className="p-2 rounded-xl text-teal-100 hover:text-white hover:bg-white/15 transition-colors cursor-pointer"
+                  className="px-2.5 py-1.5 rounded-xl text-teal-100 hover:text-white hover:bg-white/15 transition-all text-xs font-semibold flex items-center gap-1 cursor-pointer"
                 >
-                  <RotateCcw className="w-4 h-4" />
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">নতুন চ্যাট</span>
                 </button>
                 <button
                   type="button"
@@ -492,7 +854,7 @@ export const DpibAssistantModal: React.FC<DpibAssistantModalProps> = ({
                     type="text"
                     value={rollInput}
                     onChange={(e) => setRollInput(e.target.value)}
-                    placeholder="রোল নম্বর দিয়ে ফলাফল ও দুর্বল বিষয় খুঁজুন (উদা: 589412)"
+                    placeholder="রোল নম্বর দিয়ে ফলাফল ও দুর্বল বিষয় খুঁজুন (যেমন: 601234)"
                     className="w-full pl-9 pr-3 py-2 text-xs bg-white border border-teal-200 rounded-xl focus:outline-hidden focus:border-teal-600 focus:ring-1 focus:ring-teal-600 font-semibold text-slate-800 placeholder-slate-400 shadow-2xs"
                   />
                   <Search className="w-4 h-4 text-teal-700 absolute left-3 top-2.5" />
@@ -512,16 +874,16 @@ export const DpibAssistantModal: React.FC<DpibAssistantModalProps> = ({
             </div>
 
             {/* Chat Messages Flow */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar bg-slate-50/50">
+            <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar bg-slate-50/60">
               {messages.map((msg) => (
                 <div
                   key={msg.id}
                   className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}
                 >
                   <div
-                    className={`max-w-[88%] sm:max-w-[80%] rounded-2xl p-3.5 text-xs sm:text-[13px] leading-relaxed shadow-xs ${
+                    className={`max-w-[90%] sm:max-w-[82%] rounded-2xl p-3.5 text-xs sm:text-[13px] leading-relaxed shadow-xs relative group ${
                       msg.role === 'user'
-                        ? 'bg-teal-700 text-white rounded-tr-xs'
+                        ? 'bg-gradient-to-r from-teal-700 to-teal-800 text-white rounded-tr-xs'
                         : msg.error
                         ? 'bg-rose-50 border border-rose-200 text-rose-950 rounded-tl-xs'
                         : 'bg-white border border-slate-200/90 text-slate-900 rounded-tl-xs'
@@ -535,7 +897,7 @@ export const DpibAssistantModal: React.FC<DpibAssistantModalProps> = ({
                     {msg.resultData && (
                       <div className="mt-3 pt-3 border-t border-slate-200/80 space-y-2">
                         <div className="flex items-center justify-between text-xs font-bold">
-                          <span className="text-teal-900">
+                          <span className="text-teal-900 font-bold">
                             {msg.resultData.studentName}
                           </span>
                           <span
@@ -571,6 +933,57 @@ export const DpibAssistantModal: React.FC<DpibAssistantModalProps> = ({
                         )}
                       </div>
                     )}
+
+                    {/* Assistant Message Action Buttons (Copy + TTS) */}
+                    {msg.role === 'assistant' && msg.id !== 'welcome' && (
+                      <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-end gap-1.5">
+                        {/* Copy button */}
+                        <button
+                          type="button"
+                          onClick={() => handleCopyMessage(msg.id, msg.text)}
+                          title="উত্তর কপি করুন"
+                          className="px-2 py-1 rounded-lg text-slate-500 hover:text-teal-700 hover:bg-slate-100 transition-colors text-[11px] font-medium flex items-center gap-1 cursor-pointer"
+                        >
+                          {copiedId === msg.id ? (
+                            <>
+                              <Check className="w-3 h-3 text-emerald-600" />
+                              <span className="text-emerald-700 text-[10px]">কপি হয়েছে</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-3 h-3" />
+                              <span className="text-[10px]">কপি</span>
+                            </>
+                          )}
+                        </button>
+
+                        {/* Text to Speech button */}
+                        {ttsSupported && (
+                          <button
+                            type="button"
+                            onClick={() => handleToggleSpeech(msg.id, msg.text)}
+                            title={speakingMessageId === msg.id ? 'পড়া বন্ধ করুন' : 'উচ্চস্বরে শুনুন'}
+                            className={`px-2 py-1 rounded-lg transition-colors text-[11px] font-medium flex items-center gap-1 cursor-pointer ${
+                              speakingMessageId === msg.id
+                                ? 'bg-teal-100 text-teal-800 animate-pulse'
+                                : 'text-slate-500 hover:text-teal-700 hover:bg-slate-100'
+                            }`}
+                          >
+                            {speakingMessageId === msg.id ? (
+                              <>
+                                <VolumeX className="w-3 h-3 text-teal-800" />
+                                <span className="text-[10px]">বন্ধ করুন</span>
+                              </>
+                            ) : (
+                              <>
+                                <Volume2 className="w-3 h-3" />
+                                <span className="text-[10px]">শুনুন</span>
+                              </>
+                            )}
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
                   <span className="text-[10px] text-slate-400 mt-1 px-1">
                     {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -578,14 +991,17 @@ export const DpibAssistantModal: React.FC<DpibAssistantModalProps> = ({
                 </div>
               ))}
 
+              {/* Typing Indicator */}
               {isLoading && (
                 <div className="flex items-start gap-2">
-                  <div className="bg-white border border-slate-200 rounded-2xl rounded-tl-xs p-3 text-xs text-slate-500 flex items-center gap-2 shadow-2xs">
-                    <span className="w-2 h-2 rounded-full bg-teal-600 animate-bounce" />
-                    <span className="w-2 h-2 rounded-full bg-teal-600 animate-bounce [animation-delay:0.2s]" />
-                    <span className="w-2 h-2 rounded-full bg-teal-600 animate-bounce [animation-delay:0.4s]" />
-                    <span className="text-[11px] font-bold text-slate-600 ml-1">
-                      DPIB অ্যাসিস্ট্যান্ট উত্তর তৈরি করছে...
+                  <div className="bg-white border border-slate-200/90 rounded-2xl rounded-tl-xs p-3.5 text-xs text-slate-500 flex items-center gap-2.5 shadow-2xs">
+                    <div className="flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-teal-600 animate-bounce" />
+                      <span className="w-2 h-2 rounded-full bg-teal-600 animate-bounce [animation-delay:0.2s]" />
+                      <span className="w-2 h-2 rounded-full bg-teal-600 animate-bounce [animation-delay:0.4s]" />
+                    </div>
+                    <span className="text-[11px] font-bold text-teal-800">
+                      DPIB AI উত্তর তৈরি করছে...
                     </span>
                   </div>
                 </div>
@@ -594,26 +1010,47 @@ export const DpibAssistantModal: React.FC<DpibAssistantModalProps> = ({
               <div ref={messagesEndRef} />
             </div>
 
-            {/* Quick Questions Pills */}
-            <div className="px-3 py-2 bg-slate-100/70 border-t border-slate-200/80 overflow-x-auto no-scrollbar flex items-center gap-1.5 shrink-0">
-              <span className="text-[11px] font-bold text-slate-500 shrink-0 flex items-center gap-1">
-                <Sparkles className="w-3 h-3 text-teal-600" />
-                <span>দ্রুত প্রশ্ন:</span>
+            {/* Quick Action Category Buttons with Clean SVG Icons */}
+            <div className="px-3 py-2 bg-slate-100/80 border-t border-slate-200/80 overflow-x-auto no-scrollbar flex items-center gap-1.5 shrink-0">
+              <span className="text-[11px] font-bold text-slate-500 shrink-0 flex items-center gap-1 mr-1">
+                <Sparkles className="w-3.5 h-3.5 text-teal-600" />
+                <span>কুইক অ্যাকশন:</span>
               </span>
-              {QUICK_QUESTIONS.map((q) => (
-                <button
-                  key={q}
-                  type="button"
-                  onClick={() => handleSendMessage(q)}
-                  disabled={isLoading || isSearchingRoll}
-                  className="px-2.5 py-1 text-[11px] font-semibold bg-white hover:bg-teal-50 text-slate-700 hover:text-teal-900 border border-slate-200/90 hover:border-teal-300 rounded-xl whitespace-nowrap transition-all shadow-2xs cursor-pointer shrink-0"
-                >
-                  {q}
-                </button>
-              ))}
+              {QUICK_ACTIONS.map((item) => {
+                const ActionIcon = item.icon;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => handleSendMessage(item.prompt)}
+                    disabled={isLoading || isSearchingRoll}
+                    className="px-2.5 py-1 text-[11px] font-semibold bg-white hover:bg-teal-50 text-slate-700 hover:text-teal-900 border border-slate-200/90 hover:border-teal-300 rounded-xl whitespace-nowrap transition-all shadow-2xs cursor-pointer shrink-0 disabled:opacity-40 flex items-center gap-1.5"
+                  >
+                    <ActionIcon className="w-3 h-3 text-teal-600 shrink-0" />
+                    <span>{item.label}</span>
+                  </button>
+                );
+              })}
             </div>
 
-            {/* Input Form */}
+            {/* Voice listening status indicator if active */}
+            {isListening && (
+              <div className="px-4 py-1.5 bg-rose-50 border-t border-rose-200 flex items-center justify-between text-xs text-rose-700 font-semibold shrink-0 animate-pulse">
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-rose-600 animate-ping" />
+                  <span>শুনছি... আপনার প্রশ্ন বাংলায় বলুন</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={toggleVoiceInput}
+                  className="text-[11px] text-rose-800 underline font-bold cursor-pointer"
+                >
+                  রেকর্ডিং শেষ
+                </button>
+              </div>
+            )}
+
+            {/* Input Form with Voice Button */}
             <div className="p-3 bg-white border-t border-slate-200 shrink-0">
               <form
                 onSubmit={(e) => {
@@ -622,14 +1059,32 @@ export const DpibAssistantModal: React.FC<DpibAssistantModalProps> = ({
                 }}
                 className="flex items-center gap-2"
               >
+                {/* Voice Input Button */}
+                {sttSupported && (
+                  <button
+                    type="button"
+                    onClick={toggleVoiceInput}
+                    title={isListening ? 'ভয়েস ইনপুট বন্ধ করুন' : 'বাংলায় কথা বলে প্রশ্ন করুন'}
+                    className={`p-2.5 rounded-2xl transition-all shadow-2xs flex items-center justify-center shrink-0 cursor-pointer ${
+                      isListening
+                        ? 'bg-rose-600 text-white animate-pulse'
+                        : 'bg-slate-100 hover:bg-teal-50 text-slate-600 hover:text-teal-800 border border-slate-200'
+                    }`}
+                  >
+                    {isListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+                  </button>
+                )}
+
                 <input
+                  ref={inputRef}
                   type="text"
                   value={inputText}
                   onChange={(e) => setInputText(e.target.value)}
-                  placeholder="বাংলায় আপনার প্রশ্ন লিখুন অথবা রোল নম্বর দিন..."
+                  placeholder="বাংলায় আপনার প্রশ্ন লিখুন বা বোর্ড রোল নম্বর দিন..."
                   className="flex-1 px-3.5 py-2.5 text-xs sm:text-sm bg-slate-50 border border-slate-200 rounded-2xl focus:outline-hidden focus:bg-white focus:border-teal-600 focus:ring-1 focus:ring-teal-600 font-normal text-slate-800 transition-all shadow-2xs"
                   disabled={isLoading || isSearchingRoll}
                 />
+
                 <button
                   type="submit"
                   disabled={isLoading || isSearchingRoll || !inputText.trim()}
@@ -640,10 +1095,17 @@ export const DpibAssistantModal: React.FC<DpibAssistantModalProps> = ({
                   <span className="hidden sm:inline text-xs font-bold">পাঠান</span>
                 </button>
               </form>
-              <div className="mt-1.5 text-center">
-                <p className="text-[10px] text-slate-400">
-                  DPIB অ্যাসিস্ট্যান্ট শুধুমাত্র অনুমোদিত ও প্রকাশিত একাডেমিক তথ্যের ভিত্তিতে উত্তর দিয়ে থাকে।
-                </p>
+              <div className="mt-1.5 flex items-center justify-between text-[10px] text-slate-400 px-1">
+                <span>DPIB AI শুধুমাত্র অনুমোদিত ও প্রকাশিত অ্যাকাডেমিক তথ্যের ভিত্তিতে উত্তর দেয়।</span>
+                <button
+                  type="button"
+                  onClick={handleResetChat}
+                  title="চ্যাট হিস্ট্রি মুছুন"
+                  className="text-slate-400 hover:text-teal-700 underline cursor-pointer ml-2 shrink-0 flex items-center gap-0.5"
+                >
+                  <Trash2 className="w-2.5 h-2.5" />
+                  <span>ক্লিয়ার</span>
+                </button>
               </div>
             </div>
           </div>
