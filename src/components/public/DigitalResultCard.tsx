@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { StudentResult } from '../../types';
+import { DpibBrandTitle } from '../common/DpibBrandTitle';
 import {
   toBanglaDigits,
   toBanglaNumber,
@@ -344,9 +345,7 @@ export const DigitalResultCard: React.FC<DigitalResultCardProps> = ({
                     />
                   </div>
                   <div>
-                    <span className="text-[10px] sm:text-[11px] font-black tracking-widest uppercase font-outfit block text-white drop-shadow-xs leading-none">
-                      DPIB RESULT ZONE
-                    </span>
+                    <DpibBrandTitle className="text-[10px] sm:text-[11px] tracking-widest uppercase block leading-none" />
                     <span className="text-[8px] sm:text-[9px] text-white/80 font-bold block leading-tight mt-0.5">
                       দক্ষিণবঙ্গ পলিটেকনিক ইনস্টিটিউট
                     </span>
@@ -608,9 +607,7 @@ export const DigitalResultCard: React.FC<DigitalResultCardProps> = ({
               >
                 <div className="flex justify-between items-start">
                   <div className="bg-black/60 px-3 py-1.5 rounded-xl border border-white/20">
-                    <span className="font-black text-sm uppercase font-outfit block">
-                      DPIB RESULT ZONE
-                    </span>
+                    <DpibBrandTitle className="text-sm uppercase block" />
                     <span className="text-[10px] text-white/80">
                       দক্ষিণবঙ্গ পলিটেকনিক ইনস্টিটিউট
                     </span>

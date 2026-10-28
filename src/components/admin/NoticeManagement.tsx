@@ -22,6 +22,7 @@ import { LoadingSpinner } from '../common/LoadingSpinner';
 import { LoadingOverlay } from '../common/LoadingOverlay';
 import { BottomSheet } from '../common/BottomSheet';
 import { SelectBottomSheet, SelectTrigger, SelectOption } from '../common/SelectBottomSheet';
+import { toast } from '../../context/ToastContext';
 
 interface NoticeManagementProps {
   onRefreshStats?: () => void;
@@ -94,11 +95,14 @@ export const NoticeManagement: React.FC<NoticeManagementProps> = ({ onRefreshSta
     const cleanTitle = formTitle.trim();
     const cleanContent = formContent.trim();
     if (!cleanTitle || !cleanContent) {
-      setFormError('অনুগ্রহ করে নোটিশের শিরোনাম ও বিস্তারিত বিবরণ পূরণ করুন।');
+      const err = 'অনুগ্রহ করে নোটিশের শিরোনাম ও বিস্তারিত বিবরণ পূরণ করুন।';
+      setFormError(err);
+      toast.warning(err, 'VALIDATION ERROR');
       return;
     }
 
     setSaving(true);
+    const toastId = toast.loading('নোটিশ সংরক্ষণ করা হচ্ছে...', 'SAVING NOTICE');
     try {
       await saveNotice(
         {
@@ -114,11 +118,23 @@ export const NoticeManagement: React.FC<NoticeManagementProps> = ({ onRefreshSta
         editingNotice ? editingNotice.id : undefined
       );
 
+      toast.update(toastId, {
+        type: 'SUCCESS',
+        title: editingNotice ? 'NOTICE UPDATED' : 'NOTICE PUBLISHED',
+        message: `"${cleanTitle}" নোটিশটি সফলভাবে ${editingNotice ? 'হালনাগাদ' : 'প্রকাশ'} করা হয়েছে!`,
+      });
+
       setSheetOpen(false);
       await fetchNotices();
       if (onRefreshStats) onRefreshStats();
     } catch (err: any) {
-      setFormError(err.message || 'সংরক্ষণ ব্যর্থ হয়েছে');
+      const errMsg = err.message || 'সংরক্ষণ ব্যর্থ হয়েছে';
+      setFormError(errMsg);
+      toast.update(toastId, {
+        type: 'ERROR',
+        title: 'SAVE ERROR',
+        message: errMsg,
+      });
     } finally {
       setSaving(false);
     }
@@ -128,10 +144,17 @@ export const NoticeManagement: React.FC<NoticeManagementProps> = ({ onRefreshSta
     const nextStatus = notice.status === 'PUBLISHED' ? 'DRAFT' : 'PUBLISHED';
     try {
       await updateNoticeStatus(notice.id, nextStatus);
+      toast.info(
+        nextStatus === 'PUBLISHED'
+          ? `"${notice.title}" নোটিশটি প্রকাশ করা হয়েছে!`
+          : `"${notice.title}" নোটিশটি খসড়া হিসেবে রাখা হয়েছে।`,
+        'STATUS UPDATED'
+      );
       await fetchNotices();
       if (onRefreshStats) onRefreshStats();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Update status error:', err);
+      toast.error('স্ট্যাটাস হালনাগাদ ব্যর্থ: ' + (err.message || 'অজানা ত্রুটি'), 'ERROR');
     }
   };
 
@@ -312,16 +335,29 @@ export const NoticeManagement: React.FC<NoticeManagementProps> = ({ onRefreshSta
               disabled={isDeleting}
               onClick={async () => {
                 if (!deleteConfirmNotice) return;
+                const noticeTitle = deleteConfirmNotice.title;
                 setIsDeleting(true);
                 setDeleteError(null);
+                const toastId = toast.loading(`"${noticeTitle}" নোটিশ মুছে ফেলা হচ্ছে...`, 'DELETING NOTICE');
                 try {
                   await deleteNotice(deleteConfirmNotice.id);
+                  toast.update(toastId, {
+                    type: 'SUCCESS',
+                    title: 'NOTICE DELETED',
+                    message: `"${noticeTitle}" নোটিশটি সফলভাবে মুছে ফেলা হয়েছে!`,
+                  });
                   setDeleteConfirmNotice(null);
                   await fetchNotices();
                   if (onRefreshStats) onRefreshStats();
                 } catch (err: any) {
                   console.error('Delete notice error:', err);
-                  setDeleteError('নোটিশটি মুছে ফেলা যায়নি। আবার চেষ্টা করুন।');
+                  const errMsg = 'নোটিশটি মুছে ফেলা যায়নি। আবার চেষ্টা করুন।';
+                  setDeleteError(errMsg);
+                  toast.update(toastId, {
+                    type: 'ERROR',
+                    title: 'DELETE ERROR',
+                    message: errMsg,
+                  });
                 } finally {
                   setIsDeleting(false);
                 }

@@ -22,6 +22,7 @@ import { User } from 'firebase/auth';
 import { getFirebaseStatus } from '../../services/firebase';
 import { toBanglaDigits } from '../../utils/bangla';
 import { subscribeAllAdmissionApplications } from '../../services/admissionService';
+import { DpibBrandTitle } from '../common/DpibBrandTitle';
 
 interface AdminLayoutProps {
   currentSection: string;
@@ -222,7 +223,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
             </div>
 
             <div className="hidden md:flex items-center space-x-2 text-xs text-slate-400">
-              <span className="font-outfit font-bold text-slate-600">DPIB RESULT ZONE</span>
+              <DpibBrandTitle className="text-xs" />
               <ChevronRight className="w-3.5 h-3.5" />
               <span className="font-bold text-teal-800 uppercase font-outfit">
                 {primaryNavItems.find((n) => n.id === currentSection)?.enLabel || currentSection}
@@ -343,7 +344,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
 
         {/* Minimal Admin Footer */}
         <footer className="mt-auto pt-3 pb-20 md:pb-3 px-6 text-center text-xs text-slate-500 border-t border-slate-200/60 select-none no-print">
-          <p>© ২০২৪-২০২৬ <span className="font-outfit font-bold text-slate-700">DPIB RESULT ZONE</span> • ডিজিটাল একাডেমিক অফিস</p>
+          <p>© ২০২৪-২০২৬ <DpibBrandTitle className="text-xs" /> • ডিজিটাল একাডেমিক অফিস</p>
         </footer>
       </div>
 

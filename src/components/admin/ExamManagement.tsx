@@ -38,6 +38,7 @@ import { toBanglaDigits, formatBanglaDate, SEMESTER_MAP } from '../../utils/bang
 import { EmptyState } from '../common/EmptyState';
 import { LoadingOverlay } from '../common/LoadingOverlay';
 import { BottomSheet } from '../common/BottomSheet';
+import { toast } from '../../context/ToastContext';
 import { SelectBottomSheet, SelectTrigger, SelectOption } from '../common/SelectBottomSheet';
 import { ModernDatePicker, ModernDateTrigger } from '../common/ModernDatePicker';
 import {
@@ -259,12 +260,23 @@ export const ExamManagement: React.FC<ExamManagementProps> = ({
   const handleSeedDatabase = async () => {
     setIsSeedingCurriculum(true);
     setSeedSuccessMessage(null);
+    const toastId = toast.loading('কারিকুলাম ডাটাবেস আপডেট করা হচ্ছে...', 'UPDATING CURRICULUM');
     try {
       const count = await seedCurriculumDatabase();
-      setSeedSuccessMessage(`কারিকুলাম ডাটাবেসে মোট ${toBanglaDigits(count)}টি বিষয় সফলভাবে আপডেট হয়েছে।`);
+      const msg = `কারিকুলাম ডাটাবেসে মোট ${toBanglaDigits(count)}টি বিষয় সফলভাবে আপডেট হয়েছে।`;
+      setSeedSuccessMessage(msg);
+      toast.update(toastId, {
+        type: 'SUCCESS',
+        title: 'CURRICULUM UPDATED',
+        message: msg,
+      });
       setTimeout(() => setSeedSuccessMessage(null), 5000);
     } catch (err: any) {
-      alert('কারিকুলাম ডাটাবেস আপডেট করতে ত্রুটি: ' + err.message);
+      toast.update(toastId, {
+        type: 'ERROR',
+        title: 'UPDATE ERROR',
+        message: 'কারিকুলাম ডাটাবেস আপডেট ব্যর্থ: ' + (err.message || 'অপ্রত্যাশিত সমস্যা'),
+      });
     } finally {
       setIsSeedingCurriculum(false);
     }
@@ -276,22 +288,30 @@ export const ExamManagement: React.FC<ExamManagementProps> = ({
 
     const cleanTitle = formTitle.trim();
     if (!cleanTitle) {
-      setFormError('অনুগ্রহ করে পরীক্ষার নাম প্রদান করুন।');
+      const err = 'অনুগ্রহ করে পরীক্ষার নাম প্রদান করুন।';
+      setFormError(err);
+      toast.warning(err, 'VALIDATION ERROR');
       return;
     }
 
     if (selectedTechCodes.length === 0) {
-      setFormError('অনুগ্রহ করে অন্তত একটি টেকনোলজি নির্বাচন করুন।');
+      const err = 'অনুগ্রহ করে অন্তত একটি টেকনোলজি নির্বাচন করুন।';
+      setFormError(err);
+      toast.warning(err, 'VALIDATION ERROR');
       return;
     }
 
     if (subjects.length === 0) {
-      setFormError('পরীক্ষায় অন্তত একটি বিষয় থাকতে হবে। টেকনোলজি নির্বাচন করে বিষয় স্বয়ংক্রিয়ভাবে লোড করুন।');
+      const err = 'পরীক্ষায় অন্তত একটি বিষয় থাকতে হবে। টেকনোলজি নির্বাচন করে বিষয় স্বয়ংক্রিয়ভাবে লোড করুন।';
+      setFormError(err);
+      toast.warning(err, 'VALIDATION ERROR');
       return;
     }
 
     if (subjects.some((s) => !s.code.trim() || !s.name.trim() || !s.fullMarks || s.fullMarks <= 0)) {
-      setFormError('সকল বিষয়ের সঠিক কোড ও পূর্ণমান নির্ধারণ করুন।');
+      const err = 'সকল বিষয়ের সঠিক কোড ও পূর্ণমান নির্ধারণ করুন।';
+      setFormError(err);
+      toast.warning(err, 'VALIDATION ERROR');
       return;
     }
 
@@ -309,6 +329,7 @@ export const ExamManagement: React.FC<ExamManagementProps> = ({
     const totalMarks = subjects.reduce((sum, s) => sum + Number(s.fullMarks || 0), 0);
 
     setSaving(true);
+    const toastId = toast.loading('পরীক্ষার তথ্য সংরক্ষণ করা হচ্ছে...', 'SAVING EXAM');
     try {
       await saveExam(
         {
@@ -337,10 +358,22 @@ export const ExamManagement: React.FC<ExamManagementProps> = ({
         editingExam ? editingExam.id : undefined
       );
 
+      toast.update(toastId, {
+        type: 'SUCCESS',
+        title: editingExam ? 'EXAM UPDATED' : 'EXAM CREATED',
+        message: `"${cleanTitle}" পরীক্ষা সফলভাবে ${editingExam ? 'হালনাগাদ' : 'তৈরি'} করা হয়েছে!`,
+      });
+
       setSheetOpen(false);
       onRefreshExams();
     } catch (err: any) {
-      setFormError(err.message || 'সংরক্ষণ ব্যর্থ হয়েছে');
+      const errMsg = err.message || 'সংরক্ষণ ব্যর্থ হয়েছে';
+      setFormError(errMsg);
+      toast.update(toastId, {
+        type: 'ERROR',
+        title: 'SAVE ERROR',
+        message: errMsg,
+      });
     } finally {
       setSaving(false);
     }
@@ -350,9 +383,16 @@ export const ExamManagement: React.FC<ExamManagementProps> = ({
     const nextStatus = exam.status === 'PUBLISHED' ? 'DRAFT' : 'PUBLISHED';
     try {
       await updateExamStatus(exam.id, nextStatus);
+      toast.info(
+        nextStatus === 'PUBLISHED'
+          ? `"${exam.title}" পরীক্ষাটি সরাসরি প্রকাশ করা হয়েছে!`
+          : `"${exam.title}" পরীক্ষাটি খসড়া হিসেবে রাখা হয়েছে।`,
+        'STATUS UPDATED'
+      );
       onRefreshExams();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Update status error:', err);
+      toast.error('স্ট্যাটাস পরিবর্তন করতে ব্যর্থ হয়েছে: ' + (err.message || 'অজানা ত্রুটি'), 'ERROR');
     }
   };
 
@@ -366,12 +406,24 @@ export const ExamManagement: React.FC<ExamManagementProps> = ({
 
     setIsDeleting(true);
     setDeleteError(null);
+    const toastId = toast.loading(`"${deleteConfirmExam.title}" পরীক্ষা মুছে ফেলা হচ্ছে...`, 'DELETING EXAM');
     try {
       await deleteExam(deleteConfirmExam.id);
+      toast.update(toastId, {
+        type: 'SUCCESS',
+        title: 'EXAM DELETED',
+        message: `"${deleteConfirmExam.title}" পরীক্ষা এবং সংশ্লিষ্ট রেকর্ড সফলভাবে মুছে ফেলা হয়েছে!`,
+      });
       setDeleteConfirmExam(null);
       onRefreshExams();
     } catch (err: any) {
-      setDeleteError(err.message || 'পরীক্ষা মুছে ফেলতে ত্রুটি হয়েছে');
+      const errMsg = err.message || 'পরীক্ষা মুছে ফেলতে ত্রুটি হয়েছে';
+      setDeleteError(errMsg);
+      toast.update(toastId, {
+        type: 'ERROR',
+        title: 'DELETE ERROR',
+        message: errMsg,
+      });
     } finally {
       setIsDeleting(false);
     }

@@ -15,6 +15,7 @@ import {
   BarChart3,
 } from 'lucide-react';
 import { ApplicantUser } from '../../types';
+import { DpibBrandTitle } from './DpibBrandTitle';
 
 interface HeaderProps {
   currentTab: string;
@@ -65,9 +66,7 @@ export const Header: React.FC<HeaderProps> = ({
               />
             </div>
             <div className="flex flex-col min-w-0">
-              <span className="font-outfit font-black tracking-tight text-slate-900 text-sm sm:text-lg md:text-xl leading-none truncate">
-                DPIB RESULT ZONE
-              </span>
+              <DpibBrandTitle className="text-sm sm:text-lg md:text-xl leading-none truncate" />
               <span className="text-[9px] sm:text-xs text-slate-500 font-bold tracking-widest uppercase mt-1 truncate">
                 DIPLOMA IN ENGINEERING
               </span>

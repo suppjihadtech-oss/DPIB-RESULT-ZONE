@@ -33,6 +33,7 @@ import { isFirestoreAutoId, generateDynamicStudentId } from '../../services/db';
 import { BottomSheet } from '../common/BottomSheet';
 import { printElementById } from '../../utils/printHelper';
 import { DigitalResultCardBottomSheet } from './DigitalResultCardBottomSheet';
+import { toast } from '../../context/ToastContext';
 
 interface ResultBottomSheetProps {
   isOpen: boolean;
@@ -103,13 +104,17 @@ export const ResultBottomSheet: React.FC<ResultBottomSheetProps> = ({
     printElementById('printable-result-sheet', {
       title: `DPIB_RESULT_${result.roll}_${result.studentName.toUpperCase().replace(/\s+/g, '_')}`,
       orientation: 'portrait',
-      onStart: () => setIsPrinting(true),
+      onStart: () => {
+        setIsPrinting(true);
+        toast.info('গ্রেডশিট প্রিন্ট প্রিভিউ প্রস্তুত হচ্ছে...', 'PRINTING');
+      },
       onComplete: () => {
         setIsPrinting(false);
       },
       onError: (err) => {
         console.error('Print failed:', err);
         setIsPrinting(false);
+        toast.error('প্রিন্ট প্রস্তুত করতে ব্যর্থ হয়েছে', 'PRINT ERROR');
       },
     });
   };
@@ -117,6 +122,7 @@ export const ResultBottomSheet: React.FC<ResultBottomSheetProps> = ({
   const handleCopyCode = () => {
     navigator.clipboard.writeText(displayVerificationCode);
     setCopiedCode(true);
+    toast.success('ভেরিফিকেশন কোড ক্লিপবোর্ডে কপি করা হয়েছে!', 'COPIED');
     setTimeout(() => setCopiedCode(false), 2000);
   };
 
@@ -135,6 +141,7 @@ export const ResultBottomSheet: React.FC<ResultBottomSheetProps> = ({
     } else {
       navigator.clipboard.writeText(`${shareText} - ${window.location.href}`);
       setCopiedCode(true);
+      toast.info('ফলাফলের বিস্তারিত তথ্য ক্লিপবোর্ডে কপি হয়েছে!', 'LINK COPIED');
       setTimeout(() => setCopiedCode(false), 2000);
     }
   };
@@ -297,7 +304,12 @@ export const ResultBottomSheet: React.FC<ResultBottomSheetProps> = ({
                         <span className="font-outfit text-slate-400 mr-1.5 font-bold text-[11px]">
                           [{sub.subjectCode}]
                         </span>
-                        {sub.subjectName}
+                        <span>{sub.subjectName}</span>
+                        {sub.originalSubjectName && sub.originalSubjectName.trim().toLowerCase() !== sub.subjectName.trim().toLowerCase() && (
+                          <span className="block text-[10px] text-slate-400 font-mono font-normal">
+                            ({sub.originalSubjectName})
+                          </span>
+                        )}
                       </td>
                       <td className="py-2 px-3 text-center font-outfit text-slate-600 font-medium">
                         {toBanglaDigits(sub.fullMarks)}

@@ -39,6 +39,7 @@ import { LoadingSpinner } from '../common/LoadingSpinner';
 import { LoadingOverlay } from '../common/LoadingOverlay';
 import { BottomSheet } from '../common/BottomSheet';
 import { SelectBottomSheet, SelectTrigger, SelectOption } from '../common/SelectBottomSheet';
+import { toast } from '../../context/ToastContext';
 
 interface StudentManagementProps {
   departments: Department[];
@@ -321,18 +322,22 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
     );
     navigator.clipboard.writeText(sample);
     setCopiedSample(true);
+    toast.info('নমুনা JSON কোড ক্লিপবোর্ডে কপি করা হয়েছে!', 'SAMPLE COPIED');
     setTimeout(() => setCopiedSample(false), 2000);
   };
 
   const handleCommitJsonImport = async () => {
     const validItems = parsedStudentList.filter((item) => !item.error);
     if (validItems.length === 0) {
-      setJsonParseError('সংরক্ষণ করার মতো কোনো বৈধ শিক্ষার্থী ডেটা নেই।');
+      const err = 'সংরক্ষণ করার মতো কোনো বৈধ শিক্ষার্থী ডেটা নেই।';
+      setJsonParseError(err);
+      toast.warning(err, 'VALIDATION ERROR');
       return;
     }
 
     setIsImportingJson(true);
     setJsonParseError(null);
+    const toastId = toast.loading('শিক্ষার্থী ডাটাবেজ ইমপোর্ট করা হচ্ছে...', 'IMPORTING DATA');
     try {
       const toSave = validItems.map((item) => item.data);
       const res = await batchSaveStudents(toSave, {
@@ -351,6 +356,11 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
       }
 
       setJsonImportSuccessSummary(summary);
+      toast.update(toastId, {
+        type: 'SUCCESS',
+        title: 'IMPORT COMPLETED',
+        message: summary,
+      });
       fetchStudents();
 
       setTimeout(() => {
@@ -360,7 +370,13 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
         setJsonImportSuccessSummary(null);
       }, 2200);
     } catch (err: any) {
-      setJsonParseError(err.message || 'ইমপোর্ট করতে সমস্যা হয়েছে');
+      const errMsg = err.message || 'ইমপোর্ট করতে সমস্যা হয়েছে';
+      setJsonParseError(errMsg);
+      toast.update(toastId, {
+        type: 'ERROR',
+        title: 'IMPORT ERROR',
+        message: errMsg,
+      });
     } finally {
       setIsImportingJson(false);
     }
@@ -416,7 +432,9 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
     const cleanName = formName.trim();
     const cleanRoll = toEnglishDigits(formRoll.trim());
     if (!cleanName || !cleanRoll) {
-      setFormError('অনুগ্রহ করে শিক্ষার্থীর নাম ও রোল নম্বর লিখুন।');
+      const err = 'অনুগ্রহ করে শিক্ষার্থীর নাম ও রোল নম্বর লিখুন।';
+      setFormError(err);
+      toast.warning(err, 'VALIDATION ERROR');
       return;
     }
 
@@ -425,6 +443,7 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
     const finalStudentId = formStudentId.trim() || `DPIB-${cleanRoll}`;
 
     setSaving(true);
+    const toastId = toast.loading('শিক্ষার্থীর তথ্য সংরক্ষণ করা হচ্ছে...', 'SAVING STUDENT');
     try {
       await saveStudent(
         {
@@ -440,10 +459,23 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
         },
         editingStudent?.id
       );
+
+      toast.update(toastId, {
+        type: 'SUCCESS',
+        title: editingStudent ? 'STUDENT UPDATED' : 'STUDENT ADDED',
+        message: `শিক্ষার্থী "${cleanName}" (রোল: ${cleanRoll})-এর তথ্য সফলভাবে ${editingStudent ? 'হালনাগাদ' : 'যুক্ত'} হয়েছে!`,
+      });
+
       setSheetOpen(false);
       fetchStudents();
     } catch (err: any) {
-      setFormError(err.message || 'সংরক্ষণ করতে সমস্যা হয়েছে');
+      const errMsg = err.message || 'সংরক্ষণ করতে সমস্যা হয়েছে';
+      setFormError(errMsg);
+      toast.update(toastId, {
+        type: 'ERROR',
+        title: 'SAVE ERROR',
+        message: errMsg,
+      });
     } finally {
       setSaving(false);
     }
@@ -456,15 +488,29 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
 
   const handleConfirmDelete = async () => {
     if (!deleteConfirmStudent) return;
+    const studentName = deleteConfirmStudent.name;
+    const studentRoll = deleteConfirmStudent.roll;
     setIsDeleting(true);
     setDeleteError(null);
+    const toastId = toast.loading(`শিক্ষার্থী "${studentName}" মুছে ফেলা হচ্ছে...`, 'DELETING STUDENT');
     try {
       await deleteStudent(deleteConfirmStudent.id);
+      toast.update(toastId, {
+        type: 'SUCCESS',
+        title: 'STUDENT DELETED',
+        message: `শিক্ষার্থী "${studentName}" (রোল: ${studentRoll})-এর তথ্য সফলভাবে মুছে ফেলা হয়েছে!`,
+      });
       setDeleteConfirmStudent(null);
       fetchStudents();
     } catch (err: any) {
       console.error('Delete error:', err);
-      setDeleteError(err.message || 'শিক্ষার্থীর তথ্য ডিলিট করা যায়নি');
+      const errMsg = err.message || 'শিক্ষার্থীর তথ্য ডিলিট করা যায়নি';
+      setDeleteError(errMsg);
+      toast.update(toastId, {
+        type: 'ERROR',
+        title: 'DELETE ERROR',
+        message: errMsg,
+      });
     } finally {
       setIsDeleting(false);
     }

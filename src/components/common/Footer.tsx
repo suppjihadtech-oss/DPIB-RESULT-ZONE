@@ -1,6 +1,7 @@
 import React from 'react';
 import { ShieldCheck, Globe, Calculator, CalendarDays, BookOpen, GraduationCap, MapPin } from 'lucide-react';
 import { CompactAttribution } from './CompactAttribution';
+import { DpibBrandTitle } from './DpibBrandTitle';
 
 interface FooterProps {
   currentTab?: string;
@@ -37,9 +38,7 @@ export const Footer: React.FC<FooterProps> = ({ currentTab, isHome = false, onTa
                 />
               </div>
               <div className="flex flex-col">
-                <span className="font-outfit text-slate-900 font-black text-lg tracking-tight">
-                  DPIB <span className="text-blue-600">RESULT ZONE</span>
-                </span>
+                <DpibBrandTitle className="text-lg tracking-tight" />
                 <span className="text-xs text-slate-600 font-bold">দক্ষিণবঙ্গ পলিটেকনিক ইনস্টিটিউট</span>
               </div>
             </div>
@@ -158,7 +157,7 @@ export const Footer: React.FC<FooterProps> = ({ currentTab, isHome = false, onTa
 
         {/* Bottom copyright */}
         <div className="pt-6 border-t border-sky-200/60 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 font-medium">
-          <p>© ২০২৪-২০২৬ DPIB RESULT ZONE. সর্বস্বত্ব সংরক্ষিত।</p>
+          <p>© ২০২৪-২০২৬ <DpibBrandTitle className="text-xs" />. সর্বস্বত্ব সংরক্ষিত।</p>
           <p className="mt-2 sm:mt-0 font-outfit font-semibold text-slate-700">
             DAKKINBANGO POLYTECHNIC INSTITUTE, BHOLA
           </p>

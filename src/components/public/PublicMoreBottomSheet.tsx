@@ -10,6 +10,7 @@ import {
   BookOpen,
 } from 'lucide-react';
 import { BottomSheet } from '../common/BottomSheet';
+import { DpibBrandTitle } from '../common/DpibBrandTitle';
 
 interface PublicMoreBottomSheetProps {
   isOpen: boolean;
@@ -120,7 +121,7 @@ export const PublicMoreBottomSheet: React.FC<PublicMoreBottomSheetProps> = ({
       isOpen={isOpen}
       onClose={onClose}
       title="অন্যান্য সেবাসমূহ"
-      subtitle="DPIB RESULT ZONE পোর্টালের অতিরিক্ত বিকল্প"
+      subtitle={<><DpibBrandTitle className="text-xs inline-block" /> পোর্টালের অতিরিক্ত বিকল্প</>}
     >
       <div className="space-y-2.5 pb-6 font-bengali">
         {menuOptions.map((item) => {

@@ -30,6 +30,9 @@ import {
   Award,
   Hash,
   CalendarDays,
+  Database,
+  HelpCircle,
+  Info,
 } from 'lucide-react';
 import {
   Exam,
@@ -38,6 +41,7 @@ import {
   SemesterId,
   SubjectResult,
   Student,
+  BookItem,
 } from '../../types';
 import {
   getResults,
@@ -49,6 +53,7 @@ import {
   updateResultStatus,
   saveExam,
 } from '../../services/db';
+import { getAllBooksOnce } from '../../services/bookService';
 import { calculateResultGrades, calculateSubjectGrade } from '../../services/grading';
 import {
   parseJsonResults,
@@ -67,6 +72,7 @@ import { LoadingOverlay } from '../common/LoadingOverlay';
 import { BottomSheet } from '../common/BottomSheet';
 import { ResultBottomSheet } from '../public/ResultBottomSheet';
 import { SelectBottomSheet, SelectTrigger, SelectOption } from '../common/SelectBottomSheet';
+import { toast } from '../../context/ToastContext';
 
 interface ResultManagementProps {
   exams: Exam[];
@@ -117,6 +123,7 @@ export const ResultManagement: React.FC<ResultManagementProps> = ({
   const [jsonInputText, setJsonInputText] = useState('');
   const [selectedOverrideExamId, setSelectedOverrideExamId] = useState<string>('AUTO');
   const [overrideExamSheetOpen, setOverrideExamSheetOpen] = useState(false);
+  const [allDatabaseBooks, setAllDatabaseBooks] = useState<BookItem[]>([]);
 
   // Delete State
   const [deleteConfirmResult, setDeleteConfirmResult] = useState<StudentResult | null>(null);
@@ -303,10 +310,18 @@ export const ResultManagement: React.FC<ResultManagementProps> = ({
     })),
   ];
 
-  // Direct JSON Upload Handler (NO mandatory exam selection required)
-  const handleJsonUpload = () => {
+  useEffect(() => {
+    getAllBooksOnce(departments)
+      .then((bks) => setAllDatabaseBooks(bks))
+      .catch((err) => console.warn('Failed to pre-load database books:', err));
+  }, [departments]);
+
+  // Direct JSON Upload Handler with Database-Based Subject Matching
+  const handleJsonUpload = async () => {
     if (!jsonInputText.trim()) {
-      setUploadErrors(['অনুগ্রহ করে JSON ডাটা ইনপুট করুন।']);
+      const err = 'অনুগ্রহ করে JSON ডাটা ইনপুট করুন।';
+      setUploadErrors([err]);
+      toast.warning(err, 'VALIDATION ERROR');
       return;
     }
 
@@ -318,7 +333,21 @@ export const ResultManagement: React.FC<ResultManagementProps> = ({
     const chosenExam = selectedOverrideExamId !== 'AUTO' ? exams.find((x) => x.id === selectedOverrideExamId) : null;
 
     try {
-      const parsed = parseJsonResults(jsonInputText, chosenExam, uploadPublishStatus, undefined, exams);
+      // Ensure database books are loaded
+      let booksPool = allDatabaseBooks;
+      if (!booksPool || booksPool.length === 0) {
+        booksPool = await getAllBooksOnce(departments);
+        setAllDatabaseBooks(booksPool);
+      }
+
+      const parsed = parseJsonResults(
+        jsonInputText,
+        chosenExam,
+        uploadPublishStatus,
+        undefined,
+        exams,
+        booksPool
+      );
       setParsedReport(parsed);
       setParsedPreviewList(parsed.results);
       setDetectedExam(parsed.detectedExam || null);
@@ -326,14 +355,21 @@ export const ResultManagement: React.FC<ResultManagementProps> = ({
       setUploadErrors(parsed.errors);
 
       if (parsed.errors.length === 0 && parsed.validRows > 0) {
-        setUploadSuccessSummary(
-          `JSON থেকে ${toBanglaDigits(parsed.validRows)} জন শিক্ষার্থীর ফলাফল লোড ও যাচাই হয়েছে! পরীক্ষা: ${parsed.detectedExam?.title || 'সনাক্তকৃত পরীক্ষা'}`
-        );
+        let msg = `JSON থেকে ${toBanglaDigits(parsed.validRows)} জন শিক্ষার্থীর ফলাফল লোড ও যাচাই হয়েছে! পরীক্ষা: ${parsed.detectedExam?.title || 'সনাক্তকৃত পরীক্ষা'}`;
+        if (parsed.matchedDatabaseSubjects && parsed.matchedDatabaseSubjects.length > 0) {
+          msg += ` (${toBanglaDigits(parsed.matchedDatabaseSubjects.length)}টি বিষয় ডেটাবেজ হতে স্বয়ংক্রিয় মিল পাওয়া গেছে)`;
+        }
+        setUploadSuccessSummary(msg);
+        toast.info(msg, 'JSON VALIDATED');
+      } else if (parsed.errors.length > 0) {
+        toast.warning(`JSON ফাইলে ${toBanglaDigits(parsed.errors.length)}টি ত্রুটি পাওয়া গেছে। প্রিভিউ চেক করুন।`, 'PARSE WARNING');
       }
       setUploadStep('PREVIEW');
     } catch (err: any) {
-      setUploadErrors([err.message || 'JSON ফরম্যাট সঠিক নয়।']);
+      const msg = err.message || 'JSON ফরম্যাট সঠিক নয়।';
+      setUploadErrors([msg]);
       setParsedReport(null);
+      toast.error(msg, 'PARSE ERROR');
     } finally {
       setIsProcessingUpload(false);
     }
@@ -342,13 +378,16 @@ export const ResultManagement: React.FC<ResultManagementProps> = ({
   // Commit Batch Upload to Firestore (creates exam if auto-created, then saves results)
   const handleCommitBatchSave = async () => {
     if (parsedPreviewList.length === 0) {
-      setUploadErrors(['সংরক্ষণ করার মতো কোনো ফলাফল তালিকা নেই।']);
+      const err = 'সংরক্ষণ করার মতো কোনো ফলাফল তালিকা নেই।';
+      setUploadErrors([err]);
+      toast.warning(err, 'VALIDATION ERROR');
       return;
     }
 
     setIsProcessingUpload(true);
     setUploadErrors([]);
     setUploadSuccessSummary(null);
+    const toastId = toast.loading('ফলাফল ডাটাবেজে সংরক্ষণ করা হচ্ছে...', 'UPLOADING RESULTS');
 
     try {
       let finalExamId = detectedExam?.id;
@@ -386,7 +425,14 @@ export const ResultManagement: React.FC<ResultManagementProps> = ({
 
       await batchSaveResults(finalResults, finalExamId, uploadPublishStatus === 'PUBLISHED');
       
-      setUploadSuccessSummary(`সফলভাবে ${toBanglaDigits(finalResults.length)}টি ফলাফল ফায়ারস্টোরে সংরক্ষিত ও প্রকাশিত হয়েছে!`);
+      const successMsg = `সফলভাবে ${toBanglaDigits(finalResults.length)}টি ফলাফল ফায়ারস্টোরে সংরক্ষিত ও প্রকাশিত হয়েছে!`;
+      setUploadSuccessSummary(successMsg);
+      toast.update(toastId, {
+        type: 'SUCCESS',
+        title: 'RESULTS PUBLISHED',
+        message: successMsg,
+      });
+
       await fetchResults();
       if (onRefreshStats) onRefreshStats();
 
@@ -401,7 +447,13 @@ export const ResultManagement: React.FC<ResultManagementProps> = ({
       }, 1800);
     } catch (err: any) {
       console.error('Batch save error:', err);
-      setUploadErrors([`সংরক্ষণে সমস্যা হয়েছে: ${err.message || 'নেটওয়ার্ক সংযোগ বা ফায়ারবেস পারমিশন যাচাই করুন।'}`]);
+      const errMsg = `সংরক্ষণে সমস্যা হয়েছে: ${err.message || 'নেটওয়ার্ক সংযোগ বা ফায়ারবেস পারমিশন যাচাই করুন।'}`;
+      setUploadErrors([errMsg]);
+      toast.update(toastId, {
+        type: 'ERROR',
+        title: 'UPLOAD FAILED',
+        message: errMsg,
+      });
     } finally {
       setIsProcessingUpload(false);
     }
@@ -518,6 +570,7 @@ export const ResultManagement: React.FC<ResultManagementProps> = ({
     const calculated = calculateResultGrades(subjectMarksArray);
 
     setManualSaving(true);
+    const toastId = toast.loading('শিক্ষার্থীর ফলাফল সংরক্ষণ করা হচ্ছে...', 'SAVING RESULT');
     try {
       await saveStudentResult({
         examId: activeExamForManual.id,
@@ -552,12 +605,24 @@ export const ResultManagement: React.FC<ResultManagementProps> = ({
       setManualSubjectsMarks({});
       setManualCustomFullMarks({});
       setManualStep(1);
-      setDeleteSuccessMessage(`শিক্ষার্থী "${cleanName}" (রোল: ${cleanRoll})-এর ফলাফল সফলভাবে ফায়ারস্টোরে প্রকাশিত হয়েছে!`);
+      const successMsg = `শিক্ষার্থী "${cleanName}" (রোল: ${cleanRoll})-এর ফলাফল সফলভাবে ফায়ারস্টোরে প্রকাশিত হয়েছে!`;
+      setDeleteSuccessMessage(successMsg);
+      toast.update(toastId, {
+        type: 'SUCCESS',
+        title: 'RESULT PUBLISHED',
+        message: successMsg,
+      });
       fetchResults();
       if (onRefreshStats) onRefreshStats();
       setTimeout(() => setDeleteSuccessMessage(null), 5000);
     } catch (err: any) {
-      setManualError(err.message || 'সংরক্ষণ ব্যর্থ হয়েছে');
+      const errMsg = err.message || 'সংরক্ষণ ব্যর্থ হয়েছে';
+      setManualError(errMsg);
+      toast.update(toastId, {
+        type: 'ERROR',
+        title: 'SAVE ERROR',
+        message: errMsg,
+      });
     } finally {
       setManualSaving(false);
     }
@@ -570,18 +635,31 @@ export const ResultManagement: React.FC<ResultManagementProps> = ({
 
     setIsDeletingResult(true);
     setDeleteError(null);
+    const toastId = toast.loading(`"${targetName}" এর ফলাফল মুছে ফেলা হচ্ছে...`, 'DELETING RESULT');
     try {
       // Optimistically remove from state for instant feedback
       setResults((prev) => prev.filter((r) => r.id !== targetId));
       await deleteResult(targetId);
-      setDeleteSuccessMessage(`"${targetName}" এর ফলাফল রেকর্ডটি সফলভাবে মুছে ফেলা হয়েছে!`);
+      const msg = `"${targetName}" এর ফলাফল রেকর্ডটি সফলভাবে মুছে ফেলা হয়েছে!`;
+      setDeleteSuccessMessage(msg);
+      toast.update(toastId, {
+        type: 'SUCCESS',
+        title: 'RESULT DELETED',
+        message: msg,
+      });
       setDeleteConfirmResult(null);
       fetchResults();
       if (onRefreshStats) onRefreshStats();
       setTimeout(() => setDeleteSuccessMessage(null), 4000);
     } catch (err: any) {
       console.error('Delete result error:', err);
-      setDeleteError(err.message || 'ফলাফল মুছতে ব্যর্থ হয়েছে। ফায়ারস্টোর পারমিশন বা সংযোগ যাচাই করুন।');
+      const errMsg = err.message || 'ফলাফল মুছতে ব্যর্থ হয়েছে। ফায়ারস্টোর পারমিশন বা সংযোগ যাচাই করুন।';
+      setDeleteError(errMsg);
+      toast.update(toastId, {
+        type: 'ERROR',
+        title: 'DELETE ERROR',
+        message: errMsg,
+      });
       fetchResults();
     } finally {
       setIsDeletingResult(false);
@@ -591,21 +669,32 @@ export const ResultManagement: React.FC<ResultManagementProps> = ({
   const handleDeleteAll = async (scope: 'ALL' | 'FILTERED' = 'ALL') => {
     setIsDeletingAll(true);
     setDeleteError(null);
+    const targetExamId = scope === 'FILTERED' && selectedExamId !== 'ALL' ? selectedExamId : undefined;
+    const toastId = toast.loading('ফলাফল ডাটাবেজ থেকে মুছে ফেলা হচ্ছে...', 'DELETING RESULTS');
     try {
-      const targetExamId = scope === 'FILTERED' && selectedExamId !== 'ALL' ? selectedExamId : undefined;
       const count = await deleteAllResults(targetExamId);
       setDeleteAllModalOpen(false);
-      setDeleteSuccessMessage(
-        targetExamId
-          ? `নির্বাচিত পরীক্ষার মোট ${toBanglaDigits(count)}টি ফলাফল ডাটাবেজ থেকে মুছে ফেলা হয়েছে!`
-          : `ডাটাবেজের সকল (${toBanglaDigits(count)}টি) ফলাফল সফলভাবে মুছে ফেলা হয়েছে!`
-      );
+      const msg = targetExamId
+        ? `নির্বাচিত পরীক্ষার মোট ${toBanglaDigits(count)}টি ফলাফল ডাটাবেজ থেকে মুছে ফেলা হয়েছে!`
+        : `ডাটাবেজের সকল (${toBanglaDigits(count)}টি) ফলাফল সফলভাবে মুছে ফেলা হয়েছে!`;
+      setDeleteSuccessMessage(msg);
+      toast.update(toastId, {
+        type: 'SUCCESS',
+        title: 'RESULTS DELETED',
+        message: msg,
+      });
       fetchResults();
       if (onRefreshStats) onRefreshStats();
       setTimeout(() => setDeleteSuccessMessage(null), 5000);
     } catch (err: any) {
       console.error('Delete all error:', err);
-      setDeleteError(err.message || 'ফলাফল মুছতে সমস্যা হয়েছে');
+      const errMsg = err.message || 'ফলাফল মুছতে সমস্যা হয়েছে';
+      setDeleteError(errMsg);
+      toast.update(toastId, {
+        type: 'ERROR',
+        title: 'DELETE ERROR',
+        message: errMsg,
+      });
     } finally {
       setIsDeletingAll(false);
     }
@@ -615,10 +704,17 @@ export const ResultManagement: React.FC<ResultManagementProps> = ({
     const nextStatus = result.status === 'PUBLISHED' ? 'DRAFT' : 'PUBLISHED';
     try {
       await updateResultStatus(result.id, nextStatus);
+      toast.info(
+        nextStatus === 'PUBLISHED'
+          ? `শিক্ষার্থী ${result.studentName}-এর ফলাফল প্রকাশ করা হয়েছে!`
+          : `শিক্ষার্থী ${result.studentName}-এর ফলাফল খসড়া হিসেবে রাখা হয়েছে।`,
+        'STATUS UPDATED'
+      );
       fetchResults();
       if (onRefreshStats) onRefreshStats();
-    } catch (err) {
-      console.error('Status error:', err);
+    } catch (err: any) {
+      console.error('Update status error:', err);
+      toast.error('স্ট্যাটাস হালনাগাদ ব্যর্থ: ' + (err.message || 'অজানা ত্রুটি'), 'ERROR');
     }
   };
 
@@ -1053,10 +1149,10 @@ export const ResultManagement: React.FC<ResultManagementProps> = ({
 
                 <div className="space-y-1.5">
                   <textarea
-                    rows={8}
+                    rows={9}
                     value={jsonInputText}
                     onChange={(e) => setJsonInputText(e.target.value)}
-                    placeholder={`[\n  {\n    "roll": "601234",\n    "name": "মোঃ আরিয়ান আহমেদ",\n    "registration": "1502123456",\n    "66611": 85,\n    "66612": 78\n  }\n]`}
+                    placeholder={`[\n  {\n    "roll": "601234",\n    "name": "মোঃ আরিয়ান আহমেদ",\n    "registration": "1502123456",\n    "subjects": [\n      {\n        "subjectCode": "25721",\n        "subjectName": "Bangla-II",\n        "marks": 85,\n        "fullMarks": 100\n      },\n      {\n        "subjectCode": "28541",\n        "subjectName": "Java Programming",\n        "marks": 78,\n        "fullMarks": 100\n      }\n    ]\n  }\n]`}
                     className="w-full p-3.5 font-mono text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-blue-500 outline-none leading-relaxed text-slate-800 transition-all resize-y"
                     spellCheck={false}
                   />
@@ -1069,14 +1165,25 @@ export const ResultManagement: React.FC<ResultManagementProps> = ({
                 </div>
 
                 {/* Example format helper box */}
-                <div className="p-3 bg-amber-50/70 border border-amber-200/80 rounded-xl text-[11px] text-amber-900 space-y-1">
-                  <div className="font-bold flex items-center gap-1.5 text-amber-800">
-                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                    <span>JSON কোডের গঠন নির্দেশিকা:</span>
+                <div className="p-3.5 bg-blue-50/70 border border-blue-200/80 rounded-xl text-[11px] text-slate-700 space-y-2">
+                  <div className="font-bold flex items-center gap-1.5 text-blue-900 uppercase">
+                    <AlertCircle className="w-4 h-4 shrink-0 text-blue-600" />
+                    <span>JSON কোড ও SUBJECT CODE গঠন নির্দেশিকা (JSON FORMAT GUIDE):</span>
                   </div>
-                  <p className="text-amber-800/90 leading-relaxed">
-                    প্রতিটি অবজেক্টে শিক্ষার্থীর <code className="bg-amber-100/90 px-1 py-0.5 rounded font-mono text-[10px] text-amber-900 font-bold">roll</code> এবং <code className="bg-amber-100/90 px-1 py-0.5 rounded font-mono text-[10px] text-amber-900 font-bold">name</code> ফিল্ড থাকা আবশ্যক। বিষয় কোডসমূহ সরাসরি কি (Key) হিসেবে দিয়ে প্রাপ্ত নম্বর প্রদান করুন (যেমন: <code className="bg-amber-100/90 px-1 py-0.5 rounded font-mono text-[10px] text-amber-900">"66611": 85</code>)।
-                  </p>
+                  <div className="space-y-1.5 text-slate-700 leading-relaxed">
+                    <p>
+                      • প্রতিটি শিক্ষার্থীর অবজেক্টে <code className="bg-white px-1.5 py-0.5 rounded border border-blue-200 font-mono text-[10px] text-blue-900 font-bold">ROLL</code> এবং <code className="bg-white px-1.5 py-0.5 rounded border border-blue-200 font-mono text-[10px] text-blue-900 font-bold">NAME</code> ফিল্ড থাকা আবশ্যক।
+                    </p>
+                    <p>
+                      • <strong className="text-slate-900">SUBJECT CODE ও বাংলা নাম:</strong> প্রতিটি বিষয়ের জন্য <code className="bg-white px-1.5 py-0.5 rounded border border-blue-200 font-mono text-[10px] text-blue-900 font-bold">"subjectCode"</code> (যেমন: <code className="font-mono text-blue-800">"25721"</code>, <code className="font-mono text-blue-800">"28541"</code>) বা বিষয় কোড সরাসরি কি (KEY) হিসেবে প্রদান করা যাবে।
+                    </p>
+                    <p>
+                      • <strong className="text-slate-900">স্বয়ংক্রিয় বাংলা নামকরণ:</strong> বিষয় নাম ইংরেজিতে থাকলেও (যেমন: <code className="font-mono text-blue-800">"Bangla-II"</code>, <code className="font-mono text-blue-800">"Java Programming"</code>) BTEB কারিকুলাম ও SUBJECT CODE যাচাই করে স্বয়ংক্রিয়ভাবে অফিশিয়াল বাংলা নাম নির্ধারণ করা হয়।
+                    </p>
+                    <p>
+                      • <strong className="text-slate-900">নিরাপত্তা ও অবিকৃত তথ্য:</strong> কোনো বিষয়ের নিশ্চিত বাংলা নাম না মিললে কোনো মনগড়া অনুবাদ তৈরি না করে মূল নামই অবিকৃত রাখা হয় এবং উভয় তথ্য সংরক্ষিত থাকে।
+                    </p>
+                  </div>
                 </div>
 
                 <div className="pt-1">
@@ -1174,36 +1281,239 @@ export const ResultManagement: React.FC<ResultManagementProps> = ({
                     </div>
                   )}
 
+                  {/* Database Matched Subjects Notification */}
+                  {parsedReport.matchedDatabaseSubjects && parsedReport.matchedDatabaseSubjects.length > 0 && (
+                    <div className="p-3.5 bg-emerald-50/90 border border-emerald-200 rounded-2xl text-xs text-emerald-900 space-y-2">
+                      <div className="font-bold flex items-center justify-between text-emerald-800 uppercase">
+                        <div className="flex items-center gap-1.5">
+                          <Database className="w-4 h-4 text-emerald-600 shrink-0" />
+                          <span>ডেটাবেজ হতে স্বয়ংক্রিয় বিষয় শনাক্ত (DATABASE MATCHED SUBJECTS)</span>
+                        </div>
+                        <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-md text-[10px] font-mono font-bold">
+                          {toBanglaDigits(parsedReport.matchedDatabaseSubjects.length)} টি বিষয়
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-emerald-800 leading-relaxed">
+                        JSON-এ বিষয় কোড অনুপস্থিত থাকায় ডেটাবেজের বই তালিকা থেকে স্বয়ংক্রিয়ভাবে মিল খুঁজে অফিশিয়াল কোড ও বাংলা নাম যুক্ত করা হয়েছে:
+                      </p>
+                      <div className="flex flex-wrap gap-1.5 pt-0.5">
+                        {parsedReport.matchedDatabaseSubjects.map((m, mIdx) => (
+                          <span
+                            key={mIdx}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white border border-emerald-300 rounded-xl text-xs font-medium text-emerald-950 shadow-2xs"
+                          >
+                            <span className="font-mono font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded text-[10px]">
+                              {m.subjectCode}
+                            </span>
+                            <span className="font-bold">{m.subjectName}</span>
+                            {m.originalName && m.originalName.trim().toLowerCase() !== m.subjectName.trim().toLowerCase() && (
+                              <span className="text-[10px] text-slate-500 font-mono">
+                                (ORIGINAL: {m.originalName})
+                              </span>
+                            )}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Code Mismatch Warnings Notification */}
+                  {parsedReport.codeMismatchWarnings && parsedReport.codeMismatchWarnings.length > 0 && (
+                    <div className="p-3.5 bg-rose-50/90 border border-rose-200 rounded-2xl text-xs text-rose-900 space-y-2">
+                      <div className="font-bold flex items-center gap-1.5 text-rose-800 uppercase">
+                        <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                        <span>বিষয় কোড ও নামের অসামঞ্জস্য সতর্কতা (CODE MISMATCH WARNING)</span>
+                      </div>
+                      <p className="text-[11px] text-rose-800 leading-relaxed">
+                        JSON-এ প্রদত্ত বিষয় কোডের সাথে ডেটাবেজের অফিশিয়াল নামের অসঙ্গতি সনাক্ত হয়েছে। সিস্টেম অনুমানের ভিত্তিতে নাম পরিবর্তন করেনি, অনুগ্রহ করে যাচাই করুন:
+                      </p>
+                      <ul className="list-disc pl-5 space-y-1 font-mono text-[11px] text-rose-800">
+                        {parsedReport.codeMismatchWarnings.map((warn, wIdx) => (
+                          <li key={wIdx}>{warn}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Ambiguous Subjects Warning Notification */}
+                  {parsedReport.ambiguousSubjects && parsedReport.ambiguousSubjects.length > 0 && (
+                    <div className="p-3.5 bg-amber-50/90 border border-amber-200 rounded-2xl text-xs text-amber-900 space-y-2">
+                      <div className="font-bold flex items-center gap-1.5 text-amber-800 uppercase">
+                        <HelpCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                        <span>একাধিক সম্ভাব্য বিষয় শনাক্ত (AMBIGUOUS SUBJECT WARNING)</span>
+                      </div>
+                      <p className="text-[11px] text-amber-800 leading-relaxed">
+                        নিচের বিষয়ের ক্ষেত্রে ডেটাবেজে একাধিক বইয়ের মিল পাওয়া গেছে এবং সুনির্দিষ্ট সেমিস্টার/টেকনোলজি প্রসঙ্গ ছাড়া কোনো একটিকে নিশ্চিত করা যায়নি। ভুল কোড এড়াতে কোনো মনগড়া কোড যুক্ত করা হয়নি:
+                      </p>
+                      <div className="space-y-2 pt-0.5">
+                        {parsedReport.ambiguousSubjects.map((amb, aIdx) => (
+                          <div key={aIdx} className="p-2.5 bg-white border border-amber-300 rounded-xl space-y-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-amber-950 font-mono text-xs">{amb.inputName}</span>
+                              <span className="text-[10px] text-amber-700 font-semibold bg-amber-100 px-1.5 py-0.5 rounded">
+                                {toBanglaDigits(amb.candidates.length)}টি সম্ভাব্য বই
+                              </span>
+                            </div>
+                            <div className="flex flex-wrap gap-1.5 text-[10px]">
+                              {amb.candidates.map((cand, cIdx) => (
+                                <span key={cIdx} className="px-2 py-0.5 bg-slate-50 border border-slate-200 rounded text-slate-700 font-mono">
+                                  {cand.subjectCode} - {cand.bookTitle} {cand.semesterId ? `(${cand.semesterId})` : ''}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Unmatched Subjects Notification */}
+                  {parsedReport.unmatchedSubjects && parsedReport.unmatchedSubjects.length > 0 && (
+                    <div className="p-3.5 bg-slate-50/90 border border-slate-200 rounded-2xl text-xs text-slate-700 space-y-2">
+                      <div className="font-bold flex items-center gap-1.5 text-slate-800 uppercase">
+                        <Info className="w-4 h-4 text-slate-600 shrink-0" />
+                        <span>অনির্ধারিত বিষয় কোড (UNRESOLVED SUBJECTS)</span>
+                      </div>
+                      <p className="text-[11px] text-slate-600 leading-relaxed">
+                        নিচের বিষয়গুলোর জন্য ডেটাবেজে কোনো মিল পাওয়া যায়নি। সিস্টেম কোনো মনগড়া কোড তৈরি না করে মূল নাম অক্ষুণ্ণ রেখেছে:
+                      </p>
+                      <div className="flex flex-wrap gap-1.5 pt-0.5">
+                        {parsedReport.unmatchedSubjects.map((unSub, uIdx) => (
+                          <span
+                            key={uIdx}
+                            className="px-2 py-0.5 bg-white border border-slate-300 rounded-md font-mono text-[11px] font-semibold text-slate-800"
+                          >
+                            {unSub}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Unresolved Bangla Mapping Warning Notification */}
+                  {parsedReport.unresolvedBanglaSubjects && parsedReport.unresolvedBanglaSubjects.length > 0 && (
+                    <div className="p-3.5 bg-amber-50/90 border border-amber-200 rounded-2xl text-xs text-amber-900 space-y-2">
+                      <div className="font-bold flex items-center gap-1.5 text-amber-800 uppercase">
+                        <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                        <span>বিষয় নাম ও ম্যাপিং বিজ্ঞপ্তি (SUBJECT MAPPING NOTICE)</span>
+                      </div>
+                      <p className="text-[11px] text-amber-800 leading-relaxed">
+                        নিচের {toBanglaDigits(parsedReport.unresolvedBanglaSubjects.length)}টি বিষয়ের ক্ষেত্রে সরাসরি BTEB অফিশিয়াল বাংলা নাম পাওয়া যায়নি। সিস্টেম কোনো অনুমানভিত্তিক অনুবাদ তৈরি না করে মূল নামই অবিকৃত রেখেছে:
+                      </p>
+                      <div className="flex flex-wrap gap-1.5 pt-0.5">
+                        {parsedReport.unresolvedBanglaSubjects.map((unSub, uIdx) => (
+                          <span
+                            key={uIdx}
+                            className="px-2 py-0.5 bg-white border border-amber-300 rounded-md font-mono text-[11px] font-semibold text-amber-900"
+                          >
+                            {unSub}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Detected Exam Information Card */}
                   {detectedExam && (
-                    <div className="bg-blue-50/70 border border-blue-200/80 rounded-2xl p-4 space-y-2">
+                    <div className="bg-blue-50/70 border border-blue-200/80 rounded-2xl p-4 space-y-3">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center space-x-2">
                           <BookOpen className="w-4 h-4 text-blue-600" />
-                          <span className="font-bold text-xs text-blue-900 uppercase">সনাক্তকৃত পরীক্ষার বিবরণ</span>
+                          <span className="font-bold text-xs text-blue-900 uppercase">সনাক্তকৃত পরীক্ষার বিবরণ (DETECTED EXAM)</span>
                         </div>
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 font-outfit uppercase">
                           {isAutoCreatedExam ? 'স্বয়ংক্রিয় তৈরি' : 'বিদ্যমান রেকর্ড'}
                         </span>
                       </div>
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs pt-1 text-slate-700">
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs text-slate-700">
                         <div>
-                          <span className="text-slate-400 block text-[10px] uppercase">পরীক্ষার নাম</span>
+                          <span className="text-slate-400 block text-[10px] uppercase font-bold">পরীক্ষার নাম</span>
                           <span className="font-bold text-slate-900">{detectedExam.title}</span>
                         </div>
                         <div>
-                          <span className="text-slate-400 block text-[10px] uppercase">সেমিস্টার</span>
+                          <span className="text-slate-400 block text-[10px] uppercase font-bold">সেমিস্টার</span>
                           <span className="font-bold">{SEMESTER_MAP[detectedExam.semesterId] || detectedExam.semesterId}</span>
                         </div>
                         <div>
-                          <span className="text-slate-400 block text-[10px] uppercase">বিভাগ / টেকনোলজি</span>
+                          <span className="text-slate-400 block text-[10px] uppercase font-bold">বিভাগ / টেকনোলজি</span>
                           <span className="font-bold">{detectedExam.departmentName}</span>
                         </div>
                         <div>
-                          <span className="text-slate-400 block text-[10px] uppercase">সনাক্তকৃত বিষয়সমূহ</span>
-                          <span className="font-bold font-outfit">{detectedExam.subjects?.length || 0}টি বিষয়</span>
+                          <span className="text-slate-400 block text-[10px] uppercase font-bold">সনাক্তকৃত বিষয়সমূহ</span>
+                          <span className="font-bold font-outfit text-blue-700">{toBanglaDigits(detectedExam.subjects?.length || 0)}টি বিষয়</span>
                         </div>
                       </div>
+
+                      {/* Detected Subject Codes & Bangla Names List */}
+                      {detectedExam.subjects && detectedExam.subjects.length > 0 && (
+                        <div className="pt-2.5 border-t border-blue-200/70 space-y-1.5">
+                          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                            সনাক্তকৃত বিষয় কোড ও বাংলা নাম (SUBJECT CODE & BANGLA NAME)
+                          </span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {detectedExam.subjects.map((sub, sIdx) => {
+                              const hasDifferentOriginal = sub.originalName && sub.originalName.trim().toLowerCase() !== sub.name.trim().toLowerCase();
+                              return (
+                                <div
+                                  key={sIdx}
+                                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 bg-white border rounded-xl text-xs ${
+                                    sub.isCodeInvalid
+                                      ? 'border-rose-300'
+                                      : sub.isAmbiguous
+                                      ? 'border-amber-300'
+                                      : sub.isMatchedFromDatabase
+                                      ? 'border-emerald-300'
+                                      : 'border-blue-200'
+                                  }`}
+                                >
+                                  <span
+                                    className={`font-mono font-bold px-1.5 py-0.5 rounded text-[10px] ${
+                                      sub.isCodeInvalid
+                                        ? 'text-rose-700 bg-rose-50'
+                                        : sub.isAmbiguous
+                                        ? 'text-amber-700 bg-amber-50'
+                                        : sub.isMatchedFromDatabase
+                                        ? 'text-emerald-700 bg-emerald-50'
+                                        : 'text-blue-700 bg-blue-50'
+                                    }`}
+                                  >
+                                    {sub.code}
+                                  </span>
+                                  <span className="font-bold text-slate-900">{sub.name}</span>
+                                  {hasDifferentOriginal && (
+                                    <span className="text-[10px] text-slate-500 font-mono">
+                                      (ORIGINAL: {sub.originalName})
+                                    </span>
+                                  )}
+                                  {sub.isMatchedFromDatabase && (
+                                    <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-800 text-[9px] font-bold rounded uppercase">
+                                      DB MATCHED
+                                    </span>
+                                  )}
+                                  {sub.isAmbiguous && (
+                                    <span className="px-1.5 py-0.5 bg-amber-100 text-amber-800 text-[9px] font-bold rounded uppercase">
+                                      AMBIGUOUS
+                                    </span>
+                                  )}
+                                  {sub.isCodeInvalid && (
+                                    <span className="px-1.5 py-0.5 bg-rose-100 text-rose-800 text-[9px] font-bold rounded uppercase">
+                                      INVALID CODE
+                                    </span>
+                                  )}
+                                  {sub.codeMismatchWarning && (
+                                    <span title={sub.codeMismatchWarning}>
+                                      <AlertTriangle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                                    </span>
+                                  )}
+                                  <span className="text-[10px] text-slate-400 font-outfit">
+                                    [{toBanglaDigits(sub.fullMarks)}]
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -1242,29 +1552,81 @@ export const ResultManagement: React.FC<ResultManagementProps> = ({
 
                   {/* Tab 1: PROCESSED PREVIEW TABLE */}
                   {previewTabMode === 'PROCESSED' && (
-                    <div className="max-h-60 overflow-y-auto rounded-xl border border-slate-200 text-xs shadow-2xs">
-                      <table className="w-full text-left">
+                    <div className="max-h-72 overflow-x-auto overflow-y-auto rounded-xl border border-slate-200 text-xs shadow-2xs">
+                      <table className="w-full text-left whitespace-nowrap">
                         <thead className="bg-slate-100 text-slate-600 font-semibold sticky top-0">
                           <tr>
-                            <th className="py-2.5 px-3">রোল</th>
-                            <th className="py-2.5 px-3">নাম</th>
+                            <th className="py-2.5 px-3">রোল (ROLL)</th>
+                            <th className="py-2.5 px-3">নাম (NAME)</th>
+                            <th className="py-2.5 px-3">বিষয়ভিত্তিক নম্বর (SUBJECTS & MARKS)</th>
                             <th className="py-2.5 px-3 text-center">মোট নম্বর</th>
                             <th className="py-2.5 px-3 text-center">GPA</th>
                             <th className="py-2.5 px-3 text-center">গ্রেড</th>
                             <th className="py-2.5 px-3 text-center">অবস্থা</th>
+                            <th className="py-2.5 px-3 text-center">প্রিভিউ</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                           {parsedPreviewList.map((p, idx) => (
                             <tr key={idx} className="hover:bg-slate-50/80 transition-colors">
-                              <td className="py-2 px-3 font-bold font-outfit text-blue-700">{p.roll}</td>
-                              <td className="py-2 px-3 font-medium text-slate-900">{p.studentName}</td>
-                              <td className="py-2 px-3 text-center font-outfit">{p.totalObtainedMarks}</td>
-                              <td className="py-2 px-3 text-center font-bold font-outfit text-blue-600">
-                                {p.gpa.toFixed(2)}
+                              <td className="py-2.5 px-3 font-bold font-outfit text-blue-700">{toBanglaDigits(p.roll)}</td>
+                              <td className="py-2.5 px-3 font-medium text-slate-900">{p.studentName}</td>
+                              <td className="py-2.5 px-3">
+                                <div className="flex flex-wrap gap-1 max-w-sm sm:max-w-md">
+                                  {p.subjects.map((sub, sIdx) => {
+                                    const hasDifferentOriginal = sub.originalSubjectName && sub.originalSubjectName.trim().toLowerCase() !== sub.subjectName.trim().toLowerCase();
+                                    return (
+                                      <span
+                                        key={sIdx}
+                                        title={
+                                          sub.codeMismatchWarning
+                                            ? `WARNING: ${sub.codeMismatchWarning}`
+                                            : sub.isAmbiguous
+                                            ? 'একাধিক সম্ভাব্য বিষয়ের সাথে মিল রয়েছে'
+                                            : sub.isMatchedFromDatabase
+                                            ? `ডেটাবেজ হতে স্বয়ংক্রিয়ভাবে শনাক্তকৃত বিষয় (ORIGINAL: ${sub.originalSubjectName || sub.subjectName})`
+                                            : hasDifferentOriginal
+                                            ? `ORIGINAL NAME: ${sub.originalSubjectName}`
+                                            : undefined
+                                        }
+                                        className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-lg border text-[10px] ${
+                                          sub.codeMismatchWarning
+                                            ? 'bg-rose-50/70 border-rose-300 text-rose-900'
+                                            : sub.isAmbiguous
+                                            ? 'bg-amber-50/70 border-amber-300 text-amber-900'
+                                            : sub.isMatchedFromDatabase
+                                            ? 'bg-emerald-50/50 border-emerald-200 text-slate-800'
+                                            : sub.isPassed
+                                            ? 'bg-slate-50 border-slate-200 text-slate-800'
+                                            : 'bg-rose-50 border-rose-200 text-rose-700 font-bold'
+                                        }`}
+                                      >
+                                        <span className="font-mono font-bold text-blue-700">{sub.subjectCode}</span>
+                                        <span className="font-medium text-slate-700">{sub.subjectName}:</span>
+                                        <span className="font-bold font-outfit text-slate-900">{toBanglaDigits(sub.obtainedMarks)}</span>
+                                        <span className="text-[9px] text-slate-400 font-outfit">/{toBanglaDigits(sub.fullMarks)}</span>
+                                        {sub.isMatchedFromDatabase && (
+                                          <span className="text-[8px] bg-emerald-100 text-emerald-800 font-bold px-1 rounded uppercase">DB</span>
+                                        )}
+                                        {sub.isAmbiguous && (
+                                          <span className="text-[8px] bg-amber-100 text-amber-800 font-bold px-1 rounded uppercase">AMBIG</span>
+                                        )}
+                                        {sub.isCodeInvalid && (
+                                          <span className="text-[8px] bg-rose-100 text-rose-800 font-bold px-1 rounded uppercase">ERR</span>
+                                        )}
+                                      </span>
+                                    );
+                                  })}
+                                </div>
                               </td>
-                              <td className="py-2 px-3 text-center font-bold">{p.letterGrade}</td>
-                              <td className="py-2 px-3 text-center">
+                              <td className="py-2.5 px-3 text-center font-outfit font-semibold text-slate-900">
+                                {toBanglaDigits(p.totalObtainedMarks)} <span className="text-slate-400 font-normal">/{toBanglaDigits(p.totalFullMarks)}</span>
+                              </td>
+                              <td className="py-2.5 px-3 text-center font-bold font-outfit text-blue-600">
+                                {toBanglaNumber(p.gpa, 2)}
+                              </td>
+                              <td className="py-2.5 px-3 text-center font-bold text-slate-800">{p.letterGrade}</td>
+                              <td className="py-2.5 px-3 text-center">
                                 <span
                                   className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                                     p.isPassed ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
@@ -1272,6 +1634,16 @@ export const ResultManagement: React.FC<ResultManagementProps> = ({
                                 >
                                   {p.isPassed ? 'পাস' : 'ফেল'}
                                 </span>
+                              </td>
+                              <td className="py-2.5 px-3 text-center">
+                                <button
+                                  type="button"
+                                  onClick={() => setPreviewResult(p)}
+                                  title="মার্কশিট কার্ড প্রিভিউ দেখুন"
+                                  className="p-1.5 hover:bg-blue-50 text-slate-400 hover:text-blue-600 rounded-lg transition-colors cursor-pointer"
+                                >
+                                  <Eye className="w-4 h-4" />
+                                </button>
                               </td>
                             </tr>
                           ))}
@@ -1408,15 +1780,21 @@ export const ResultManagement: React.FC<ResultManagementProps> = ({
                     </div>
 
                     {detectedExam && (
-                      <div className="p-3 bg-blue-50/60 border border-blue-200/60 rounded-xl text-xs space-y-1 text-slate-700">
+                      <div className="p-3 bg-blue-50/60 border border-blue-200/60 rounded-xl text-xs space-y-1.5 text-slate-700">
                         <div className="flex items-center justify-between">
-                          <span className="text-slate-500">সংযুক্ত পরীক্ষা:</span>
+                          <span className="text-slate-500 font-bold uppercase text-[10px]">সংযুক্ত পরীক্ষা (EXAM):</span>
                           <span className="font-bold text-slate-900">{detectedExam.title}</span>
                         </div>
                         <div className="flex items-center justify-between">
-                          <span className="text-slate-500">বিভাগ ও সেমিস্টার:</span>
+                          <span className="text-slate-500 font-bold uppercase text-[10px]">বিভাগ ও সেমিস্টার:</span>
                           <span className="font-medium">{detectedExam.departmentName} • {SEMESTER_MAP[detectedExam.semesterId]}</span>
                         </div>
+                        {detectedExam.subjects && detectedExam.subjects.length > 0 && (
+                          <div className="flex items-center justify-between pt-1 border-t border-blue-100 text-[11px]">
+                            <span className="text-slate-500 font-bold uppercase text-[10px]">সংযুক্ত বিষয়সমূহ (SUBJECTS):</span>
+                            <span className="font-bold font-outfit text-blue-700">{toBanglaDigits(detectedExam.subjects.length)}টি বিষয়</span>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>

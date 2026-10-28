@@ -16,6 +16,7 @@ import {
   verifyAdminLogin,
   verifyAdminTwoFactor,
 } from '../../services/adminAuth';
+import { DpibBrandTitle } from '../common/DpibBrandTitle';
 
 interface AdminLoginProps {
   onSuccess: (customSession?: { email: string; displayName: string }) => void;
@@ -156,8 +157,8 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onSuccess, onBackToPubli
             <span>{isMfaStep ? 'TWO-STEP VERIFICATION' : 'ADMIN LOGIN ONLY'}</span>
           </div>
 
-          <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight font-outfit">
-            DPIB <span className="text-teal-700">RESULT ZONE</span>
+          <h1 className="text-2xl sm:text-3xl tracking-tight leading-none">
+            <DpibBrandTitle className="text-2xl sm:text-3xl block" />
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 mt-1 font-medium">
             {isMfaStep

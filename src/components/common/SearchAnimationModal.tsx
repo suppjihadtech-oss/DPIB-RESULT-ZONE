@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Search, Database, UserCheck, FileCheck, Sparkles, BookOpen } from 'lucide-react';
 import { toBanglaDigits } from '../../utils/bangla';
+import { DpibBrandTitle } from './DpibBrandTitle';
 
 interface SearchAnimationModalProps {
   isActive: boolean;
@@ -145,7 +146,7 @@ export const SearchAnimationModal: React.FC<SearchAnimationModalProps> = ({
         {/* Portal Name & Status Tag */}
         <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-teal-50/90 border border-teal-200/70 text-[11px] font-bold text-teal-800 font-outfit uppercase tracking-wider mb-3 backdrop-blur-md">
           <BookOpen className="w-3 h-3 text-teal-600" />
-          <span>DPIB RESULT ZONE</span>
+          <DpibBrandTitle className="text-[11px] tracking-wider" />
         </div>
 
         {/* Dynamic Step Text */}

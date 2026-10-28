@@ -15,6 +15,7 @@ import { ModernDatePicker, ModernDateTrigger } from '../../common/ModernDatePick
 import { saveDraft, getDraft, clearDraft, DraftRecord } from '../../../utils/draftStorage';
 import { DraftRestoreBanner } from '../../common/DraftRestoreBanner';
 import { getBanglaDayFromDate } from '../../../utils/banglaDateHelper';
+import { toast } from '../../../context/ToastContext';
 
 type BodyFontSize = 'small' | 'normal' | 'large' | 'xlarge';
 
@@ -114,12 +115,14 @@ export const OfficialNoticeGenerator: React.FC = () => {
 
     setPendingDraft(null);
     setLastSavedTime(pendingDraft.updatedAt);
+    toast.info('খসড়া নোটিশ সফলভাবে পুনরুদ্ধার করা হয়েছে!', 'DRAFT RESTORED');
   };
 
   const handleDiscardDraft = async () => {
     await clearDraft('official_notice');
     setPendingDraft(null);
     setLastSavedTime(null);
+    toast.info('খসড়া নোটিশ মুছে ফেলা হয়েছে।', 'DRAFT DISCARDED');
   };
 
   // Load existing notices

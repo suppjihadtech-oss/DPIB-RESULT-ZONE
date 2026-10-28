@@ -29,6 +29,7 @@ import { NotificationPromptModal } from './components/common/NotificationPromptM
 import { NotificationToast } from './components/common/NotificationToast';
 import { PWAInstallBanner } from './components/common/PWAInstallBanner';
 import { DpibAssistantModal } from './components/common/DpibAssistantModal';
+import { DpibBrandTitle } from './components/common/DpibBrandTitle';
 import { PageTransition } from './components/common/PageTransition';
 import { AnimatePresence } from 'motion/react';
 import { usePushNotification } from './hooks/usePushNotification';
@@ -415,7 +416,7 @@ export function App() {
         <LoadingOverlay
           isVisible={true}
           message="সিস্টেম ও ডেটাবেস প্রস্তুত করা হচ্ছে..."
-          subtext="DPIB RESULT ZONE ক্লাউড সার্ভারের সাথে সংযোগ স্থাপিত হচ্ছে..."
+          subtext={<><DpibBrandTitle className="text-xs inline-block" /> ক্লাউড সার্ভারের সাথে সংযোগ স্থাপিত হচ্ছে...</>}
         />
       </div>
     );

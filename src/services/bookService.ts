@@ -367,6 +367,59 @@ export function subscribeAllBooks(
 }
 
 /**
+ * Asynchronously fetches all books once from Master Curriculum and Firestore collection.
+ * Merges any Firestore overrides or custom books.
+ */
+export async function getAllBooksOnce(departments?: Department[]): Promise<BookItem[]> {
+  const allMasterBooks = getMasterBooksForTechAndSemester('all', 'all', departments);
+  try {
+    const q = query(collection(db, BOOK_COLLECTION));
+    const snapshot = await getDocs(q);
+    const firestoreMap = new Map<string, any>();
+
+    snapshot.forEach((d) => {
+      const data = d.data();
+      firestoreMap.set(d.id, { id: d.id, ...data });
+      if (data.technology && data.semesterId && data.subjectCode) {
+        const compositeKey = `${normalizeTechnologyKey(data.technology, departments)}_${data.semesterId}_${data.subjectCode}`;
+        firestoreMap.set(compositeKey, { id: d.id, ...data });
+      }
+    });
+
+    const merged: BookItem[] = allMasterBooks.map((mb) => {
+      const compositeKey = `${normalizeTechnologyKey(mb.technology, departments)}_${mb.semesterId}_${mb.subjectCode}`;
+      const override = firestoreMap.get(mb.id) || firestoreMap.get(compositeKey);
+      if (override) {
+        return {
+          ...mb,
+          ...override,
+        };
+      }
+      return mb;
+    });
+
+    snapshot.forEach((d) => {
+      const data = d.data() as BookItem;
+      const compositeKey = `${normalizeTechnologyKey(data.technology || '', departments)}_${data.semesterId}_${data.subjectCode}`;
+      const exists = merged.some(
+        (m) => m.id === d.id || `${normalizeTechnologyKey(m.technology, departments)}_${m.semesterId}_${m.subjectCode}` === compositeKey
+      );
+      if (!exists) {
+        merged.push({
+          ...data,
+          id: d.id,
+        });
+      }
+    });
+
+    return merged;
+  } catch (error) {
+    console.warn('Failed to fetch books from Firestore, using master curriculum:', error);
+    return allMasterBooks;
+  }
+}
+
+/**
  * Save or Update a Book Item in Firestore (using merge so it creates or edits).
  * Used when admin sets price, publisher, edition, or details on any book.
  */

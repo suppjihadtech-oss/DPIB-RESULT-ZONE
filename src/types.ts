@@ -29,11 +29,24 @@ export interface Student {
   updatedAt?: number;
 }
 
+export interface AmbiguousMatchInfo {
+  subjectCode: string;
+  subjectName: string;
+  semesterId?: string;
+  technology?: string;
+}
+
 export interface ExamSubject {
   code: string;
   name: string;
+  originalName?: string;
   fullMarks: number;
   passMarks?: number;
+  isMatchedFromDatabase?: boolean;
+  isAmbiguous?: boolean;
+  isCodeInvalid?: boolean;
+  codeMismatchWarning?: string;
+  ambiguousCandidates?: AmbiguousMatchInfo[];
 }
 
 export type ExamType = 'MODEL TEST' | 'MOCK TEST' | 'CLASS TEST' | 'INTERNAL EXAM' | 'OTHER EXAM' | string;
@@ -93,12 +106,18 @@ export interface Exam {
 export interface SubjectResult {
   subjectCode: string;
   subjectName: string;
+  originalSubjectName?: string;
   fullMarks: number;
   obtainedMarks: number;
   grade: string;
   gradePoint: number;
   isPassed: boolean;
   remarks?: string;
+  isMatchedFromDatabase?: boolean;
+  isAmbiguous?: boolean;
+  isCodeInvalid?: boolean;
+  codeMismatchWarning?: string;
+  ambiguousCandidates?: AmbiguousMatchInfo[];
 }
 
 export interface StudentResult {

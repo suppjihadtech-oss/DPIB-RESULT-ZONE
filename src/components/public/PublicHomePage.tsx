@@ -25,6 +25,7 @@ import { Exam, Notice, SystemSettings, AppEvent } from '../../types';
 import { toBanglaDigits, formatBanglaDate } from '../../utils/bangla';
 import { BottomSheet } from '../common/BottomSheet';
 import { EventCountdownCard } from './EventCountdownCard';
+import { DpibBrandTitle } from '../common/DpibBrandTitle';
 
 interface PublicHomePageProps {
   exams: Exam[];
@@ -116,7 +117,7 @@ export const PublicHomePage: React.FC<PublicHomePageProps> = ({
 
           {/* Portal Concept / Introduction */}
           <p className="text-sm sm:text-base text-slate-600 mt-3 sm:mt-4 max-w-2xl mx-auto leading-relaxed font-medium">
-            দক্ষিণবঙ্গ পলিটেকনিক ইনস্টিটিউটের ডিপ্লোমা ইন ইঞ্জিনিয়ারিং শিক্ষার্থীদের পরীক্ষার ফলাফল দ্রুত, নির্ভুল ও স্বচ্ছভাবে অনুসন্ধানের জন্য প্রস্তুতকৃত ডিজিটাল DPIB RESULT ZONE।
+            দক্ষিণবঙ্গ পলিটেকনিক ইনস্টিটিউটের ডিপ্লোমা ইন ইঞ্জিনিয়ারিং শিক্ষার্থীদের পরীক্ষার ফলাফল দ্রুত, নির্ভুল ও স্বচ্ছভাবে অনুসন্ধানের জন্য প্রস্তুতকৃত ডিজিটাল <DpibBrandTitle className="text-sm sm:text-base inline-block" />।
           </p>
 
           {/* ================= TWO PRIMARY ACTION BUTTONS ================= */}

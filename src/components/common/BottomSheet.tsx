@@ -7,7 +7,7 @@ export interface BottomSheetProps {
   isOpen: boolean;
   onClose: () => void;
   title?: string;
-  subtitle?: string;
+  subtitle?: React.ReactNode;
   children: React.ReactNode;
   maxHeight?: string;
   showCloseButton?: boolean;

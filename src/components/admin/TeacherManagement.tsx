@@ -31,6 +31,7 @@ import { Teacher, Department } from '../../types';
 import { getTeachers, saveTeacher, deleteTeacher } from '../../services/db';
 import { SelectBottomSheet, SelectTrigger, SelectOption } from '../common/SelectBottomSheet';
 import { BottomSheet } from '../common/BottomSheet';
+import { toast } from '../../context/ToastContext';
 
 interface TeacherManagementProps {
   departments?: Department[];
@@ -188,12 +189,15 @@ export const TeacherManagement: React.FC<TeacherManagementProps> = ({ department
   const handleSaveTeacher = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) {
-      setStatusMessage({ type: 'error', text: 'অনুগ্রহ করে শিক্ষকের নাম লিখুন।' });
+      const err = 'অনুগ্রহ করে শিক্ষকের নাম লিখুন।';
+      setStatusMessage({ type: 'error', text: err });
+      toast.warning(err, 'VALIDATION ERROR');
       return;
     }
 
     setSaving(true);
     setStatusMessage(null);
+    const toastId = toast.loading('শিক্ষকের তথ্য সংরক্ষণ করা হচ্ছে...', 'SAVING TEACHER');
     try {
       let finalDeptId = departmentId;
       let finalDeptName = '';
@@ -236,11 +240,22 @@ export const TeacherManagement: React.FC<TeacherManagementProps> = ({ department
       };
 
       await saveTeacher(teacherPayload, editingTeacherId || undefined);
+      toast.update(toastId, {
+        type: 'SUCCESS',
+        title: editingTeacherId ? 'TEACHER UPDATED' : 'TEACHER ADDED',
+        message: `শিক্ষক "${name.trim()}"-এর তথ্য সফলভাবে ${editingTeacherId ? 'হালনাগাদ' : 'যুক্ত'} হয়েছে!`,
+      });
       await loadTeacherList();
       setIsFormOpen(false);
     } catch (err) {
       console.error('Error saving teacher:', err);
-      setStatusMessage({ type: 'error', text: 'শিক্ষকের তথ্য সংরক্ষণ করতে ব্যর্থ হয়েছে।' });
+      const errMsg = 'শিক্ষকের তথ্য সংরক্ষণ করতে ব্যর্থ হয়েছে।';
+      setStatusMessage({ type: 'error', text: errMsg });
+      toast.update(toastId, {
+        type: 'ERROR',
+        title: 'SAVE ERROR',
+        message: errMsg,
+      });
     } finally {
       setSaving(false);
     }
@@ -251,12 +266,22 @@ export const TeacherManagement: React.FC<TeacherManagementProps> = ({ department
       return;
     }
 
+    const toastId = toast.loading(`শিক্ষক "${teacherName}" মুছে ফেলা হচ্ছে...`, 'DELETING TEACHER');
     try {
       await deleteTeacher(id);
+      toast.update(toastId, {
+        type: 'SUCCESS',
+        title: 'TEACHER DELETED',
+        message: `শিক্ষক "${teacherName}"-এর তথ্য সফলভাবে মুছে ফেলা হয়েছে!`,
+      });
       await loadTeacherList();
     } catch (err) {
       console.error('Error deleting teacher:', err);
-      alert('শিক্ষক মুছে ফেলতে ব্যর্থ হয়েছে।');
+      toast.update(toastId, {
+        type: 'ERROR',
+        title: 'DELETE ERROR',
+        message: 'শিক্ষক মুছে ফেলতে ব্যর্থ হয়েছে।',
+      });
     }
   };
 

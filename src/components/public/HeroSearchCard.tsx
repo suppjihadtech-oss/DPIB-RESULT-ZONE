@@ -3,6 +3,7 @@ import { Search, BookOpen, Layers, Sparkles, Trophy, Bell, ChevronDown, Check, A
 import { Exam, SemesterId } from '../../types';
 import { SEMESTER_MAP, toBanglaDigits } from '../../utils/bangla';
 import { BottomSheet } from '../common/BottomSheet';
+import { toast } from '../../context/ToastContext';
 
 interface HeroSearchCardProps {
   exams: Exam[];
@@ -39,7 +40,9 @@ export const HeroSearchCard: React.FC<HeroSearchCardProps> = ({
 
     const cleanRoll = roll.trim();
     if (!cleanRoll) {
-      setValidationError('অনুগ্রহ করে সঠিক রোল নম্বর প্রদান করুন।');
+      const err = 'অনুগ্রহ করে সঠিক রোল নম্বর প্রদান করুন।';
+      setValidationError(err);
+      toast.warning(err, 'ROLL REQUIRED');
       return;
     }
 

@@ -1,5 +1,14 @@
 import * as XLSX from 'xlsx';
-import { Exam, ExamSubject, GradingRule, SemesterId, StudentResult, SubjectResult } from '../types';
+import {
+  Exam,
+  ExamSubject,
+  GradingRule,
+  SemesterId,
+  StudentResult,
+  SubjectResult,
+  BookItem,
+  AmbiguousMatchInfo,
+} from '../types';
 import { calculateOverallResult, calculateSubjectGrade, DEFAULT_GRADING_RULES } from './grading';
 import { toEnglishDigits, toBanglaDigits, SEMESTER_MAP } from '../utils/bangla';
 import { MASTER_CURRICULUM_DATA } from '../data/masterCurriculum';
@@ -31,6 +40,19 @@ export interface RawRowData {
   errors: string[];
 }
 
+export interface MatchedDatabaseSubjectInfo {
+  subjectName: string;
+  subjectCode: string;
+  originalName?: string;
+  semesterId?: string;
+  technology?: string;
+}
+
+export interface AmbiguousSubjectWarning {
+  inputName: string;
+  candidates: AmbiguousMatchInfo[];
+}
+
 export interface ValidationReport {
   totalRows: number;
   validRows: number;
@@ -46,110 +68,352 @@ export interface ValidationReport {
   autoCreatedExam?: boolean;
   sheetName?: string;
   fileName?: string;
+  unresolvedBanglaSubjects?: string[];
+  matchedDatabaseSubjects?: MatchedDatabaseSubjectInfo[];
+  ambiguousSubjects?: AmbiguousSubjectWarning[];
+  codeMismatchWarnings?: string[];
+  unmatchedSubjects?: string[];
 }
 
-// Known subject name dictionary for DPIB Model Tests and Semesters
-export const KNOWN_SUBJECTS_MAP: { [key: string]: { code: string; name: string } } = {
-  // Model Test & 2nd Semester subjects
-  'BANGLA-II': { code: 'BANGLA-II', name: 'বাংলা-২ (BANGLA-II)' },
-  'BANGLA_II': { code: 'BANGLA-II', name: 'বাংলা-২ (BANGLA-II)' },
-  'BANGLA-2': { code: 'BANGLA-II', name: 'বাংলা-২ (BANGLA-II)' },
-  'BANGLA2': { code: 'BANGLA-II', name: 'বাংলা-২ (BANGLA-II)' },
-  'BANGLA': { code: 'BANGLA-II', name: 'বাংলা-২ (BANGLA-II)' },
-  'বাংলা-২': { code: 'BANGLA-II', name: 'বাংলা-২ (BANGLA-II)' },
-  'বাংলা ২': { code: 'BANGLA-II', name: 'বাংলা-২ (BANGLA-II)' },
-  'বাংলা': { code: 'BANGLA-II', name: 'বাংলা-২ (BANGLA-II)' },
-  '65722': { code: 'BANGLA-II', name: 'বাংলা-২ (BANGLA-II)' },
-  '65721': { code: 'BANGLA-II', name: 'বাংলা-২ (BANGLA-II)' },
+export function containsBangla(text: string): boolean {
+  return /[\u0980-\u09FF]/.test(text || '');
+}
 
-  'ENGLISH-II': { code: 'ENGLISH-II', name: 'ইংরেজি-২ (ENGLISH-II)' },
-  'ENGLISH_II': { code: 'ENGLISH-II', name: 'ইংরেজি-২ (ENGLISH-II)' },
-  'ENGLISH-2': { code: 'ENGLISH-II', name: 'ইংরেজি-২ (ENGLISH-II)' },
-  'ENGLISH2': { code: 'ENGLISH-II', name: 'ইংরেজি-২ (ENGLISH-II)' },
-  'ENGLISH': { code: 'ENGLISH-II', name: 'ইংরেজি-২ (ENGLISH-II)' },
-  'ইংরেজি-২': { code: 'ENGLISH-II', name: 'ইংরেজি-২ (ENGLISH-II)' },
-  'ইংরেজি ২': { code: 'ENGLISH-II', name: 'ইংরেজি-২ (ENGLISH-II)' },
-  'ইংরেজি': { code: 'ENGLISH-II', name: 'ইংরেজি-২ (ENGLISH-II)' },
+export interface ResolvedSubjectMeta extends ExamSubject {
+  isBanglaResolved: boolean;
+  originalName?: string;
+  isMatchedFromDatabase?: boolean;
+  isAmbiguous?: boolean;
+  isCodeInvalid?: boolean;
+  codeMismatchWarning?: string;
+  ambiguousCandidates?: AmbiguousMatchInfo[];
+  isUnmatched?: boolean;
+}
 
-  'MATH-II': { code: 'MATH-II', name: 'ম্যাথমেটিক্স-২ (MATH-II)' },
-  'MATH_II': { code: 'MATH-II', name: 'ম্যাথমেটিক্স-২ (MATH-II)' },
-  'MATH-2': { code: 'MATH-II', name: 'ম্যাথমেটিক্স-২ (MATH-II)' },
-  'MATH2': { code: 'MATH-II', name: 'ম্যাথমেটিক্স-২ (MATH-II)' },
-  'MATHEMATICS-II': { code: 'MATH-II', name: 'ম্যাথমেটিক্স-২ (MATH-II)' },
-  'MATHEMATICS_II': { code: 'MATH-II', name: 'ম্যাথমেটিক্স-২ (MATH-II)' },
-  'MATHEMATICS-2': { code: 'MATH-II', name: 'ম্যাথমেটিক্স-২ (MATH-II)' },
-  'ম্যাথমেটিক্স-২': { code: 'MATH-II', name: 'ম্যাথমেটিক্স-২ (MATH-II)' },
-  'গণিত-২': { code: 'MATH-II', name: 'ম্যাথমেটিক্স-২ (MATH-II)' },
-  'গণিত ২': { code: 'MATH-II', name: 'ম্যাথমেটিক্স-২ (MATH-II)' },
-  '65921': { code: 'MATH-II', name: 'ম্যাথমেটিক্স-২ (MATH-II)' },
+// Authoritative mapping of English subject names & legacy codes to official BTEB codes and Bengali names
+export const BTEB_ENGLISH_TO_BANGLA_MAP: { [key: string]: { code: string; name: string } } = {
+  // General Foundation Courses
+  'BANGLA-I': { code: '25711', name: 'বাংলা-১' },
+  'BANGLA-1': { code: '25711', name: 'বাংলা-১' },
+  'BANGLA 1': { code: '25711', name: 'বাংলা-১' },
+  'BANGLAI': { code: '25711', name: 'বাংলা-১' },
+  '65711': { code: '25711', name: 'বাংলা-১' },
+  '25711': { code: '25711', name: 'বাংলা-১' },
 
-  'MECHANICAL-ENGINEERING-DRAWING': { code: 'MECHANICAL-ENGINEERING-DRAWING', name: 'মেকানিক্যাল ইঞ্জিনিয়ারিং ড্রয়িং (MED)' },
-  'MECHANICAL_ENGINEERING_DRAWING': { code: 'MECHANICAL-ENGINEERING-DRAWING', name: 'মেকানিক্যাল ইঞ্জিনিয়ারিং ড্রয়িং (MED)' },
-  'MECHANICAL-DRAWING': { code: 'MECHANICAL-ENGINEERING-DRAWING', name: 'মেকানিক্যাল ইঞ্জিনিয়ারিং ড্রয়িং (MED)' },
-  'MED': { code: 'MECHANICAL-ENGINEERING-DRAWING', name: 'মেকানিক্যাল ইঞ্জিনিয়ারিং ড্রয়িং (MED)' },
-  'মেকানিক্যাল ইঞ্জিনিয়ারিং ড্রয়িং': { code: 'MECHANICAL-ENGINEERING-DRAWING', name: 'মেকানিক্যাল ইঞ্জিনিয়ারিং ড্রয়িং (MED)' },
-  'মেকানিক্যাল ড্রয়িং': { code: 'MECHANICAL-ENGINEERING-DRAWING', name: 'মেকানিক্যাল ইঞ্জিনিয়ারিং ড্রয়িং (MED)' },
-  '67021': { code: 'MECHANICAL-ENGINEERING-DRAWING', name: 'মেকানিক্যাল ইঞ্জিনিয়ারিং ড্রয়িং (MED)' },
-  '67011': { code: 'MECHANICAL-ENGINEERING-DRAWING', name: 'মেকানিক্যাল ইঞ্জিনিয়ারিং ড্রয়িং (MED)' },
+  'BANGLA-II': { code: '25721', name: 'বাংলা-২' },
+  'BANGLA-2': { code: '25721', name: 'বাংলা-২' },
+  'BANGLA 2': { code: '25721', name: 'বাংলা-২' },
+  'BANGLAII': { code: '25721', name: 'বাংলা-২' },
+  '65721': { code: '25721', name: 'বাংলা-২' },
+  '65722': { code: '25721', name: 'বাংলা-২' },
+  '25721': { code: '25721', name: 'বাংলা-২' },
 
-  'BASIC-ELECTRICITY': { code: 'BASIC-ELECTRICITY', name: 'বেসিক ইলেকট্রিসিটি (BASIC ELECTRICITY)' },
-  'BASIC_ELECTRICITY': { code: 'BASIC-ELECTRICITY', name: 'বেসিক ইলেকট্রিসিটি (BASIC ELECTRICITY)' },
-  'BASIC ELECTRICITY': { code: 'BASIC-ELECTRICITY', name: 'বেসিক ইলেকট্রিসিটি (BASIC ELECTRICITY)' },
-  'বেসিক ইলেকট্রিসিটি': { code: 'BASIC-ELECTRICITY', name: 'বেসিক ইলেকট্রিসিটি (BASIC ELECTRICITY)' },
-  '66711': { code: 'BASIC-ELECTRICITY', name: 'বেসিক ইলেকট্রিসিটি (BASIC ELECTRICITY)' },
+  'ENGLISH-I': { code: '25712', name: 'ইংরেজি-১' },
+  'ENGLISH-1': { code: '25712', name: 'ইংরেজি-১' },
+  'ENGLISH 1': { code: '25712', name: 'ইংরেজি-১' },
+  'ENGLISHO': { code: '25712', name: 'ইংরেজি-১' },
+  '65712': { code: '25712', name: 'ইংরেজি-১' },
+  '25712': { code: '25712', name: 'ইংরেজি-১' },
 
-  'PHYSICS-II': { code: 'PHYSICS-II', name: 'ফিজিক্স-২ (PHYSICS-II)' },
-  'PHYSICS_II': { code: 'PHYSICS-II', name: 'ফিজিক্স-২ (PHYSICS-II)' },
-  'PHYSICS-2': { code: 'PHYSICS-II', name: 'ফিজিক্স-২ (PHYSICS-II)' },
-  'PHYSICS2': { code: 'PHYSICS-II', name: 'ফিজিক্স-২ (PHYSICS-II)' },
-  'PHYSICS': { code: 'PHYSICS-II', name: 'ফিজিক্স-২ (PHYSICS-II)' },
-  'ফিজিক্স-২': { code: 'PHYSICS-II', name: 'ফিজিক্স-২ (PHYSICS-II)' },
-  'ফিজিক্স ২': { code: 'PHYSICS-II', name: 'ফিজিক্স-২ (PHYSICS-II)' },
-  'পদার্থবিজ্ঞান-২': { code: 'PHYSICS-II', name: 'ফিজিক্স-২ (PHYSICS-II)' },
-  '65922': { code: 'PHYSICS-II', name: 'ফিজিক্স-২ (PHYSICS-II)' },
+  'ENGLISH-II': { code: '25722', name: 'ইংরেজি-২' },
+  'ENGLISH-2': { code: '25722', name: 'ইংরেজি-২' },
+  'ENGLISH 2': { code: '25722', name: 'ইংরেজি-২' },
+  'ENGLISHII': { code: '25722', name: 'ইংরেজি-২' },
+  '65723': { code: '25722', name: 'ইংরেজি-২' },
+  '25722': { code: '25722', name: 'ইংরেজি-২' },
 
-  // 1st Semester subjects
-  'BANGLA-I': { code: 'BANGLA-I', name: 'বাংলা-১ (BANGLA-I)' },
-  'BANGLA-1': { code: 'BANGLA-I', name: 'বাংলা-১ (BANGLA-I)' },
-  'বাংলা-১': { code: 'BANGLA-I', name: 'বাংলা-১ (BANGLA-I)' },
-  '65711': { code: 'BANGLA-I', name: 'বাংলা-১ (BANGLA-I)' },
+  'MATHEMATICS-I': { code: '25911', name: 'গণিত-১' },
+  'MATHEMATICS-1': { code: '25911', name: 'গণিত-১' },
+  'MATH-I': { code: '25911', name: 'গণিত-১' },
+  'MATH-1': { code: '25911', name: 'গণিত-১' },
+  'MATH 1': { code: '25911', name: 'গণিত-১' },
+  '65911': { code: '25911', name: 'গণিত-১' },
+  '25911': { code: '25911', name: 'গণিত-১' },
 
-  'ENGLISH-I': { code: 'ENGLISH-I', name: 'ইংরেজি-১ (ENGLISH-I)' },
-  'ENGLISH-1': { code: 'ENGLISH-I', name: 'ইংরেজি-১ (ENGLISH-I)' },
-  'ইংরেজি-১': { code: 'ENGLISH-I', name: 'ইংরেজি-১ (ENGLISH-I)' },
-  '65712': { code: 'ENGLISH-I', name: 'ইংরেজি-১ (ENGLISH-I)' },
+  'MATHEMATICS-II': { code: '25921', name: 'গণিত-২' },
+  'MATHEMATICS-2': { code: '25921', name: 'গণিত-২' },
+  'MATH-II': { code: '25921', name: 'গণিত-২' },
+  'MATH-2': { code: '25921', name: 'গণিত-২' },
+  'MATH 2': { code: '25921', name: 'গণিত-২' },
+  '65921': { code: '25921', name: 'গণিত-২' },
+  '25921': { code: '25921', name: 'গণিত-২' },
 
-  'MATH-I': { code: 'MATH-I', name: 'ম্যাথমেটিক্স-১ (MATH-I)' },
-  'MATH-1': { code: 'MATH-I', name: 'ম্যাথমেটিক্স-১ (MATH-I)' },
-  'MATHEMATICS-I': { code: 'MATH-I', name: 'ম্যাথমেটিক্স-১ (MATH-I)' },
-  'ম্যাথমেটিক্স-১': { code: 'MATH-I', name: 'ম্যাথমেটিক্স-১ (MATH-I)' },
-  'গণিত-১': { code: 'MATH-I', name: 'ম্যাথমেটিক্স-১ (MATH-I)' },
-  '65911': { code: 'MATH-I', name: 'ম্যাথমেটিক্স-১ (MATH-I)' },
+  'MATHEMATICS-III': { code: '25931', name: 'গণিত-৩' },
+  'MATHEMATICS-3': { code: '25931', name: 'গণিত-৩' },
+  'MATH-III': { code: '25931', name: 'গণিত-৩' },
+  'MATH-3': { code: '25931', name: 'গণিত-৩' },
+  'MATH 3': { code: '25931', name: 'গণিত-৩' },
+  '65931': { code: '25931', name: 'গণিত-৩' },
+  '25931': { code: '25931', name: 'গণিত-৩' },
 
-  'PHYSICS-I': { code: 'PHYSICS-I', name: 'ফিজিক্স-১ (PHYSICS-I)' },
-  'PHYSICS-1': { code: 'PHYSICS-I', name: 'ফিজিক্স-১ (PHYSICS-I)' },
-  'ফিজিক্স-১': { code: 'PHYSICS-I', name: 'ফিজিক্স-১ (PHYSICS-I)' },
-  'পদার্থবিজ্ঞান-১': { code: 'PHYSICS-I', name: 'ফিজিক্স-১ (PHYSICS-I)' },
-  '65912': { code: 'PHYSICS-I', name: 'ফিজিক্স-১ (PHYSICS-I)' },
+  'PHYSICS-I': { code: '25912', name: 'পদার্থবিজ্ঞান-১' },
+  'PHYSICS-1': { code: '25912', name: 'পদার্থবিজ্ঞান-১' },
+  'PHYSICS 1': { code: '25912', name: 'পদার্থবিজ্ঞান-১' },
+  '65912': { code: '25912', name: 'পদার্থবিজ্ঞান-১' },
+  '25912': { code: '25912', name: 'পদার্থবিজ্ঞান-১' },
 
-  'CHEMISTRY': { code: 'CHEMISTRY', name: 'কেমিস্ট্রি (CHEMISTRY)' },
-  'রসায়ন': { code: 'CHEMISTRY', name: 'কেমিস্ট্রি (CHEMISTRY)' },
-  'কেমিস্ট্রি': { code: 'CHEMISTRY', name: 'কেমিস্ট্রি (CHEMISTRY)' },
-  '65913': { code: 'CHEMISTRY', name: 'কেমিস্ট্রি (CHEMISTRY)' },
+  'PHYSICS-II': { code: '25922', name: 'পদার্থবিজ্ঞান-২' },
+  'PHYSICS-2': { code: '25922', name: 'পদার্থবিজ্ঞান-২' },
+  'PHYSICS 2': { code: '25922', name: 'পদার্থবিজ্ঞান-২' },
+  '65922': { code: '25922', name: 'পদার্থবিজ্ঞান-২' },
+  '25922': { code: '25922', name: 'পদার্থবিজ্ঞান-২' },
 
-  'COMPUTER-APPLICATION': { code: 'COMPUTER-APPLICATION', name: 'কম্পিউটার অ্যাপ্লিকেশন (COMPUTER APPLICATION)' },
-  'COMPUTER_APPLICATION': { code: 'COMPUTER-APPLICATION', name: 'কম্পিউটার অ্যাপ্লিকেশন (COMPUTER APPLICATION)' },
-  'কম্পিউটার অ্যাপ্লিকেশন': { code: 'COMPUTER-APPLICATION', name: 'কম্পিউটার অ্যাপ্লিকেশন (COMPUTER APPLICATION)' },
-  '66611': { code: 'COMPUTER-APPLICATION', name: 'কম্পিউটার অ্যাপ্লিকেশন (COMPUTER APPLICATION)' },
+  'CHEMISTRY': { code: '25913', name: 'রসায়ন' },
+  '65913': { code: '25913', name: 'রসায়ন' },
+  '25913': { code: '25913', name: 'রসায়ন' },
 
-  'PROGRAMMING-ESSENTIALS': { code: 'PROGRAMMING-ESSENTIALS', name: 'প্রোগ্রামিং এসেনশিয়ালস (PROGRAMMING ESSENTIALS)' },
-  'প্রোগ্রামিং এসেনশিয়ালস': { code: 'PROGRAMMING-ESSENTIALS', name: 'প্রোগ্রামিং এসেনশিয়ালস (PROGRAMMING ESSENTIALS)' },
-  '66621': { code: 'PROGRAMMING-ESSENTIALS', name: 'প্রোগ্রামিং এসেনশিয়ালস (PROGRAMMING ESSENTIALS)' },
+  'SOCIAL SCIENCE': { code: '25811', name: 'সোশ্যাল সাইন্স' },
+  'SOCIAL-SCIENCE': { code: '25811', name: 'সোশ্যাল সাইন্স' },
+  '65811': { code: '25811', name: 'সোশ্যাল সাইন্স' },
+  '25811': { code: '25811', name: 'সোশ্যাল সাইন্স' },
 
-  'BASIC-ELECTRONICS': { code: 'BASIC-ELECTRONICS', name: 'বেসিক ইলেকট্রনিক্স (BASIC ELECTRONICS)' },
-  'বেসিক ইলেকট্রনিক্স': { code: 'BASIC-ELECTRONICS', name: 'বেসিক ইলেকট্রনিক্স (BASIC ELECTRONICS)' },
-  '66811': { code: 'BASIC-ELECTRONICS', name: 'বেসিক ইলেকট্রনিক্স (BASIC ELECTRONICS)' },
+  'PHYSICAL EDUCATION': { code: '25812', name: 'শারীরিক শিক্ষা ও জীবনদক্ষতা উন্নয়ন' },
+  'PHYSICAL EDUCATION & LIFE SKILL DEVELOPMENT': { code: '25812', name: 'শারীরিক শিক্ষা ও জীবনদক্ষতা উন্নয়ন' },
+  '25812': { code: '25812', name: 'শারীরিক শিক্ষা ও জীবনদক্ষতা উন্নয়ন' },
+
+  'ACCOUNTING': { code: '25841', name: 'একাউন্টিং' },
+  '65841': { code: '25841', name: 'একাউন্টিং' },
+  '25841': { code: '25841', name: 'একাউন্টিং' },
+
+  'BUSINESS COMMUNICATION': { code: '25831', name: 'বিজনেস কমিউনিকেশন' },
+  'BUSINESS-COMMUNICATION': { code: '25831', name: 'বিজনেস কমিউনিকেশন' },
+  '25831': { code: '25831', name: 'বিজনেস কমিউনিকেশন' },
+
+  'INDUSTRIAL MANAGEMENT': { code: '25852', name: 'ইন্ডাস্ট্রিয়াল ম্যানেজমেন্ট' },
+  'INDUSTRIAL-MANAGEMENT': { code: '25852', name: 'ইন্ডাস্ট্রিয়াল ম্যানেজমেন্ট' },
+  '25852': { code: '25852', name: 'ইন্ডাস্ট্রিয়াল ম্যানেজমেন্ট' },
+
+  'INNOVATION & ENTREPRENEURSHIP': { code: '25853', name: 'ইনোভেশন অ্যান্ড এন্টারপ্রেনারশিপ' },
+  'INNOVATION AND ENTREPRENEURSHIP': { code: '25853', name: 'ইনোভেশন অ্যান্ড এন্টারপ্রেনারশিপ' },
+  '25853': { code: '25853', name: 'ইনোভেশন অ্যান্ড এন্টারপ্রেনারশিপ' },
+
+  'PRINCIPLES OF MARKETING': { code: '25851', name: 'প্রিন্সিপালস অফ মার্কেটিং' },
+  '25851': { code: '25851', name: 'প্রিন্সিপালস অফ মার্কেটিং' },
+
+  'ENVIRONMENTAL STUDIES': { code: '29041', name: 'এনভায়রনমেন্টাল স্টাডিজ' },
+  '29041': { code: '29041', name: 'এনভায়রনমেন্টাল স্টাডিজ' },
+
+  'ENGINEERING DRAWING': { code: '21011', name: 'ইঞ্জিনিয়ারিং ড্রয়িং' },
+  'ENGINEERING-DRAWING': { code: '21011', name: 'ইঞ্জিনিয়ারিং ড্রয়িং' },
+  '61011': { code: '21011', name: 'ইঞ্জিনিয়ারিং ড্রয়িং' },
+  '21011': { code: '21011', name: 'ইঞ্জিনিয়ারিং ড্রয়িং' },
+
+  'BASIC ELECTRICITY': { code: '26711', name: 'বেসিক ইলেকট্রিসিটি' },
+  'BASIC-ELECTRICITY': { code: '26711', name: 'বেসিক ইলেকট্রিসিটি' },
+  'BASIC_ELECTRICITY': { code: '26711', name: 'বেসিক ইলেকট্রিসিটি' },
+  '66711': { code: '26711', name: 'বেসিক ইলেকট্রিসিটি' },
+  '26711': { code: '26711', name: 'বেসিক ইলেকট্রিসিটি' },
+
+  'BASIC ELECTRONICS': { code: '26811', name: 'বেসিক ইলেকট্রনিক্স' },
+  'BASIC-ELECTRONICS': { code: '26811', name: 'বেসিক ইলেকট্রনিক্স' },
+  'BASIC_ELECTRONICS': { code: '26811', name: 'বেসিক ইলেকট্রনিক্স' },
+  '66811': { code: '26811', name: 'বেসিক ইলেকট্রনিক্স' },
+  '26811': { code: '26811', name: 'বেসিক ইলেকট্রনিক্স' },
+
+  'BASIC WORKSHOP PRACTICE': { code: '27011', name: 'বেসিক ওয়ার্কশপ প্র্যাকটিস' },
+  '67011': { code: '27011', name: 'বেসিক ওয়ার্কশপ প্র্যাকটিস' },
+  '27011': { code: '27011', name: 'বেসিক ওয়ার্কশপ প্র্যাকটিস' },
+
+  'MECHANICAL ENGINEERING DRAWING': { code: '27021', name: 'মেকানিক্যাল ইঞ্জিনিয়ারিং ড্রয়িং' },
+  'MECHANICAL-ENGINEERING-DRAWING': { code: '27021', name: 'মেকানিক্যাল ইঞ্জিনিয়ারিং ড্রয়িং' },
+  'MECHANICAL_ENGINEERING_DRAWING': { code: '27021', name: 'মেকানিক্যাল ইঞ্জিনিয়ারিং ড্রয়িং' },
+  'MED': { code: '27021', name: 'মেকানিক্যাল ইঞ্জিনিয়ারিং ড্রয়িং' },
+  '67021': { code: '27021', name: 'মেকানিক্যাল ইঞ্জিনিয়ারিং ড্রয়িং' },
+  '27021': { code: '27021', name: 'মেকানিক্যাল ইঞ্জিনিয়ারিং ড্রয়িং' },
+
+  // Computer Technology
+  'COMPUTER OFFICE APPLICATION': { code: '28511', name: 'কম্পিউটার অফিস অ্যাপ্লিকেশন' },
+  'COMPUTER OFFICE APPLICATIONS': { code: '28511', name: 'কম্পিউটার অফিস অ্যাপ্লিকেশন' },
+  'COMPUTER-APPLICATION': { code: '28511', name: 'কম্পিউটার অফিস অ্যাপ্লিকেশন' },
+  '66611': { code: '28511', name: 'কম্পিউটার অফিস অ্যাপ্লিকেশন' },
+  '28511': { code: '28511', name: 'কম্পিউটার অফিস অ্যাপ্লিকেশন' },
+
+  'PYTHON PROGRAMMING': { code: '28521', name: 'পাইথন প্রোগ্রামিং' },
+  '28521': { code: '28521', name: 'পাইথন প্রোগ্রামিং' },
+
+  'APPLICATION DEVELOPMENT USING PYTHON': { code: '28531', name: 'অ্যাপ্লিকেশন ডেভেলপমেন্ট ইউজিং পাইথন' },
+  '28531': { code: '28531', name: 'অ্যাপ্লিকেশন ডেভেলপমেন্ট ইউজিং পাইথন' },
+
+  'COMPUTER GRAPHICS DESIGN-I': { code: '28522', name: 'কম্পিউটার গ্রাফিক্স ডিজাইন-১' },
+  'COMPUTER GRAPHICS DESIGN 1': { code: '28522', name: 'কম্পিউটার গ্রাফিক্স ডিজাইন-১' },
+  '28522': { code: '28522', name: 'কম্পিউটার গ্রাফিক্স ডিজাইন-১' },
+
+  'COMPUTER GRAPHICS DESIGN-II': { code: '28532', name: 'কম্পিউটার গ্রাফিক্স ডিজাইন-২' },
+  'COMPUTER GRAPHICS DESIGN 2': { code: '28532', name: 'কম্পিউটার গ্রাফিক্স ডিজাইন-২' },
+  '28532': { code: '28532', name: 'কম্পিউটার গ্রাফিক্স ডিজাইন-২' },
+
+  'IT SUPPORT SERVICES': { code: '28533', name: 'আইটি সাপোর্ট সার্ভিসেস' },
+  '28533': { code: '28533', name: 'আইটি সাপোর্ট সার্ভিসেস' },
+
+  'DIGITAL ELECTRONICS-I': { code: '26831', name: 'ডিজিটাল ইলেকট্রনিক্স-১' },
+  'DIGITAL ELECTRONICS 1': { code: '26831', name: 'ডিজিটাল ইলেকট্রনিক্স-১' },
+  '26831': { code: '26831', name: 'ডিজিটাল ইলেকট্রনিক্স-১' },
+
+  'DIGITAL ELECTRONICS-II': { code: '26841', name: 'ডিজিটাল ইলেকট্রনিক্স-২' },
+  'DIGITAL ELECTRONICS 2': { code: '26841', name: 'ডিজিটাল ইলেকট্রনিক্স-২' },
+  '26841': { code: '26841', name: 'ডিজিটাল ইলেকট্রনিক্স-২' },
+
+  'JAVA PROGRAMMING': { code: '28541', name: 'জাভা প্রোগ্রামিং' },
+  '66641': { code: '28541', name: 'জাভা প্রোগ্রামিং' },
+  '28541': { code: '28541', name: 'জাভা প্রোগ্রামিং' },
+
+  'DATA STRUCTURE & ALGORITHM': { code: '28542', name: 'ডাটা স্ট্রাকচার অ্যান্ড অ্যালগরিদম' },
+  'DATA STRUCTURE AND ALGORITHM': { code: '28542', name: 'ডাটা স্ট্রাকচার অ্যান্ড অ্যালগরিদম' },
+  'DATA STRUCTURES': { code: '28542', name: 'ডাটা স্ট্রাকচার অ্যান্ড অ্যালগরিদম' },
+  '66642': { code: '28542', name: 'ডাটা স্ট্রাকচার অ্যান্ড অ্যালগরিদম' },
+  '28542': { code: '28542', name: 'ডাটা স্ট্রাকচার অ্যান্ড অ্যালগরিদম' },
+
+  'COMPUTER PERIPHERALS & INTERFACING': { code: '28543', name: 'কম্পিউটার পেরিফেরালস অ্যান্ড ইন্টারফেসিং' },
+  'COMPUTER PERIPHERALS AND INTERFACING': { code: '28543', name: 'কম্পিউটার পেরিফেরালস অ্যান্ড ইন্টারফেসিং' },
+  '28543': { code: '28543', name: 'কম্পিউটার পেরিফেরালস অ্যান্ড ইন্টারফেসিং' },
+
+  'WEB DESIGN & DEVELOPMENT-I': { code: '28544', name: 'ওয়েব ডিজাইন অ্যান্ড ডেভেলপমেন্ট-১' },
+  'WEB DESIGN AND DEVELOPMENT-1': { code: '28544', name: 'ওয়েব ডিজাইন অ্যান্ড ডেভেলপমেন্ট-১' },
+  '28544': { code: '28544', name: 'ওয়েব ডিজাইন অ্যান্ড ডেভেলপমেন্ট-১' },
+
+  'APPLICATION DEVELOPMENT USING JAVA': { code: '28551', name: 'অ্যাপ্লিকেশন ডেভেলপমেন্ট ইউজিং জাভা' },
+  '28551': { code: '28551', name: 'অ্যাপ্লিকেশন ডেভেলপমেন্ট ইউজিং জাভা' },
+
+  'WEB DESIGN & DEVELOPMENT-II': { code: '28552', name: 'ওয়েব ডিজাইন অ্যান্ড ডেভেলপমেন্ট-২' },
+  'WEB DESIGN AND DEVELOPMENT-2': { code: '28552', name: 'ওয়েব ডিজাইন অ্যান্ড ডেভেলপমেন্ট-২' },
+  '28552': { code: '28552', name: 'ওয়েব ডিজাইন অ্যান্ড ডেভেলপমেন্ট-২' },
+
+  'COMPUTER ARCHITECTURE & MICROPROCESSOR': { code: '28553', name: 'কম্পিউটার আর্কিটেকচার অ্যান্ড মাইক্রোপ্রসেসর' },
+  '28553': { code: '28553', name: 'কম্পিউটার আর্কিটেকচার অ্যান্ড মাইক্রোপ্রসেসর' },
+
+  'DATA COMMUNICATION': { code: '28554', name: 'ডাটা কমিউনিকেশন' },
+  '28554': { code: '28554', name: 'ডাটা কমিউনিকেশন' },
+
+  'OPERATING SYSTEM': { code: '28555', name: 'অপারেটিং সিস্টেম' },
+  'OPERATING SYSTEMS': { code: '28555', name: 'অপারেটিং সিস্টেম' },
+  '28555': { code: '28555', name: 'অপারেটিং সিস্টেম' },
+
+  'DATABASE MANAGEMENT SYSTEM': { code: '28561', name: 'ডাটাবেজ ম্যানেজমেন্ট সিস্টেম' },
+  'DBMS': { code: '28561', name: 'ডাটাবেজ ম্যানেজমেন্ট সিস্টেম' },
+  '28561': { code: '28561', name: 'ডাটাবেজ ম্যানেজমেন্ট সিস্টেম' },
+
+  'COMPUTER NETWORKING': { code: '28562', name: 'কম্পিউটার নেটওয়ার্কিং' },
+  '28562': { code: '28562', name: 'কম্পিউটার নেটওয়ার্কিং' },
+
+  'SENSOR & IOT SYSTEM': { code: '28563', name: 'সেন্সর অ্যান্ড আইওটি সিস্টেম' },
+  '28563': { code: '28563', name: 'সেন্সর অ্যান্ড আইওটি সিস্টেম' },
+
+  'NETWORK ADMINISTRATION & SERVICES': { code: '28572', name: 'নেটওয়ার্ক অ্যাডমিনিস্ট্রেশন অ্যান্ড সার্ভিসেস' },
+  '28572': { code: '28572', name: 'নেটওয়ার্ক অ্যাডমিনিস্ট্রেশন অ্যান্ড সার্ভিসেস' },
+
+  'CYBER SECURITY & ETHICS': { code: '28573', name: 'সাইবার সিকিউরিটি অ্যান্ড এথিক্স' },
+  '28573': { code: '28573', name: 'সাইবার সিকিউরিটি অ্যান্ড এথিক্স' },
+
+  // Civil Technology
+  'CIVIL ENGINEERING MATERIALS': { code: '26411', name: 'সিভিল ইঞ্জিনিয়ারিং মেটেরিয়ালস' },
+  '26411': { code: '26411', name: 'সিভিল ইঞ্জিনিয়ারিং মেটেরিয়ালস' },
+
+  'CIVIL ENGINEERING DRAWING': { code: '26421', name: 'সিভিল ইঞ্জিনিয়ারিং ড্রয়িং' },
+  '26421': { code: '26421', name: 'সিভিল ইঞ্জিনিয়ারিং ড্রয়িং' },
+
+  'STRUCTURAL MECHANICS': { code: '26431', name: 'স্ট্রাকচারাল মেকানিক্স' },
+  '26431': { code: '26431', name: 'স্ট্রাকচারাল মেকানিক্স' },
+
+  'SURVEYING-I': { code: '26432', name: 'সার্ভেয়িং-১' },
+  'SURVEYING 1': { code: '26432', name: 'সার্ভেয়িং-১' },
+  '26432': { code: '26432', name: 'সার্ভেয়িং-১' },
+
+  'CONSTRUCTION PROCESS-I': { code: '26433', name: 'কনস্ট্রাকশন প্রসেস-১' },
+  '26433': { code: '26433', name: 'কনস্ট্রাকশন প্রসেস-১' },
+
+  'CONSTRUCTION PROCESS-II': { code: '26441', name: 'কনস্ট্রাকশন প্রসেস-২' },
+  '26441': { code: '26441', name: 'কনস্ট্রাকশন প্রসেস-২' },
+
+  'ESTIMATING & COSTING-I': { code: '26442', name: 'এস্টিমেটিং অ্যান্ড কস্টিং-১' },
+  '26442': { code: '26442', name: 'এস্টিমেটিং অ্যান্ড কস্টিং-১' },
+
+  'CIVIL CAD-I': { code: '26443', name: 'সিভিল ক্যাড-১' },
+  '26443': { code: '26443', name: 'সিভিল ক্যাড-১' },
+
+  'SURVEYING-II': { code: '26444', name: 'সার্ভেয়িং-২' },
+  '26444': { code: '26444', name: 'সার্ভেয়িং-২' },
+
+  'GEOTECHNICAL ENGINEERING': { code: '26445', name: 'জিওটেকনিক্যাল ইঞ্জিনিয়ারিং' },
+  '26445': { code: '26445', name: 'জিওটেকনিক্যাল ইঞ্জিনিয়ারিং' },
+
+  'HYDROLOGY': { code: '26446', name: 'হাইড্রোলজি' },
+  '26446': { code: '26446', name: 'হাইড্রোলজি' },
+
+  'FOUNDATION ENGINEERING': { code: '26451', name: 'ফাউন্ডেশন ইঞ্জিনিয়ারিং' },
+  '26451': { code: '26451', name: 'ফাউন্ডেশন ইঞ্জিনিয়ারিং' },
+
+  'CIVIL CAD-II': { code: '26452', name: 'সিভিল ক্যাড-২' },
+  '26452': { code: '26452', name: 'সিভিল ক্যাড-২' },
+
+  'SURVEYING-III': { code: '26453', name: 'সার্ভেয়িং-৩' },
+  '26453': { code: '26453', name: 'সার্ভেয়িং-৩' },
+
+  'THEORY OF STRUCTURE': { code: '26454', name: 'থিওরি অফ স্ট্রাকচার' },
+  '26454': { code: '26454', name: 'থিওরি অফ স্ট্রাকচার' },
+
+  'WATER SUPPLY ENGINEERING': { code: '26455', name: 'ওয়াটার সাপ্লাই ইঞ্জিনিয়ারিং' },
+  '26455': { code: '26455', name: 'ওয়াটার সাপ্লাই ইঞ্জিনিয়ারিং' },
+
+  'HYDRAULICS': { code: '26456', name: 'হাইড্রোলিক্স' },
+  '26456': { code: '26456', name: 'হাইড্রোলিক্স' },
+
+  // Electrical Technology
+  'ELECTRICAL CIRCUITS-I': { code: '26721', name: 'ইলেকট্রিক্যাল সার্কিট-১' },
+  'ELECTRICAL CIRCUITS 1': { code: '26721', name: 'ইলেকট্রিক্যাল সার্কিট-১' },
+  '26721': { code: '26721', name: 'ইলেকট্রিক্যাল সার্কিট-১' },
+
+  'ELECTRICAL CIRCUITS-II': { code: '26731', name: 'ইলেকট্রিক্যাল সার্কিট-২' },
+  'ELECTRICAL CIRCUITS 2': { code: '26731', name: 'ইলেকট্রিক্যাল সার্কিট-২' },
+  '26731': { code: '26731', name: 'ইলেকট্রিক্যাল সার্কিট-২' },
+
+  'ELECTRICAL APPLIANCES': { code: '26732', name: 'ইলেকট্রিক্যাল অ্যাপ্লায়েন্সেস' },
+  '26732': { code: '26732', name: 'ইলেকট্রিক্যাল অ্যাপ্লায়েন্সেস' },
+
+  'DC MACHINE': { code: '26742', name: 'ডি সি মেশিন' },
+  '26742': { code: '26742', name: 'ডি সি মেশিন' },
+
+  'AC MACHINE-I': { code: '26761', name: 'এসি মেশিন-১' },
+  '26761': { code: '26761', name: 'এসি মেশিন-১' },
+
+  'AC MACHINE-II': { code: '26771', name: 'এসি মেশিন-২' },
+  '26771': { code: '26771', name: 'এসি মেশিন-২' },
+
+  'SWITCH GEAR & PROTECTION': { code: '26773', name: 'সুইচ গিয়ার অ্যান্ড প্রোটেকশন' },
+  '26773': { code: '26773', name: 'সুইচ গিয়ার অ্যান্ড প্রোটেকশন' },
+
+  // Mechanical Technology
+  'MACHINE SHOP PRACTICE-I': { code: '27012', name: 'মেশিন শপ প্র্যাকটিস-১' },
+  '27012': { code: '27012', name: 'মেশিন শপ প্র্যাকটিস-১' },
+
+  'MACHINE SHOP PRACTICE-II': { code: '27032', name: 'মেশিন শপ প্র্যাকটিস-২' },
+  '27032': { code: '27032', name: 'মেশিন শপ প্র্যাকটিস-২' },
+
+  'MACHINE SHOP PRACTICE-III': { code: '27042', name: 'মেশিন শপ প্র্যাকটিস-৩' },
+  '27042': { code: '27042', name: 'মেশিন শপ প্র্যাকটিস-৩' },
+
+  'ENGINEERING MECHANICS': { code: '27041', name: 'ইঞ্জিনিয়ারিং মেকানিক্স' },
+  '27041': { code: '27041', name: 'ইঞ্জিনিয়ারিং মেকানিক্স' },
+
+  'ENGINEERING THERMODYNAMICS': { code: '27131', name: 'ইঞ্জিনিয়ারিং থার্মোডায়নামিক্স' },
+  '27131': { code: '27131', name: 'ইঞ্জিনিয়ারিং থার্মোডায়নামিক্স' },
+
+  'METALLURGY': { code: '27043', name: 'মেটালার্জি' },
+  '27043': { code: '27043', name: 'মেটালার্জি' },
+
+  'FLUID MECHANICS & MACHINERIES': { code: '27051', name: 'ফ্লুইড মেকানিক্স অ্যান্ড মেশিনারিজ' },
+  '27051': { code: '27051', name: 'ফ্লুইড মেকানিক্স অ্যান্ড মেশিনারিজ' },
+
+  'STRENGTH OF MATERIALS': { code: '27061', name: 'স্ট্রেন্থ অফ মেটেরিয়ালস' },
+  '27061': { code: '27061', name: 'স্ট্রেন্থ অফ মেটেরিয়ালস' },
+
+  'CAD & CAM': { code: '27063', name: 'ক্যাড অ্যান্ড ক্যাম' },
+  '27063': { code: '27063', name: 'ক্যাড অ্যান্ড ক্যাম' },
+
+  'DESIGN OF MACHINE ELEMENTS': { code: '27071', name: 'ডিজাইন অফ মেশিন এলিমেন্টস' },
+  '27071': { code: '27071', name: 'ডিজাইন অফ মেশিন এলিমেন্টস' },
 };
+
+export const KNOWN_SUBJECTS_MAP: { [key: string]: { code: string; name: string } } = BTEB_ENGLISH_TO_BANGLA_MAP;
 
 const RESERVED_STUDENT_KEYS = new Set([
   'roll',
@@ -200,7 +464,6 @@ const RESERVED_STUDENT_KEYS = new Set([
 
 /**
  * Normalizes a subject key into a canonical alphanumeric string for comparison.
- * e.g., 'BANGLA-II', 'BANGLA_2', 'বাংলা-২', 'Bangla 2' -> canonical forms
  */
 export function normalizeSubjectKey(raw: string): string {
   if (!raw) return '';
@@ -234,153 +497,372 @@ export function normalizeSubjectKey(raw: string): string {
     .replace(/[^A-Z0-9\u0980-\u09FF]/g, '');
 }
 
+export interface SearchableBookItem {
+  subjectCode: string;
+  subjectName: string;
+  technology?: string;
+  semesterId?: string;
+  fullMarks?: number;
+  normalizedBangla: string;
+  normalizedAliases: string[];
+}
+
 /**
- * Dynamically resolves subject metadata (code, name, fullMarks) by matching
- * against available exam subjects, known subjects map, or clean fallback.
+ * Text normalizer for intelligent case-insensitive, punctuation-insensitive,
+ * digit-normalized, and Roman numeral-normalized matching.
+ */
+export function normalizeSubjectText(input: string): string {
+  if (!input) return '';
+  let str = String(input).toLowerCase();
+
+  // Convert Bengali numbers to English digits
+  str = toEnglishDigits(str);
+
+  // Roman numerals conversion with word boundary protection
+  str = str
+    .replace(/\bviii\b/g, '8')
+    .replace(/\bvii\b/g, '7')
+    .replace(/\bvi\b/g, '6')
+    .replace(/\biv\b/g, '4')
+    .replace(/\bv\b/g, '5')
+    .replace(/\biii\b/g, '3')
+    .replace(/\bii\b/g, '2')
+    .replace(/\bi\b/g, '1')
+    .replace(/[-_]viii\b/g, ' 8')
+    .replace(/[-_]vii\b/g, ' 7')
+    .replace(/[-_]vi\b/g, ' 6')
+    .replace(/[-_]iv\b/g, ' 4')
+    .replace(/[-_]v\b/g, ' 5')
+    .replace(/[-_]iii\b/g, ' 3')
+    .replace(/[-_]ii\b/g, ' 2')
+    .replace(/[-_]i\b/g, ' 1');
+
+  // Replace punctuation, dashes, underscores, slashes, brackets with spaces
+  str = str.replace(/[_\-\/\\.,;:()[\]{}"'`~!?*+#&^%$@|]/g, ' ');
+
+  // Collapse multiple whitespaces
+  return str.replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Builds a unified search pool of actual database books across all 8 semesters & technologies.
+ * Combines Firestore books, Master Curriculum, and any exam subjects.
+ */
+export function buildSearchableBookPool(
+  availableBooks?: BookItem[],
+  examSubjects?: ExamSubject[]
+): SearchableBookItem[] {
+  const pool: SearchableBookItem[] = [];
+
+  const addBook = (
+    code: string,
+    name: string,
+    tech?: string,
+    semId?: string,
+    fullMarks?: number
+  ) => {
+    const cleanCode = toEnglishDigits(code || '').trim();
+    if (!cleanCode) return;
+
+    // Collect English aliases from BTEB_ENGLISH_TO_BANGLA_MAP
+    const aliases: string[] = [];
+    Object.entries(BTEB_ENGLISH_TO_BANGLA_MAP).forEach(([enKey, info]) => {
+      if (info.code === cleanCode) {
+        aliases.push(normalizeSubjectText(enKey));
+      }
+    });
+
+    pool.push({
+      subjectCode: cleanCode,
+      subjectName: name,
+      technology: tech ? tech.toUpperCase() : undefined,
+      semesterId: semId ? String(semId).trim() : undefined,
+      fullMarks: fullMarks || 100,
+      normalizedBangla: normalizeSubjectText(name),
+      normalizedAliases: Array.from(new Set(aliases)),
+    });
+  };
+
+  // 1. From availableBooks (Firestore books collection + live admin books)
+  if (Array.isArray(availableBooks) && availableBooks.length > 0) {
+    availableBooks.forEach((b) => {
+      addBook(b.subjectCode, b.subjectName, b.technology, b.semesterId, b.credit ? b.credit * 50 : 100);
+    });
+  }
+
+  // 2. From MASTER_CURRICULUM_DATA (313 BTEB Syllabus Subjects across all 8 semesters & 6 technologies)
+  MASTER_CURRICULUM_DATA.forEach((s) => {
+    const cleanCode = toEnglishDigits(s.subjectCode).trim();
+    const already = pool.some(
+      (p) =>
+        p.subjectCode === cleanCode &&
+        p.technology === s.technology.toUpperCase() &&
+        p.semesterId === String(s.semesterId)
+    );
+    if (!already) {
+      addBook(s.subjectCode, s.subjectName, s.technology, s.semesterId, s.curriculumFullMarks || 100);
+    }
+  });
+
+  // 3. From examSubjects (if provided)
+  if (Array.isArray(examSubjects) && examSubjects.length > 0) {
+    examSubjects.forEach((es) => {
+      const cleanCode = toEnglishDigits(es.code).trim();
+      const already = pool.some((p) => p.subjectCode === cleanCode);
+      if (!already) {
+        addBook(es.code, es.name, undefined, undefined, es.fullMarks || 100);
+      }
+    });
+  }
+
+  return pool;
+}
+
+/**
+ * Authoritatively resolves subject metadata:
+ * - When Subject Code is missing: intelligently matches against database books across all semesters,
+ *   prioritizing current exam's semester & technology, detects ambiguity without guessing, and falls back cleanly.
+ * - When Subject Code is provided: validates against database curriculum; if code and subject name conflict,
+ *   warns admin instead of silently modifying.
  */
 export function resolveSubjectMeta(
   rawCodeOrName: string,
   explicitFullMarks?: number,
-  examSubjects?: ExamSubject[]
-): ExamSubject {
-  const trimmed = String(rawCodeOrName || '').trim();
-  if (!trimmed) {
-    return { code: 'SUB', name: 'বিষয়', fullMarks: explicitFullMarks || 100 };
-  }
+  examSubjects?: ExamSubject[],
+  explicitSubjectCode?: string,
+  explicitSubjectName?: string,
+  technologyContext?: string,
+  semesterContext?: SemesterId,
+  availableBooks?: BookItem[]
+): ResolvedSubjectMeta {
+  const trimmedRaw = String(rawCodeOrName || '').trim();
+  const trimmedCode = String(explicitSubjectCode || '').trim();
+  const trimmedName = String(explicitSubjectName || '').trim();
 
-  const normalizedUpper = trimmed.toUpperCase();
-  const normalizedKey = normalizedUpper.replace(/\s+/g, '_');
-  const dashKey = normalizedUpper.replace(/\s+/g, '-');
-  const canonKey = normalizeSubjectKey(trimmed);
+  const originalCandidate = trimmedName || (trimmedCode && trimmedCode !== trimmedRaw ? trimmedRaw : '') || trimmedRaw;
+  const pool = buildSearchableBookPool(availableBooks, examSubjects);
 
-  // 1. Check against Exam Subjects configuration first if provided
-  if (Array.isArray(examSubjects) && examSubjects.length > 0) {
-    // Exact code match
-    const exactCode = examSubjects.find((s) => s.code.trim().toUpperCase() === normalizedUpper);
-    if (exactCode) {
-      const examF = Number(exactCode.fullMarks) || Number((exactCode as any).f);
+  const cleanContextTech = technologyContext ? technologyContext.toLowerCase().replace(/[^a-z0-9]/g, '') : '';
+  const cleanContextSem = semesterContext ? String(semesterContext).trim() : '';
+
+  // Determine explicit 5-digit code or explicitSubjectCode
+  const rawCleanCode = toEnglishDigits(trimmedCode || (/^\d{5}$/.test(trimmedRaw) ? trimmedRaw : ''));
+
+  // =========================================================================
+  // CASE 1: SUBJECT CODE IS PROVIDED (Validate code, check for name mismatch)
+  // =========================================================================
+  if (rawCleanCode) {
+    const codeMatches = pool.filter((b) => b.subjectCode === rawCleanCode);
+
+    if (codeMatches.length > 0) {
+      // Prioritize contextual technology and semester if multiple records share this code
+      let selectedBook = codeMatches[0];
+      if (cleanContextTech || cleanContextSem) {
+        const contextualMatch =
+          codeMatches.find((b) => {
+            const matchTech = cleanContextTech && b.technology ? cleanContextTech.includes(b.technology.toLowerCase()) : false;
+            const matchSem = cleanContextSem && b.semesterId ? b.semesterId === cleanContextSem : false;
+            return matchTech && matchSem;
+          }) ||
+          codeMatches.find((b) => cleanContextSem && b.semesterId ? b.semesterId === cleanContextSem : false) ||
+          codeMatches.find((b) => cleanContextTech && b.technology ? cleanContextTech.includes(b.technology.toLowerCase()) : false);
+
+        if (contextualMatch) selectedBook = contextualMatch;
+      }
+
+      // Check for code and subject name discrepancy
+      let codeMismatchWarning: string | undefined;
+      const testName = trimmedName || (trimmedCode && trimmedCode !== trimmedRaw ? trimmedRaw : '');
+      if (testName && !/^\d{5}$/.test(testName)) {
+        const normTest = normalizeSubjectText(testName);
+        const canonTest = normalizeSubjectKey(testName);
+        const nameMatchesOfficial =
+          normTest === selectedBook.normalizedBangla ||
+          selectedBook.normalizedAliases.includes(normTest) ||
+          canonTest === normalizeSubjectKey(selectedBook.subjectName) ||
+          (normTest.length >= 4 &&
+            (selectedBook.normalizedBangla.includes(normTest) || normTest.includes(selectedBook.normalizedBangla)));
+
+        if (!nameMatchesOfficial) {
+          codeMismatchWarning = `সতর্কতা: বিষয় কোড ${rawCleanCode}-এর অফিশিয়াল নাম '${selectedBook.subjectName}', কিন্তু JSON-এ '${testName}' দেওয়া হয়েছে!`;
+        }
+      }
+
       return {
-        code: exactCode.code,
-        name: exactCode.name,
-        fullMarks: explicitFullMarks || examF || 0,
+        code: selectedBook.subjectCode,
+        name: selectedBook.subjectName, // Official BTEB Bengali Name
+        originalName: originalCandidate,
+        isBanglaResolved: true,
+        fullMarks: explicitFullMarks || selectedBook.fullMarks || 100,
+        codeMismatchWarning,
+      };
+    } else {
+      // Code was provided, but NOT found in database
+      return {
+        code: rawCleanCode,
+        name: trimmedName || trimmedRaw,
+        originalName: originalCandidate,
+        isBanglaResolved: containsBangla(trimmedName || trimmedRaw),
+        fullMarks: explicitFullMarks || 100,
+        isCodeInvalid: true,
+        codeMismatchWarning: `সতর্কতা: বিষয় কোড '${rawCleanCode}' ডেটাবেজের পাঠ্যক্রমে পাওয়া যায়নি (INVALID CODE)`,
       };
     }
-
-    // Exact name match
-    const exactName = examSubjects.find((s) => s.name.trim().toUpperCase() === normalizedUpper);
-    if (exactName) {
-      const examF = Number(exactName.fullMarks) || Number((exactName as any).f);
-      return {
-        code: exactName.code,
-        name: exactName.name,
-        fullMarks: explicitFullMarks || examF || 0,
-      };
-    }
-
-    // Canonical normalized key match
-    const canonMatch = examSubjects.find((s) => {
-      const sCodeNorm = normalizeSubjectKey(s.code);
-      const sNameNorm = normalizeSubjectKey(s.name);
-      return (
-        sCodeNorm === canonKey ||
-        sNameNorm === canonKey ||
-        (canonKey.length >= 3 && (sCodeNorm.includes(canonKey) || sNameNorm.includes(canonKey)))
-      );
-    });
-    if (canonMatch) {
-      const examF = Number(canonMatch.fullMarks) || Number((canonMatch as any).f);
-      return {
-        code: canonMatch.code,
-        name: canonMatch.name,
-        fullMarks: explicitFullMarks || examF || 0,
-      };
-    }
-
-    // Substring / inclusion match
-    const subMatch = examSubjects.find(
-      (s) =>
-        s.code.toUpperCase().includes(normalizedUpper) ||
-        normalizedUpper.includes(s.code.toUpperCase()) ||
-        s.name.toUpperCase().includes(normalizedUpper) ||
-        normalizedUpper.includes(s.name.toUpperCase())
-    );
-    if (subMatch) {
-      const examF = Number(subMatch.fullMarks) || Number((subMatch as any).f);
-      return {
-        code: subMatch.code,
-        name: subMatch.name,
-        fullMarks: explicitFullMarks || examF || 0,
-      };
-    }
   }
 
-  // 2. Check KNOWN_SUBJECTS_MAP dictionary
-  if (KNOWN_SUBJECTS_MAP[trimmed]) {
-    const info = KNOWN_SUBJECTS_MAP[trimmed];
-    return { code: info.code, name: info.name, fullMarks: explicitFullMarks || 0 };
-  }
-  if (KNOWN_SUBJECTS_MAP[normalizedUpper]) {
-    const info = KNOWN_SUBJECTS_MAP[normalizedUpper];
-    return { code: info.code, name: info.name, fullMarks: explicitFullMarks || 0 };
-  }
-  if (KNOWN_SUBJECTS_MAP[normalizedKey]) {
-    const info = KNOWN_SUBJECTS_MAP[normalizedKey];
-    return { code: info.code, name: info.name, fullMarks: explicitFullMarks || 0 };
-  }
-  if (KNOWN_SUBJECTS_MAP[dashKey]) {
-    const info = KNOWN_SUBJECTS_MAP[dashKey];
-    return { code: info.code, name: info.name, fullMarks: explicitFullMarks || 0 };
-  }
+  // =========================================================================
+  // CASE 2: SUBJECT CODE IS MISSING (Automatic Database Matching)
+  // =========================================================================
+  const searchQuery = trimmedName || trimmedRaw;
+  const normSearch = normalizeSubjectText(searchQuery);
+  const canonSearch = normalizeSubjectKey(searchQuery);
 
-  // Canonical dictionary lookup
-  for (const [k, info] of Object.entries(KNOWN_SUBJECTS_MAP)) {
-    if (normalizeSubjectKey(k) === canonKey) {
-      return { code: info.code, name: info.name, fullMarks: explicitFullMarks || 0 };
-    }
-  }
-
-  // Check prefix or partial match in known subjects
-  for (const [k, info] of Object.entries(KNOWN_SUBJECTS_MAP)) {
-    if (normalizedUpper === k.toUpperCase() || normalizedUpper.startsWith(k.toUpperCase() + '_')) {
-      return { code: info.code, name: info.name, fullMarks: explicitFullMarks || 0 };
-    }
-  }
-
-  // 3. Check against MASTER_CURRICULUM_DATA (313 subjects from official PDF)
-  // Match by exact subjectCode
-  const masterCodeMatch = MASTER_CURRICULUM_DATA.find((s) => s.subjectCode.toUpperCase() === normalizedUpper);
-  if (masterCodeMatch) {
+  if (!normSearch && !canonSearch) {
     return {
-      code: masterCodeMatch.subjectCode,
-      name: masterCodeMatch.subjectName,
-      fullMarks: explicitFullMarks || Number(masterCodeMatch.curriculumFullMarks) || 0,
+      code: 'N/A',
+      name: originalCandidate,
+      originalName: originalCandidate,
+      isBanglaResolved: false,
+      fullMarks: explicitFullMarks || 100,
+      isUnmatched: true,
     };
   }
 
-  // Match by canonical subject name
-  const masterNameMatch = MASTER_CURRICULUM_DATA.find((s) => {
-    const norm = normalizeSubjectKey(s.subjectName);
-    return norm === canonKey || (canonKey.length >= 3 && norm.includes(canonKey));
+  // Score each book in the database
+  interface ScoredCandidate {
+    book: SearchableBookItem;
+    nameScore: number;
+    totalScore: number;
+  }
+
+  const scoredList: ScoredCandidate[] = [];
+
+  pool.forEach((b) => {
+    let nameScore = 0;
+
+    // 1. Exact match with Bengali name or English aliases
+    if (
+      normSearch === b.normalizedBangla ||
+      b.normalizedAliases.includes(normSearch) ||
+      canonSearch === normalizeSubjectKey(b.subjectName)
+    ) {
+      nameScore = 100;
+    } else if (
+      b.normalizedAliases.some((a) => normalizeSubjectKey(a) === canonSearch)
+    ) {
+      nameScore = 100;
+    }
+    // 2. Starts-with or ends-with match
+    else if (
+      normSearch.length >= 3 &&
+      (b.normalizedBangla.startsWith(normSearch) || b.normalizedAliases.some((a) => a.startsWith(normSearch)))
+    ) {
+      nameScore = 80;
+    }
+    // 3. Word-token inclusion match
+    else if (normSearch.length >= 4) {
+      const searchTokens = normSearch.split(' ').filter((t) => t.length >= 2);
+      const banglaTokens = b.normalizedBangla.split(' ');
+      const allTokensInBangla =
+        searchTokens.length > 0 &&
+        searchTokens.every((st) => banglaTokens.some((bt) => bt.includes(st) || st.includes(bt)));
+
+      const aliasTokensMatch = b.normalizedAliases.some((alias) => {
+        const at = alias.split(' ');
+        return searchTokens.every((st) => at.some((att) => att.includes(st) || st.includes(att)));
+      });
+
+      if (allTokensInBangla || aliasTokensMatch) {
+        nameScore = 75;
+      } else if (b.normalizedBangla.includes(normSearch) || b.normalizedAliases.some((a) => a.includes(normSearch))) {
+        nameScore = 65;
+      }
+    }
+
+    if (nameScore >= 60) {
+      let contextBoost = 0;
+      // Boost for matching semester
+      if (cleanContextSem && b.semesterId === cleanContextSem) {
+        contextBoost += 35;
+      }
+      // Boost for matching technology
+      if (cleanContextTech && b.technology && cleanContextTech.includes(b.technology.toLowerCase())) {
+        contextBoost += 25;
+      }
+
+      scoredList.push({
+        book: b,
+        nameScore,
+        totalScore: nameScore + contextBoost,
+      });
+    }
   });
-  if (masterNameMatch) {
+
+  // Group by distinct subjectCode to avoid penalizing common subjects
+  const codeScores = new Map<string, { maxTotal: number; maxName: number; book: SearchableBookItem }>();
+  scoredList.forEach((item) => {
+    const existing = codeScores.get(item.book.subjectCode);
+    if (!existing || item.totalScore > existing.maxTotal) {
+      codeScores.set(item.book.subjectCode, {
+        maxTotal: item.totalScore,
+        maxName: item.nameScore,
+        book: item.book,
+      });
+    }
+  });
+
+  const sortedDistinctCodes = Array.from(codeScores.values()).sort(
+    (a, b) => b.maxTotal - a.maxTotal || b.maxName - a.maxName
+  );
+
+  if (sortedDistinctCodes.length === 0) {
+    // No match found in database
     return {
-      code: masterNameMatch.subjectCode,
-      name: masterNameMatch.subjectName,
-      fullMarks: explicitFullMarks || Number(masterNameMatch.curriculumFullMarks) || 0,
+      code: 'N/A',
+      name: originalCandidate,
+      originalName: originalCandidate,
+      isBanglaResolved: containsBangla(originalCandidate),
+      fullMarks: explicitFullMarks || 100,
+      isUnmatched: true,
     };
   }
 
-  // 4. Fallback clean metadata
-  let cleanName = trimmed;
-  if (cleanName.includes('_')) {
-    const parts = cleanName.split('_');
-    cleanName = parts.slice(1).join(' ').trim() || parts[0].trim();
+  const topMatch = sortedDistinctCodes[0];
+  const secondMatch = sortedDistinctCodes[1];
+
+  // Ambiguity check: if multiple distinct subject codes tied or have negligible difference (<15)
+  // and no contextual semester/technology resolved them
+  if (
+    secondMatch &&
+    secondMatch.maxName >= 70 &&
+    (topMatch.maxTotal - secondMatch.maxTotal) < 15
+  ) {
+    const candidates: AmbiguousMatchInfo[] = sortedDistinctCodes.slice(0, 4).map((c) => ({
+      subjectCode: c.book.subjectCode,
+      subjectName: c.book.subjectName,
+      semesterId: c.book.semesterId,
+      technology: c.book.technology,
+    }));
+
+    return {
+      code: 'N/A (অস্পষ্ট)',
+      name: originalCandidate,
+      originalName: originalCandidate,
+      isBanglaResolved: false,
+      fullMarks: explicitFullMarks || 100,
+      isAmbiguous: true,
+      ambiguousCandidates: candidates,
+    };
   }
 
+  // Clear single best match!
   return {
-    code: trimmed,
-    name: cleanName || trimmed,
-    fullMarks: explicitFullMarks || 0,
+    code: topMatch.book.subjectCode,
+    name: topMatch.book.subjectName,
+    originalName: originalCandidate,
+    isBanglaResolved: true,
+    isMatchedFromDatabase: true,
+    fullMarks: explicitFullMarks || topMatch.book.fullMarks || 100,
   };
 }
 
@@ -484,12 +966,14 @@ export function generateSampleJson(exam?: Exam | null): string {
           name: 'মোঃ আরিয়ান আহমেদ',
           studentId: 'DPIB-2026-001',
           registration: '1502345678',
-          'BANGLA-II': { marks: 38, fullMarks: 45 },
-          'ENGLISH-II': { marks: 40, fullMarks: 45 },
-          'MATH-II': { marks: 42, fullMarks: 45 },
-          'MECHANICAL-ENGINEERING-DRAWING': { marks: 35, fullMarks: 45 },
-          'BASIC-ELECTRICITY': { marks: 41, fullMarks: 45 },
-          'PHYSICS-II': { marks: 39, fullMarks: 45 },
+          subjects: [
+            { subjectCode: '25721', subjectName: 'Bangla-II', marks: 38, fullMarks: 45 },
+            { subjectCode: '25722', subjectName: 'English-II', marks: 40, fullMarks: 45 },
+            { subjectCode: '25921', subjectName: 'Mathematics-II', marks: 42, fullMarks: 45 },
+            { subjectCode: '27021', subjectName: 'Mechanical Engineering Drawing', marks: 35, fullMarks: 45 },
+            { subjectCode: '26711', subjectName: 'Basic Electricity', marks: 41, fullMarks: 45 },
+            { subjectCode: '25922', subjectName: 'Physics-II', marks: 39, fullMarks: 45 }
+          ]
         },
         {
           examTitle: '২য় পর্ব মডেল টেস্ট ২০২৬',
@@ -499,12 +983,14 @@ export function generateSampleJson(exam?: Exam | null): string {
           name: 'সাদিয়া সুলতানা',
           studentId: 'DPIB-2026-002',
           registration: '1502345679',
-          'BANGLA-II': { marks: 36, fullMarks: 45 },
-          'ENGLISH-II': { marks: 39, fullMarks: 45 },
-          'MATH-II': { marks: 44, fullMarks: 45 },
-          'MECHANICAL-ENGINEERING-DRAWING': { marks: 38, fullMarks: 45 },
-          'BASIC-ELECTRICITY': { marks: 40, fullMarks: 45 },
-          'PHYSICS-II': { marks: 42, fullMarks: 45 },
+          subjects: [
+            { subjectCode: '25721', subjectName: 'Bangla-II', marks: 36, fullMarks: 45 },
+            { subjectCode: '25722', subjectName: 'English-II', marks: 39, fullMarks: 45 },
+            { subjectCode: '25921', subjectName: 'Mathematics-II', marks: 44, fullMarks: 45 },
+            { subjectCode: '27021', subjectName: 'Mechanical Engineering Drawing', marks: 38, fullMarks: 45 },
+            { subjectCode: '26711', subjectName: 'Basic Electricity', marks: 40, fullMarks: 45 },
+            { subjectCode: '25922', subjectName: 'Physics-II', marks: 42, fullMarks: 45 }
+          ]
         },
         {
           examTitle: '২য় পর্ব মডেল টেস্ট ২০২৬',
@@ -514,12 +1000,14 @@ export function generateSampleJson(exam?: Exam | null): string {
           name: 'তানভীর হোসেন',
           studentId: 'DPIB-2026-003',
           registration: '1502345680',
-          'BANGLA-II': { marks: 39, fullMarks: 45 },
-          'ENGLISH-II': { marks: 37, fullMarks: 45 },
-          'MATH-II': { marks: 40, fullMarks: 45 },
-          'MECHANICAL-ENGINEERING-DRAWING': { marks: 36, fullMarks: 45 },
-          'BASIC-ELECTRICITY': { marks: 43, fullMarks: 45 },
-          'PHYSICS-II': { marks: 38, fullMarks: 45 },
+          subjects: [
+            { subjectCode: '25721', subjectName: 'Bangla-II', marks: 39, fullMarks: 45 },
+            { subjectCode: '25722', subjectName: 'English-II', marks: 37, fullMarks: 45 },
+            { subjectCode: '25921', subjectName: 'Mathematics-II', marks: 40, fullMarks: 45 },
+            { subjectCode: '27021', subjectName: 'Mechanical Engineering Drawing', marks: 36, fullMarks: 45 },
+            { subjectCode: '26711', subjectName: 'Basic Electricity', marks: 43, fullMarks: 45 },
+            { subjectCode: '25922', subjectName: 'Physics-II', marks: 38, fullMarks: 45 }
+          ]
         },
         {
           examTitle: '২য় পর্ব মডেল টেস্ট ২০২৬',
@@ -529,23 +1017,36 @@ export function generateSampleJson(exam?: Exam | null): string {
           name: 'নুসরাত জাহান',
           studentId: 'DPIB-2026-004',
           registration: '1502345681',
-          'BANGLA-II': { marks: 41, fullMarks: 45 },
-          'ENGLISH-II': { marks: 42, fullMarks: 45 },
-          'MATH-II': { marks: 43, fullMarks: 45 },
-          'MECHANICAL-ENGINEERING-DRAWING': { marks: 40, fullMarks: 45 },
-          'BASIC-ELECTRICITY': { marks: 39, fullMarks: 45 },
-          'PHYSICS-II': { marks: 44, fullMarks: 45 },
-        },
+          subjects: [
+            { subjectCode: '25721', subjectName: 'Bangla-II', marks: 41, fullMarks: 45 },
+            { subjectCode: '25722', subjectName: 'English-II', marks: 42, fullMarks: 45 },
+            { subjectCode: '25921', subjectName: 'Mathematics-II', marks: 43, fullMarks: 45 },
+            { subjectCode: '27021', subjectName: 'Mechanical Engineering Drawing', marks: 40, fullMarks: 45 },
+            { subjectCode: '26711', subjectName: 'Basic Electricity', marks: 39, fullMarks: 45 },
+            { subjectCode: '25922', subjectName: 'Physics-II', marks: 44, fullMarks: 45 }
+          ]
+        }
       ],
       null,
       2
     );
   }
 
-  const sampleSubjects: { [code: string]: { marks: number; fullMarks: number } } = {};
-  exam.subjects.forEach((sub) => {
+  const sampleSubjects = (exam.subjects && exam.subjects.length > 0
+    ? exam.subjects
+    : [
+        { code: '25721', name: 'বাংলা-২', fullMarks: 45 },
+        { code: '25722', name: 'ইংরেজি-২', fullMarks: 45 },
+        { code: '25921', name: 'গণিত-২', fullMarks: 45 },
+        { code: '27021', name: 'মেকানিক্যাল ইঞ্জিনিয়ারিং ড্রয়িং', fullMarks: 45 },
+        { code: '26711', name: 'বেসিক ইলেকট্রিসিটি', fullMarks: 45 },
+        { code: '25922', name: 'পদার্থবিজ্ঞান-২', fullMarks: 45 },
+      ]
+  ).map((sub) => {
     const full = Number(sub.fullMarks) || 100;
-    sampleSubjects[sub.code] = {
+    return {
+      subjectCode: sub.code,
+      subjectName: sub.name,
       marks: Math.round(full * 0.85),
       fullMarks: full,
     };
@@ -561,7 +1062,7 @@ export function generateSampleJson(exam?: Exam | null): string {
         name: 'মোঃ আরিয়ান আহমেদ',
         studentId: 'DPIB-2026-001',
         registration: '1502345678',
-        ...sampleSubjects,
+        subjects: sampleSubjects,
       },
       {
         examTitle: exam.title,
@@ -571,7 +1072,10 @@ export function generateSampleJson(exam?: Exam | null): string {
         name: 'সাদিয়া সুলতানা',
         studentId: 'DPIB-2026-002',
         registration: '1502345679',
-        ...sampleSubjects,
+        subjects: sampleSubjects.map((s) => ({
+          ...s,
+          marks: Math.min(s.fullMarks, Math.round(s.fullMarks * 0.78)),
+        })),
       },
     ],
     null,
@@ -1138,7 +1642,8 @@ export function parseJsonResults(
   exam?: Exam | null,
   status: 'PUBLISHED' | 'DRAFT' = 'PUBLISHED',
   gradingRules: GradingRule[] = DEFAULT_GRADING_RULES,
-  allExams: Exam[] = []
+  allExams: Exam[] = [],
+  availableBooks?: BookItem[]
 ): ValidationReport {
   try {
     const parsed = JSON.parse(jsonText);
@@ -1264,24 +1769,74 @@ export function parseJsonResults(
     const defaultSubjectFullMarks = explicitTopFullMarks;
 
     // Step 1: Detect all unique subjects present in the JSON payload
-    const detectedSubjectMetaMap = new Map<string, ExamSubject>();
+    const detectedSubjectMetaMap = new Map<string, ResolvedSubjectMeta>();
+    const unresolvedBanglaSet = new Set<string>();
+    const matchedDatabaseSubjectsMap = new Map<string, MatchedDatabaseSubjectInfo>();
+    const ambiguousSubjectsMap = new Map<string, AmbiguousMatchInfo[]>();
+    const codeMismatchWarningsSet = new Set<string>();
+    const unmatchedSubjectsSet = new Set<string>();
 
     dataList.forEach((item) => {
       if (!item || typeof item !== 'object') return;
 
-      const registerSubject = (rawKey: string, rawVal: any) => {
-        if (!rawKey) return;
+      const registerSubject = (
+        rawKey: string,
+        rawVal: any,
+        explicitSubCode?: string,
+        explicitSubName?: string
+      ) => {
+        if (!rawKey && !explicitSubCode && !explicitSubName) return;
         let explicitFull: number | undefined;
         if (typeof rawVal === 'object' && rawVal !== null) {
-          const rawF = (rawVal as any).fullMarks ?? (rawVal as any).f ?? (rawVal as any).full ?? (rawVal as any).maxMarks ?? (rawVal as any).subjectFullMarks ?? (rawVal as any).fm;
+          const rawF =
+            (rawVal as any).fullMarks ??
+            (rawVal as any).f ??
+            (rawVal as any).full ??
+            (rawVal as any).maxMarks ??
+            (rawVal as any).subjectFullMarks ??
+            (rawVal as any).fm;
           if (Number(rawF) > 0) explicitFull = Number(rawF);
         }
         if (!explicitFull) {
-          const rawF = (item as any)[`f_${rawKey}`] ?? (item as any)[`full_${rawKey}`] ?? (item as any)?.f?.[rawKey] ?? (item as any)?.fullMarks?.[rawKey];
+          const rawF =
+            (item as any)[`f_${rawKey}`] ??
+            (item as any)[`full_${rawKey}`] ??
+            (item as any)?.f?.[rawKey] ??
+            (item as any)?.fullMarks?.[rawKey];
           if (Number(rawF) > 0) explicitFull = Number(rawF);
         }
-        const meta = resolveSubjectMeta(rawKey, explicitFull || defaultSubjectFullMarks, targetExam?.subjects);
+        const meta = resolveSubjectMeta(
+          rawKey,
+          explicitFull || defaultSubjectFullMarks,
+          targetExam?.subjects,
+          explicitSubCode,
+          explicitSubName,
+          topDept?.name,
+          topSemester,
+          availableBooks
+        );
         if (explicitFull) meta.fullMarks = explicitFull;
+        if (!meta.isBanglaResolved && !containsBangla(meta.name)) {
+          unresolvedBanglaSet.add(meta.name);
+        }
+        if (meta.isMatchedFromDatabase) {
+          matchedDatabaseSubjectsMap.set(meta.code, {
+            subjectName: meta.name,
+            subjectCode: meta.code,
+            originalName: meta.originalName,
+            semesterId: topSemester,
+            technology: topDept?.name,
+          });
+        }
+        if (meta.isAmbiguous && meta.ambiguousCandidates) {
+          ambiguousSubjectsMap.set(meta.originalName || meta.name, meta.ambiguousCandidates);
+        }
+        if (meta.codeMismatchWarning) {
+          codeMismatchWarningsSet.add(meta.codeMismatchWarning);
+        }
+        if (meta.isUnmatched) {
+          unmatchedSubjectsSet.add(meta.originalName || meta.name);
+        }
         detectedSubjectMetaMap.set(meta.code, meta);
       };
 
@@ -1290,8 +1845,10 @@ export function parseJsonResults(
         item.subjects.forEach((s: any) => {
           if (!s) return;
           const codeKey = s.subjectCode || s.code || s.name || s.subject;
+          const subCode = s.subjectCode || s.code;
+          const subName = s.subjectName || s.name || s.subject;
           if (codeKey) {
-            registerSubject(codeKey, s);
+            registerSubject(codeKey, s, subCode, subName);
           }
         });
       }
@@ -1305,7 +1862,13 @@ export function parseJsonResults(
           : null;
       if (objSubjects) {
         Object.entries(objSubjects).forEach(([k, val]) => {
-          registerSubject(k, val);
+          let subCode: string | undefined = /^\d{5}$/.test(k.trim()) ? k.trim() : undefined;
+          let subName: string | undefined;
+          if (typeof val === 'object' && val !== null) {
+            if ((val as any).subjectCode || (val as any).code) subCode = (val as any).subjectCode || (val as any).code;
+            if ((val as any).subjectName || (val as any).name) subName = (val as any).subjectName || (val as any).name;
+          }
+          registerSubject(k, val, subCode, subName);
         });
       }
 
@@ -1320,7 +1883,13 @@ export function parseJsonResults(
           (typeof val === 'string' && val.trim() !== '' && !isNaN(Number(toEnglishDigits(val)))) ||
           (typeof val === 'object' && val !== null && ((val as any).obtainedMarks !== undefined || (val as any).marks !== undefined || (val as any).score !== undefined))
         ) {
-          registerSubject(k, val);
+          let subCode: string | undefined = /^\d{5}$/.test(k.trim()) ? k.trim() : undefined;
+          let subName: string | undefined;
+          if (typeof val === 'object' && val !== null) {
+            if ((val as any).subjectCode || (val as any).code) subCode = (val as any).subjectCode || (val as any).code;
+            if ((val as any).subjectName || (val as any).name) subName = (val as any).subjectName || (val as any).name;
+          }
+          registerSubject(k, val, subCode, subName);
         }
       });
     });
@@ -1418,13 +1987,21 @@ export function parseJsonResults(
 
       const subjectMarks: { [code: string]: number } = {};
       const subjectResults: SubjectResult[] = [];
-      const studentSubjectEntries: { rawKey: string; rawVal: any; explicitFullMarks?: number }[] = [];
+      const studentSubjectEntries: {
+        rawKey: string;
+        rawVal: any;
+        explicitFullMarks?: number;
+        explicitSubjectCode?: string;
+        explicitSubjectName?: string;
+      }[] = [];
 
       // 1. Check item.subjects array
       if (Array.isArray(item.subjects)) {
         item.subjects.forEach((s: any) => {
           if (!s || typeof s !== 'object') return;
           const k = s.subjectCode || s.code || s.name || s.subject;
+          const subCode = s.subjectCode || s.code;
+          const subName = s.subjectName || s.name || s.subject;
           const v = s.obtainedMarks ?? s.marks ?? s.score ?? s.val;
           const rawF = s.fullMarks ?? s.f ?? s.full ?? s.maxMarks ?? s.subjectFullMarks ?? s.fm ?? s.fMarks;
           if (k && v !== undefined && v !== null && String(v).trim() !== '') {
@@ -1432,6 +2009,8 @@ export function parseJsonResults(
               rawKey: String(k),
               rawVal: v,
               explicitFullMarks: Number(rawF) > 0 ? Number(rawF) : undefined,
+              explicitSubjectCode: subCode,
+              explicitSubjectName: subName,
             });
           }
         });
@@ -1450,10 +2029,14 @@ export function parseJsonResults(
           if (!k || v === undefined || v === null) return;
           let val = v;
           let full: number | undefined;
+          let subCode: string | undefined = /^\d{5}$/.test(k.trim()) ? k.trim() : undefined;
+          let subName: string | undefined;
           if (typeof v === 'object' && v !== null) {
             val = (v as any).obtainedMarks ?? (v as any).marks ?? (v as any).score ?? (v as any).val;
             const rawF = (v as any).fullMarks ?? (v as any).f ?? (v as any).full ?? (v as any).maxMarks ?? (v as any).subjectFullMarks ?? (v as any).fm;
             if (Number(rawF) > 0) full = Number(rawF);
+            if ((v as any).subjectCode || (v as any).code) subCode = (v as any).subjectCode || (v as any).code;
+            if ((v as any).subjectName || (v as any).name) subName = (v as any).subjectName || (v as any).name;
           }
           if (!full) {
             const rawF = (item as any)[`f_${k}`] ?? (item as any)[`full_${k}`] ?? (item as any)?.f?.[k] ?? (item as any)?.fullMarks?.[k];
@@ -1464,6 +2047,8 @@ export function parseJsonResults(
               rawKey: k,
               rawVal: val,
               explicitFullMarks: full,
+              explicitSubjectCode: subCode,
+              explicitSubjectName: subName,
             });
           }
         });
@@ -1478,10 +2063,14 @@ export function parseJsonResults(
 
         let val = v;
         let full: number | undefined;
+        let subCode: string | undefined = /^\d{5}$/.test(k.trim()) ? k.trim() : undefined;
+        let subName: string | undefined;
         if (typeof v === 'object' && v !== null) {
           val = (v as any).obtainedMarks ?? (v as any).marks ?? (v as any).score ?? (v as any).val;
           const rawF = (v as any).fullMarks ?? (v as any).f ?? (v as any).full ?? (v as any).maxMarks ?? (v as any).subjectFullMarks ?? (v as any).fm;
           if (Number(rawF) > 0) full = Number(rawF);
+          if ((v as any).subjectCode || (v as any).code) subCode = (v as any).subjectCode || (v as any).code;
+          if ((v as any).subjectName || (v as any).name) subName = (v as any).subjectName || (v as any).name;
         }
 
         if (!full) {
@@ -1498,18 +2087,25 @@ export function parseJsonResults(
                 rawKey: k,
                 rawVal: val,
                 explicitFullMarks: full,
+                explicitSubjectCode: subCode,
+                explicitSubjectName: subName,
               });
             }
           }
         }
       });
 
-      // Process ONLY the subjects present for this specific student
+      // Process subjects for this student
       studentSubjectEntries.forEach((entry) => {
         const meta = resolveSubjectMeta(
           entry.rawKey,
           entry.explicitFullMarks,
-          targetExam?.subjects
+          targetExam?.subjects,
+          entry.explicitSubjectCode,
+          entry.explicitSubjectName,
+          itemDept?.name || topDept?.name,
+          itemSemester || topSemester,
+          availableBooks
         );
         let subFullMarks =
           Number(entry.explicitFullMarks) > 0
@@ -1531,11 +2127,17 @@ export function parseJsonResults(
           subjectResults.push({
             subjectCode: meta.code,
             subjectName: meta.name,
+            originalSubjectName: meta.originalName || entry.explicitSubjectName,
             fullMarks: subFullMarks,
             obtainedMarks: 0,
             grade: 'F',
             gradePoint: 0,
             isPassed: false,
+            isMatchedFromDatabase: meta.isMatchedFromDatabase,
+            isAmbiguous: meta.isAmbiguous,
+            isCodeInvalid: meta.isCodeInvalid,
+            codeMismatchWarning: meta.codeMismatchWarning,
+            ambiguousCandidates: meta.ambiguousCandidates,
           });
         } else if (numericVal < 0) {
           rowErrors.push(`সারি ${rowNumber}: '${meta.name}' প্রাপ্ত নম্বর নেতিবাচক হতে পারে না (${numericVal})`);
@@ -1543,11 +2145,17 @@ export function parseJsonResults(
           subjectResults.push({
             subjectCode: meta.code,
             subjectName: meta.name,
+            originalSubjectName: meta.originalName || entry.explicitSubjectName,
             fullMarks: subFullMarks,
             obtainedMarks: numericVal,
             grade: 'F',
             gradePoint: 0,
             isPassed: false,
+            isMatchedFromDatabase: meta.isMatchedFromDatabase,
+            isAmbiguous: meta.isAmbiguous,
+            isCodeInvalid: meta.isCodeInvalid,
+            codeMismatchWarning: meta.codeMismatchWarning,
+            ambiguousCandidates: meta.ambiguousCandidates,
           });
         } else if (subFullMarks > 0 && numericVal > subFullMarks) {
           if (entry.explicitFullMarks) {
@@ -1560,11 +2168,17 @@ export function parseJsonResults(
           subjectResults.push({
             subjectCode: meta.code,
             subjectName: meta.name,
+            originalSubjectName: meta.originalName || entry.explicitSubjectName,
             fullMarks: subFullMarks,
             obtainedMarks: numericVal,
             grade: gradeInfo.grade,
             gradePoint: gradeInfo.gradePoint,
             isPassed: gradeInfo.isPassed,
+            isMatchedFromDatabase: meta.isMatchedFromDatabase,
+            isAmbiguous: meta.isAmbiguous,
+            isCodeInvalid: meta.isCodeInvalid,
+            codeMismatchWarning: meta.codeMismatchWarning,
+            ambiguousCandidates: meta.ambiguousCandidates,
           });
         } else {
           subjectMarks[meta.code] = numericVal;
@@ -1572,11 +2186,17 @@ export function parseJsonResults(
           subjectResults.push({
             subjectCode: meta.code,
             subjectName: meta.name,
+            originalSubjectName: meta.originalName || entry.explicitSubjectName,
             fullMarks: subFullMarks,
             obtainedMarks: numericVal,
             grade: subGrade.grade,
             gradePoint: subGrade.gradePoint,
             isPassed: subGrade.isPassed,
+            isMatchedFromDatabase: meta.isMatchedFromDatabase,
+            isAmbiguous: meta.isAmbiguous,
+            isCodeInvalid: meta.isCodeInvalid,
+            codeMismatchWarning: meta.codeMismatchWarning,
+            ambiguousCandidates: meta.ambiguousCandidates,
           });
         }
       });
@@ -1647,6 +2267,8 @@ export function parseJsonResults(
       errors: parsedRows[idx]?.errors || [],
     }));
 
+    const unresolvedBanglaList = Array.from(unresolvedBanglaSet);
+
     return {
       totalRows,
       validRows,
@@ -1660,7 +2282,16 @@ export function parseJsonResults(
         invalidRows > 0 ? `, ${invalidRows}টি ফলাফলে সমস্যা রয়েছে` : ''
       }`,
       detectedExam: targetExam,
+      detectedSubjects,
       autoCreatedExam: autoCreated,
+      unresolvedBanglaSubjects: unresolvedBanglaList.length > 0 ? unresolvedBanglaList : undefined,
+      matchedDatabaseSubjects: Array.from(matchedDatabaseSubjectsMap.values()),
+      ambiguousSubjects: Array.from(ambiguousSubjectsMap.entries()).map(([inputName, candidates]) => ({
+        inputName,
+        candidates,
+      })),
+      codeMismatchWarnings: Array.from(codeMismatchWarningsSet),
+      unmatchedSubjects: Array.from(unmatchedSubjectsSet),
     };
   } catch (err: any) {
     throw new Error(`JSON ফাইল পড়তে ব্যর্থ: ${err.message}`);

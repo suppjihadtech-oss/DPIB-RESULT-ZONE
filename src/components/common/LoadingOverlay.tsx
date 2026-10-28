@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Sparkles } from 'lucide-react';
+import { DpibBrandTitle } from './DpibBrandTitle';
 
 export type LoadingOperation = 'save' | 'delete' | 'update' | 'publish' | 'processing' | 'default';
 
@@ -17,7 +18,7 @@ export interface LoadingOverlayProps {
   isVisible: boolean;
   operation?: LoadingOperation;
   message?: string;
-  subtext?: string;
+  subtext?: React.ReactNode;
   fullScreen?: boolean;
   transparentBackdrop?: boolean;
   minDurationMs?: number;
@@ -108,7 +109,7 @@ export const LoadingOverlay: React.FC<LoadingOverlayProps> = ({
             {/* Top Badge */}
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50/90 border border-blue-200/80 text-[11px] font-bold text-blue-700 font-outfit uppercase tracking-wider mb-5 shadow-xs">
               <Sparkles className="w-3.5 h-3.5 text-blue-600 animate-pulse" />
-              <span>DPIB RESULT ZONE</span>
+              <DpibBrandTitle className="text-[11px] tracking-wider" />
             </div>
 
             {/* 3D Realistic Open-Book with Continuous Flipping Pages */}

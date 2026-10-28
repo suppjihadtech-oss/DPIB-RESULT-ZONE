@@ -20,6 +20,8 @@ import { DocumentSettings, DocumentTemplateStyle } from '../../../types';
 import { toBanglaDigits } from '../../../utils/bangla';
 import { printElementById } from '../../../utils/printHelper';
 import { getDocumentSettings, DEFAULT_DOCUMENT_SETTINGS } from '../../../services/db';
+import { toast } from '../../../context/ToastContext';
+import { DpibBrandTitle } from '../../common/DpibBrandTitle';
 import {
   DocumentFontSizeController,
   DocumentFontSettings,
@@ -238,7 +240,7 @@ export const A4SignaturesFooter: React.FC<A4SignaturesFooterProps> = ({
       </div>
 
       <div className="mt-4 pt-2 border-t border-slate-100 flex items-center justify-between text-[9px] text-slate-400">
-        <span>সফটওয়্যার জেনারেটেড অফিসিয়াল ডকুমেন্ট • DPIB RESULT ZONE</span>
+        <span>সফটওয়্যার জেনারেটেড অফিসিয়াল ডকুমেন্ট • <DpibBrandTitle className="text-[9px] inline-block" /></span>
         <span>মুদ্রণ তারিখ: {new Date().toLocaleDateString('bn-BD')}</span>
       </div>
     </div>
@@ -323,6 +325,7 @@ export const A4DocumentEngine: React.FC<A4DocumentEngineProps> = ({
   };
 
   const executePrint = () => {
+    toast.info('প্রিন্ট ডায়ালগ প্রস্তুত করা হচ্ছে...', 'PRINTING');
     printElementById('printable-a4-document', {
       title: fileName || documentTitle || 'DPIB Document',
       orientation: orientation as 'portrait' | 'landscape',
@@ -333,6 +336,7 @@ export const A4DocumentEngine: React.FC<A4DocumentEngineProps> = ({
       onError: (err) => {
         console.error('Print trigger failed:', err);
         setIsPrinting(false);
+        toast.error('প্রিন্ট কমান্ড চালু করা যায়নি', 'PRINT ERROR');
       },
     });
   };
@@ -348,12 +352,20 @@ export const A4DocumentEngine: React.FC<A4DocumentEngineProps> = ({
   const executeDownloadPdf = async () => {
     setIsGeneratingPdf(true);
     setPdfSuccess(false);
+    const toastId = toast.loading('উচ্চ রেজোলিউশন A4 পিডিএফ তৈরি হচ্ছে...', 'GENERATING PDF');
     try {
       const html2canvas = (await import('html2canvas-pro')).default;
       const { jsPDF } = await import('jspdf');
 
       const element = document.getElementById('printable-a4-document');
-      if (!element) return;
+      if (!element) {
+        toast.update(toastId, {
+          type: 'ERROR',
+          title: 'PDF ERROR',
+          message: 'ডকুমেন্ট এলিমেন্ট পাওয়া যায়নি।',
+        });
+        return;
+      }
 
       const canvas = await html2canvas(element, {
         scale: 2.5,
@@ -383,10 +395,19 @@ export const A4DocumentEngine: React.FC<A4DocumentEngineProps> = ({
 
       pdf.save(`${fileName}-${Date.now()}.pdf`);
       setPdfSuccess(true);
+      toast.update(toastId, {
+        type: 'SUCCESS',
+        title: 'PDF DOWNLOADED',
+        message: 'A4 ডকুমেন্ট পিডিএফ সফলভাবে ডাউনলোড সম্পন্ন হয়েছে!',
+      });
       setTimeout(() => setPdfSuccess(false), 3000);
     } catch (err) {
       console.error('PDF Generation failed:', err);
-      alert('পিডিএফ তৈরিতে সমস্যা হয়েছে। অনুগ্রহ করে আবার চেষ্টা করুন।');
+      toast.update(toastId, {
+        type: 'ERROR',
+        title: 'PDF ERROR',
+        message: 'পিডিএফ তৈরিতে সমস্যা হয়েছে। অনুগ্রহ করে আবার চেষ্টা করুন।',
+      });
     } finally {
       setIsGeneratingPdf(false);
     }
