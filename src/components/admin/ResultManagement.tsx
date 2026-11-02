@@ -63,6 +63,7 @@ import {
 import {
   toBanglaDigits,
   toBanglaNumber,
+  formatBanglaMarks,
   SEMESTER_MAP,
   toEnglishDigits,
 } from '../../utils/bangla';
@@ -393,26 +394,49 @@ export const ResultManagement: React.FC<ResultManagementProps> = ({
       let finalExamId = detectedExam?.id;
 
       // If exam was auto-created or doesn't exist yet, save it to Firestore first
-      if (detectedExam && (isAutoCreatedExam || !exams.some((x) => x.id === detectedExam.id))) {
-        await saveExam(
-          {
-            title: detectedExam.title,
-            semesterId: detectedExam.semesterId,
-            departmentId: detectedExam.departmentId,
-            departmentName: detectedExam.departmentName,
-            examType: detectedExam.examType || 'মডেল টেস্ট',
-            examDate: detectedExam.examDate || new Date().toISOString().split('T')[0],
-            totalMarks: detectedExam.totalMarks || 100,
-            description: detectedExam.description || 'JSON আপলোড হতে স্বয়ংক্রিয় তৈরি',
-            subjects: detectedExam.subjects || [],
-            status: uploadPublishStatus,
-            allowMeritList: true,
-            publishedAt: uploadPublishStatus === 'PUBLISHED' ? Date.now() : null,
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-          },
-          detectedExam.id
-        );
+      if (detectedExam) {
+        const existingExam = exams.find((x) => x.id === detectedExam.id);
+        if (!existingExam || isAutoCreatedExam) {
+          await saveExam(
+            {
+              title: detectedExam.title,
+              semesterId: detectedExam.semesterId,
+              departmentId: detectedExam.departmentId,
+              departmentName: detectedExam.departmentName,
+              examType: detectedExam.examType || 'মডেল টেস্ট',
+              examDate: detectedExam.examDate || new Date().toISOString().split('T')[0],
+              totalMarks: detectedExam.totalMarks || 100,
+              description: detectedExam.description || 'JSON আপলোড হতে স্বয়ংক্রিয় তৈরি',
+              subjects: detectedExam.subjects || [],
+              status: uploadPublishStatus,
+              allowMeritList: true,
+              publishedAt: uploadPublishStatus === 'PUBLISHED' ? Date.now() : null,
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+            },
+            detectedExam.id
+          );
+        } else if (detectedExam.subjects && detectedExam.subjects.length > 0) {
+          // Ensure existing exam in database adopts the full marks specified in JSON
+          const mergedSubjects = detectedExam.subjects.map((ds) => {
+            const old = existingExam.subjects?.find((os) => os.code === ds.code);
+            return {
+              ...(old || {}),
+              ...ds,
+              fullMarks: Number(ds.fullMarks) || Number(old?.fullMarks) || 100,
+            };
+          });
+
+          await saveExam(
+            {
+              ...existingExam,
+              subjects: mergedSubjects,
+              totalMarks: detectedExam.totalMarks || existingExam.totalMarks,
+              updatedAt: Date.now(),
+            },
+            existingExam.id
+          );
+        }
       }
 
       // Update result records with final examId
@@ -1444,73 +1468,133 @@ export const ResultManagement: React.FC<ResultManagementProps> = ({
                         </div>
                       </div>
 
-                      {/* Detected Subject Codes & Bangla Names List */}
+                      {/* Dedicated Subject Matching & Code Verification Table */}
                       {detectedExam.subjects && detectedExam.subjects.length > 0 && (
-                        <div className="pt-2.5 border-t border-blue-200/70 space-y-1.5">
-                          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
-                            সনাক্তকৃত বিষয় কোড ও বাংলা নাম (SUBJECT CODE & BANGLA NAME)
-                          </span>
-                          <div className="flex flex-wrap gap-1.5">
-                            {detectedExam.subjects.map((sub, sIdx) => {
-                              const hasDifferentOriginal = sub.originalName && sub.originalName.trim().toLowerCase() !== sub.name.trim().toLowerCase();
-                              return (
-                                <div
-                                  key={sIdx}
-                                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 bg-white border rounded-xl text-xs ${
-                                    sub.isCodeInvalid
-                                      ? 'border-rose-300'
-                                      : sub.isAmbiguous
-                                      ? 'border-amber-300'
-                                      : sub.isMatchedFromDatabase
-                                      ? 'border-emerald-300'
-                                      : 'border-blue-200'
-                                  }`}
-                                >
-                                  <span
-                                    className={`font-mono font-bold px-1.5 py-0.5 rounded text-[10px] ${
-                                      sub.isCodeInvalid
-                                        ? 'text-rose-700 bg-rose-50'
-                                        : sub.isAmbiguous
-                                        ? 'text-amber-700 bg-amber-50'
-                                        : sub.isMatchedFromDatabase
-                                        ? 'text-emerald-700 bg-emerald-50'
-                                        : 'text-blue-700 bg-blue-50'
-                                    }`}
-                                  >
-                                    {sub.code}
-                                  </span>
-                                  <span className="font-bold text-slate-900">{sub.name}</span>
-                                  {hasDifferentOriginal && (
-                                    <span className="text-[10px] text-slate-500 font-mono">
-                                      (ORIGINAL: {sub.originalName})
+                        <div className="pt-3 border-t border-blue-200/70 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                              <BookOpen className="w-3.5 h-3.5 text-blue-600" />
+                              <span>বিষয় ম্যাপিং ও কোড যাচাইকরণ তালিকা (SUBJECT MATCHING & CODE VERIFICATION TABLE)</span>
+                            </span>
+                            <span className="text-[10px] text-slate-500 font-semibold">
+                              মোট {toBanglaDigits(detectedExam.subjects.length)}টি বিষয়
+                            </span>
+                          </div>
+
+                          <div className="overflow-x-auto rounded-xl border border-blue-200/90 bg-white shadow-2xs">
+                            <table className="w-full text-left text-xs border-collapse">
+                              <thead>
+                                <tr className="bg-slate-50/90 border-b border-slate-200 text-[10px] text-slate-600 font-bold uppercase tracking-wider">
+                                  <th className="py-2.5 px-3 text-center w-10">#</th>
+                                  <th className="py-2.5 px-3">ইনপুটকৃত নাম (ORIGINAL INPUT NAME)</th>
+                                  <th className="py-2.5 px-3">শনাক্তকৃত ডেটাবেজ বিষয় (MATCHED DB SUBJECT)</th>
+                                  <th className="py-2.5 px-3 text-center">বিষয় কোড (SUBJECT CODE)</th>
+                                  <th className="py-2.5 px-3 text-center">পূর্ণমান (FULL MARKS)</th>
+                                  <th className="py-2.5 px-3 text-center">স্ট্যাটাস (STATUS)</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100 font-medium">
+                                {detectedExam.subjects.map((sub, sIdx) => {
+                                  const originalDisplay = sub.originalName || sub.name;
+                                  const hasDifferentOriginal = sub.originalName && sub.originalName.trim().toLowerCase() !== sub.name.trim().toLowerCase();
+
+                                  let statusBadge = (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold font-mono bg-blue-50 text-blue-700 border border-blue-200/80 uppercase">
+                                      <CheckCircle2 className="w-3 h-3 text-blue-600" />
+                                      <span>VALIDATED CODE</span>
                                     </span>
-                                  )}
-                                  {sub.isMatchedFromDatabase && (
-                                    <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-800 text-[9px] font-bold rounded uppercase">
-                                      DB MATCHED
-                                    </span>
-                                  )}
-                                  {sub.isAmbiguous && (
-                                    <span className="px-1.5 py-0.5 bg-amber-100 text-amber-800 text-[9px] font-bold rounded uppercase">
-                                      AMBIGUOUS
-                                    </span>
-                                  )}
-                                  {sub.isCodeInvalid && (
-                                    <span className="px-1.5 py-0.5 bg-rose-100 text-rose-800 text-[9px] font-bold rounded uppercase">
-                                      INVALID CODE
-                                    </span>
-                                  )}
-                                  {sub.codeMismatchWarning && (
-                                    <span title={sub.codeMismatchWarning}>
-                                      <AlertTriangle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
-                                    </span>
-                                  )}
-                                  <span className="text-[10px] text-slate-400 font-outfit">
-                                    [{toBanglaDigits(sub.fullMarks)}]
-                                  </span>
-                                </div>
-                              );
-                            })}
+                                  );
+
+                                  if (sub.isCodeInvalid) {
+                                    statusBadge = (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold font-mono bg-rose-50 text-rose-700 border border-rose-200/80 uppercase">
+                                        <AlertTriangle className="w-3 h-3 text-rose-600" />
+                                        <span>INVALID CODE</span>
+                                      </span>
+                                    );
+                                  } else if (sub.isAmbiguous) {
+                                    statusBadge = (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold font-mono bg-amber-50 text-amber-700 border border-amber-200/80 uppercase">
+                                        <HelpCircle className="w-3 h-3 text-amber-600" />
+                                        <span>AMBIGUOUS MATCH</span>
+                                      </span>
+                                    );
+                                  } else if (sub.isMatchedFromDatabase) {
+                                    statusBadge = (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold font-mono bg-emerald-50 text-emerald-700 border border-emerald-200/80 uppercase">
+                                        <Database className="w-3 h-3 text-emerald-600" />
+                                        <span>AUTO MATCHED</span>
+                                      </span>
+                                    );
+                                  } else if (sub.isUnmatched) {
+                                    statusBadge = (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold font-mono bg-slate-100 text-slate-700 border border-slate-200 uppercase">
+                                        <Info className="w-3 h-3 text-slate-500" />
+                                        <span>UNRESOLVED</span>
+                                      </span>
+                                    );
+                                  }
+
+                                  return (
+                                    <tr key={sIdx} className="hover:bg-blue-50/30 transition-colors">
+                                      <td className="py-2.5 px-3 text-center font-outfit text-slate-400 font-bold text-[11px]">
+                                        {toBanglaDigits(sIdx + 1)}
+                                      </td>
+                                      <td className="py-2.5 px-3 font-mono text-slate-700 font-semibold text-[11px]">
+                                        {originalDisplay}
+                                      </td>
+                                      <td className="py-2.5 px-3">
+                                        <div className="font-bold text-slate-900 flex items-center gap-1.5">
+                                          <span>{sub.name}</span>
+                                          {hasDifferentOriginal && (
+                                            <span className="text-[10px] text-slate-400 font-mono font-normal">
+                                              ({sub.originalName})
+                                            </span>
+                                          )}
+                                        </div>
+                                        {sub.codeMismatchWarning && (
+                                          <div className="text-[10px] text-rose-600 font-medium flex items-center gap-1 mt-0.5">
+                                            <AlertTriangle className="w-3 h-3 shrink-0" />
+                                            <span>{sub.codeMismatchWarning}</span>
+                                          </div>
+                                        )}
+                                        {sub.isAmbiguous && sub.ambiguousCandidates && sub.ambiguousCandidates.length > 0 && (
+                                          <div className="text-[10px] text-amber-700 mt-1 flex flex-wrap gap-1">
+                                            <span className="font-semibold">বিকল্পসমূহ:</span>
+                                            {sub.ambiguousCandidates.map((cand, cIdx) => (
+                                              <span key={cIdx} className="px-1.5 py-0.2 bg-amber-50 border border-amber-200 rounded font-mono text-[9px]">
+                                                {cand.subjectCode} ({cand.subjectName})
+                                              </span>
+                                            ))}
+                                          </div>
+                                        )}
+                                      </td>
+                                      <td className="py-2.5 px-3 text-center">
+                                        <span
+                                          className={`font-mono font-bold px-2 py-0.5 rounded text-[11px] ${
+                                            sub.isCodeInvalid
+                                              ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                                              : sub.isAmbiguous
+                                              ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                                              : sub.isMatchedFromDatabase
+                                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                              : 'bg-blue-50 text-blue-700 border border-blue-200'
+                                          }`}
+                                        >
+                                          {sub.code}
+                                        </span>
+                                      </td>
+                                      <td className="py-2.5 px-3 text-center font-outfit font-bold text-slate-700 text-xs">
+                                        {toBanglaDigits(sub.fullMarks)}
+                                      </td>
+                                      <td className="py-2.5 px-3 text-center">
+                                        {statusBadge}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
                           </div>
                         </div>
                       )}
@@ -1596,6 +1680,8 @@ export const ResultManagement: React.FC<ResultManagementProps> = ({
                                             ? 'bg-amber-50/70 border-amber-300 text-amber-900'
                                             : sub.isMatchedFromDatabase
                                             ? 'bg-emerald-50/50 border-emerald-200 text-slate-800'
+                                            : sub.obtainedMarks === null
+                                            ? 'bg-slate-50 border-slate-200 text-slate-700'
                                             : sub.isPassed
                                             ? 'bg-slate-50 border-slate-200 text-slate-800'
                                             : 'bg-rose-50 border-rose-200 text-rose-700 font-bold'
@@ -1603,7 +1689,7 @@ export const ResultManagement: React.FC<ResultManagementProps> = ({
                                       >
                                         <span className="font-mono font-bold text-blue-700">{sub.subjectCode}</span>
                                         <span className="font-medium text-slate-700">{sub.subjectName}:</span>
-                                        <span className="font-bold font-outfit text-slate-900">{toBanglaDigits(sub.obtainedMarks)}</span>
+                                        <span className="font-bold font-outfit text-slate-900">{formatBanglaMarks(sub.obtainedMarks)}</span>
                                         <span className="text-[9px] text-slate-400 font-outfit">/{toBanglaDigits(sub.fullMarks)}</span>
                                         {sub.isMatchedFromDatabase && (
                                           <span className="text-[8px] bg-emerald-100 text-emerald-800 font-bold px-1 rounded uppercase">DB</span>

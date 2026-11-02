@@ -119,3 +119,28 @@ export function formatTime12Hour(timeStr?: string | null): string {
   const hoursStr = String(hours).padStart(2, '0');
   return `${hoursStr}:${minutes} ${ampm}`;
 }
+
+/**
+ * Checks whether a marks input represents an empty or unassigned "null" mark.
+ * Strictly distinguishes "null" from genuine "0" marks.
+ */
+export function isNullMarksValue(val: any): boolean {
+  if (val === null || val === undefined) return true;
+  if (typeof val === 'number') return isNaN(val);
+  const s = String(val).trim().toLowerCase();
+  return s === 'null' || s === '—' || s === '-' || s === 'na' || s === 'n/a' || s === 'undefined' || s === '';
+}
+
+/**
+ * Formats a subject's obtained marks for display across Result Cards and Sheets.
+ * - If null / empty / unassigned: returns "—"
+ * - If 0: returns "০" (Bangla zero)
+ * - If number: returns formatted Bangla digits
+ */
+export function formatBanglaMarks(marks: number | string | null | undefined): string {
+  if (isNullMarksValue(marks)) return '—';
+  const str = String(marks).trim();
+  const num = Number(toEnglishDigits(str));
+  if (isNaN(num)) return '—';
+  return toBanglaDigits(num);
+}

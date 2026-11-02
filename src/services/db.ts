@@ -35,10 +35,10 @@ import {
   DocumentTemplateStyle,
   ShiftConfig,
 } from '../types';
-import { MASTER_CURRICULUM_DATA, normalizeTechnologyKey } from '../data/masterCurriculum';
+import { MASTER_CURRICULUM_DATA, normalizeTechnologyKey, getAutoLoadedCurriculumSubjects } from '../data/masterCurriculum';
 import { DEFAULT_GRADING_RULES, calculateOverallResult, calculateSubjectGrade, updateCachedPassMark } from './grading';
-import { toEnglishDigits } from '../utils/bangla';
-import { resolveSubjectMeta, normalizeDepartment, normalizeSemester } from './excel';
+import { toEnglishDigits, isNullMarksValue } from '../utils/bangla';
+import { resolveSubjectMeta, normalizeDepartment, normalizeSemester, extractFullMarksFromKey } from './excel';
 
 const RESERVED_DOC_KEYS = new Set([
   'id',
@@ -130,21 +130,58 @@ export function normalizeStudentResult(res: any): StudentResult {
   if (Array.isArray(res.subjects) && res.subjects.length > 0) {
     res.subjects.forEach((s: any) => {
       if (!s || typeof s !== 'object') return;
-      const codeKey = String(s.subjectCode || s.code || s.name || s.subject || '').trim();
+      const rawCode = String(s.subjectCode || s.code || '').trim();
+      const rawName = String(s.subjectName || s.name || s.subject || '').trim();
+      const codeKey = rawCode || rawName;
       if (!codeKey) return;
 
       const rawFull = s.fullMarks ?? s.f ?? s.maxMarks ?? s.full ?? s.totalMarks ?? s.subjectFullMarks ?? s.fm;
-      const fullMarks = Number(rawFull) > 0 ? Number(rawFull) : 0;
-      const obtainedMarks = Number(toEnglishDigits(String(s.obtainedMarks ?? s.marks ?? s.score ?? s.obtained ?? 0))) || 0;
+      let fullMarks = Number(rawFull) > 0 ? Number(rawFull) : 0;
+      const keyInfo = extractFullMarksFromKey(rawName || codeKey);
+      if (!fullMarks && keyInfo.extractedFullMarks) {
+        fullMarks = keyInfo.extractedFullMarks;
+      }
 
-      const gradeInfo = (s.grade && s.gradePoint !== undefined)
-        ? { grade: String(s.grade), gradePoint: Number(s.gradePoint) || 0, isPassed: s.isPassed !== undefined ? !!s.isPassed : s.grade !== 'F' }
-        : calculateSubjectGrade(obtainedMarks, fullMarks);
-
-      subjectMap.set(codeKey, {
-        subjectCode: String(s.subjectCode || s.code || codeKey).trim(),
-        subjectName: String(s.subjectName || s.name || codeKey).trim(),
+      const meta = resolveSubjectMeta(
+        keyInfo.cleanKey || rawName || codeKey,
         fullMarks,
+        undefined,
+        rawCode || undefined,
+        rawName || undefined,
+        departmentName,
+        semesterId
+      );
+
+      const finalCode = meta.code !== 'N/A' && !meta.code.startsWith('N/A') ? meta.code : (rawCode || codeKey);
+      const finalName = meta.name || rawName || codeKey;
+      const finalFull = fullMarks || Number(meta.fullMarks) || 0;
+
+      const rawObtained = s.obtainedMarks !== undefined ? s.obtainedMarks : s.marks !== undefined ? s.marks : s.score !== undefined ? s.score : s.obtained;
+      const isNullMark = isNullMarksValue(rawObtained);
+
+      let obtainedMarks: number | null = null;
+      let gradeInfo: { grade: string; gradePoint: number; isPassed: boolean };
+
+      if (isNullMark) {
+        obtainedMarks = null;
+        gradeInfo = {
+          grade: (s.grade && s.grade !== 'F' && s.grade !== 'f') ? String(s.grade) : '—',
+          gradePoint: 0,
+          isPassed: true,
+        };
+      } else {
+        obtainedMarks = Number(toEnglishDigits(String(rawObtained ?? 0)));
+        if (isNaN(obtainedMarks)) obtainedMarks = 0;
+        gradeInfo = (s.grade && s.gradePoint !== undefined)
+          ? { grade: String(s.grade), gradePoint: Number(s.gradePoint) || 0, isPassed: s.isPassed !== undefined ? !!s.isPassed : s.grade !== 'F' }
+          : calculateSubjectGrade(obtainedMarks, finalFull);
+      }
+
+      subjectMap.set(finalCode, {
+        subjectCode: finalCode,
+        subjectName: finalName,
+        originalSubjectName: s.originalSubjectName || rawName || codeKey,
+        fullMarks: finalFull,
         obtainedMarks,
         grade: gradeInfo.grade,
         gradePoint: gradeInfo.gradePoint,
@@ -162,35 +199,57 @@ export function normalizeStudentResult(res: any): StudentResult {
     if (objMap) {
       Object.entries(objMap).forEach(([k, val]) => {
         if (!k) return;
-        let obtained = 0;
+        const rawObtained = typeof val === 'object' && val !== null
+          ? ((val as any).obtainedMarks !== undefined ? (val as any).obtainedMarks : (val as any).marks !== undefined ? (val as any).marks : (val as any).score !== undefined ? (val as any).score : (val as any).obtained)
+          : val;
+        const isNullMark = isNullMarksValue(rawObtained);
+        let obtained: number | null = null;
         let full: number | undefined;
 
         if (typeof val === 'object' && val !== null) {
-          obtained = Number(toEnglishDigits(String((val as any).obtainedMarks ?? (val as any).marks ?? (val as any).score ?? (val as any).obtained ?? 0)));
           const rawFull = (val as any).fullMarks ?? (val as any).f ?? (val as any).maxMarks ?? (val as any).totalMarks ?? (val as any).full ?? (val as any).fm;
           if (Number(rawFull) > 0) {
             full = Number(rawFull);
           }
-        } else {
-          obtained = Number(toEnglishDigits(String(val ?? 0)));
+        }
+
+        if (!isNullMark) {
+          obtained = Number(toEnglishDigits(String(rawObtained ?? 0)));
+          if (isNaN(obtained)) obtained = 0;
+        }
+
+        const keyInfo = extractFullMarksFromKey(k);
+        const actualK = keyInfo.cleanKey || k;
+        if (!full && keyInfo.extractedFullMarks) {
+          full = keyInfo.extractedFullMarks;
         }
 
         if (!full) {
-          const rawF = (res as any)[`f_${k}`] ?? (res as any)[`full_${k}`] ?? (res as any)?.f?.[k] ?? (res as any)?.fullMarks?.[k];
+          const rawF =
+            (res as any)[`f_${k}`] ??
+            (res as any)[`f_${actualK}`] ??
+            (res as any)[`full_${k}`] ??
+            (res as any)[`full_${actualK}`] ??
+            (res as any)?.f?.[k] ??
+            (res as any)?.f?.[actualK] ??
+            (res as any)?.fullMarks?.[k] ??
+            (res as any)?.fullMarks?.[actualK];
           if (Number(rawF) > 0) full = Number(rawF);
         }
 
-        const meta = resolveSubjectMeta(k, full);
+        const meta = resolveSubjectMeta(actualK, full);
         const finalFull = full || Number(meta.fullMarks) || 0;
 
         const prev = subjectMap.get(meta.code);
-        if (!prev || (prev.obtainedMarks === 0 && obtained > 0)) {
-          const gradeInfo = calculateSubjectGrade(obtained, finalFull);
+        if (!prev || (prev.obtainedMarks === 0 && obtained !== null && obtained > 0) || (prev.obtainedMarks === null && obtained !== null)) {
+          const gradeInfo = isNullMark
+            ? { grade: '—', gradePoint: 0, isPassed: true }
+            : calculateSubjectGrade(obtained!, finalFull);
           subjectMap.set(meta.code, {
             subjectCode: meta.code,
             subjectName: meta.name,
             fullMarks: finalFull,
-            obtainedMarks: obtained,
+            obtainedMarks: isNullMark ? null : obtained,
             grade: gradeInfo.grade,
             gradePoint: gradeInfo.gradePoint,
             isPassed: gradeInfo.isPassed,
@@ -201,23 +260,28 @@ export function normalizeStudentResult(res: any): StudentResult {
 
     // 3. Check flat top-level subject keys on res (e.g. "BANGLA-II": { "marks": 38, "fullMarks": 30 } or "BANGLA-II": 38)
     Object.entries(res).forEach(([k, val]) => {
-      if (!k || val === null || val === undefined) return;
+      if (!k || val === undefined) return;
       const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
       if (RESERVED_DOC_KEYS.has(cleanK) || RESERVED_DOC_KEYS.has(k.toLowerCase())) return;
       if (k.startsWith('f_') || k.startsWith('full_') || k.startsWith('fm_')) return;
 
       let obtained: number | null = null;
       let full: number | undefined;
+      const isNullMark = isNullMarksValue(val);
 
-      if (typeof val === 'object' && !Array.isArray(val)) {
-        const rawObtained = (val as any).obtainedMarks ?? (val as any).marks ?? (val as any).score ?? (val as any).obtained ?? (val as any).val;
+      if (typeof val === 'object' && val !== null && !Array.isArray(val)) {
+        const rawObtained = (val as any).obtainedMarks !== undefined ? (val as any).obtainedMarks : (val as any).marks !== undefined ? (val as any).marks : (val as any).score !== undefined ? (val as any).score : (val as any).val;
         const rawFull = (val as any).fullMarks ?? (val as any).f ?? (val as any).maxMarks ?? (val as any).totalMarks ?? (val as any).full ?? (val as any).fm;
-        if (rawObtained !== undefined && rawObtained !== null && String(rawObtained).trim() !== '') {
+        if (isNullMarksValue(rawObtained)) {
+          obtained = null;
+        } else if (rawObtained !== undefined && rawObtained !== null && String(rawObtained).trim() !== '') {
           obtained = Number(toEnglishDigits(String(rawObtained)));
         }
         if (Number(rawFull) > 0) {
           full = Number(rawFull);
         }
+      } else if (isNullMark) {
+        obtained = null;
       } else if (
         typeof val === 'number' ||
         (typeof val === 'string' && val.trim() !== '' && !isNaN(Number(toEnglishDigits(val))))
@@ -225,23 +289,39 @@ export function normalizeStudentResult(res: any): StudentResult {
         obtained = Number(toEnglishDigits(String(val)));
       }
 
-      if (obtained !== null && !isNaN(obtained)) {
+      if (isNullMark || (obtained !== null && !isNaN(obtained))) {
+        const keyInfo = extractFullMarksFromKey(k);
+        const actualK = keyInfo.cleanKey || k;
+        if (!full && keyInfo.extractedFullMarks) {
+          full = keyInfo.extractedFullMarks;
+        }
+
         if (!full) {
-          const rawF = (res as any)[`f_${k}`] ?? (res as any)[`full_${k}`] ?? (res as any)?.f?.[k] ?? (res as any)?.fullMarks?.[k];
+          const rawF =
+            (res as any)[`f_${k}`] ??
+            (res as any)[`f_${actualK}`] ??
+            (res as any)[`full_${k}`] ??
+            (res as any)[`full_${actualK}`] ??
+            (res as any)?.f?.[k] ??
+            (res as any)?.f?.[actualK] ??
+            (res as any)?.fullMarks?.[k] ??
+            (res as any)?.fullMarks?.[actualK];
           if (Number(rawF) > 0) full = Number(rawF);
         }
 
-        const meta = resolveSubjectMeta(k, full);
+        const meta = resolveSubjectMeta(actualK, full);
         const finalFull = full || Number(meta.fullMarks) || 0;
 
         const prev = subjectMap.get(meta.code);
-        if (!prev || (prev.obtainedMarks === 0 && obtained > 0)) {
-          const gradeInfo = calculateSubjectGrade(obtained, finalFull);
+        if (!prev || (prev.obtainedMarks === 0 && obtained !== null && obtained > 0) || (prev.obtainedMarks === null && obtained !== null)) {
+          const gradeInfo = isNullMark
+            ? { grade: '—', gradePoint: 0, isPassed: true }
+            : calculateSubjectGrade(obtained!, finalFull);
           subjectMap.set(meta.code, {
             subjectCode: meta.code,
             subjectName: meta.name,
             fullMarks: finalFull,
-            obtainedMarks: obtained,
+            obtainedMarks: isNullMark ? null : obtained,
             grade: gradeInfo.grade,
             gradePoint: gradeInfo.gradePoint,
             isPassed: gradeInfo.isPassed,
@@ -251,15 +331,51 @@ export function normalizeStudentResult(res: any): StudentResult {
     });
   }
 
+  // Ensure all applicable subjects for this technology and semester curriculum are present
+  // so no subject is dropped or invisible, preserving unassigned/absent subjects with "—"
+  const curriSubs = getAutoLoadedCurriculumSubjects([departmentId, departmentName], semesterId);
+  if (curriSubs && curriSubs.length > 0) {
+    curriSubs.forEach((cs) => {
+      const alreadyHas = Array.from(subjectMap.values()).some(
+        (s) => s.subjectCode === cs.subjectCode || s.subjectName.toLowerCase() === cs.subjectName.toLowerCase()
+      );
+      if (!alreadyHas) {
+        subjectMap.set(cs.subjectCode, {
+          subjectCode: cs.subjectCode,
+          subjectName: cs.subjectName,
+          fullMarks: cs.curriculumFullMarks || 100,
+          obtainedMarks: null,
+          grade: '—',
+          gradePoint: 0,
+          isPassed: true,
+        });
+      }
+    });
+  }
+
   const subjects = Array.from(subjectMap.values());
   const calculated = calculateOverallResult(subjects);
+  const hasNullSubjectMarks = subjects.some((s) => s.obtainedMarks === null);
 
-  // Preserve pre-calculated overall results from source data if present
-  let finalTotalFull = Number(res.totalFullMarks) > 0 ? Number(res.totalFullMarks) : calculated.totalFullMarks;
-  let finalTotalObtained = res.totalObtainedMarks !== undefined && !isNaN(Number(res.totalObtainedMarks)) ? Number(res.totalObtainedMarks) : calculated.totalObtainedMarks;
-  let finalGpa = res.gpa !== undefined && !isNaN(Number(res.gpa)) ? Number(res.gpa) : calculated.gpa;
-  let finalLetterGrade = res.letterGrade || calculated.letterGrade;
-  let finalIsPassed = res.isPassed !== undefined ? !!res.isPassed : calculated.isPassed;
+  // Preserve pre-calculated overall results from source data if present, but if null marks exist,
+  // ensure we use calculated results so null marks do not drag down GPA or falsely fail the student.
+  let finalTotalFull = hasNullSubjectMarks
+    ? calculated.totalFullMarks
+    : Number(res.totalFullMarks) > 0
+    ? Number(res.totalFullMarks)
+    : calculated.totalFullMarks;
+  let finalTotalObtained = hasNullSubjectMarks
+    ? calculated.totalObtainedMarks
+    : res.totalObtainedMarks !== undefined && !isNaN(Number(res.totalObtainedMarks))
+    ? Number(res.totalObtainedMarks)
+    : calculated.totalObtainedMarks;
+  let finalGpa = hasNullSubjectMarks
+    ? calculated.gpa
+    : res.gpa !== undefined && !isNaN(Number(res.gpa))
+    ? Number(res.gpa)
+    : calculated.gpa;
+  let finalLetterGrade = hasNullSubjectMarks ? calculated.letterGrade : res.letterGrade || calculated.letterGrade;
+  let finalIsPassed = hasNullSubjectMarks ? calculated.isPassed : res.isPassed !== undefined ? !!res.isPassed : calculated.isPassed;
 
   if (subjects.length === 0 && Number(res.totalFullMarks) > 0) {
     finalTotalFull = Number(res.totalFullMarks);

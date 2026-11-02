@@ -43,7 +43,7 @@ import {
   isFirestoreAutoId,
 } from '../../../services/db';
 import { getAutoLoadedCurriculumSubjects } from '../../../data/masterCurriculum';
-import { toBanglaDigits, toEnglishDigits, SEMESTER_MAP } from '../../../utils/bangla';
+import { toBanglaDigits, toEnglishDigits, SEMESTER_MAP, isNullMarksValue, formatBanglaMarks } from '../../../utils/bangla';
 import { calculateSubjectGrade, calculateOverallResult } from '../../../services/grading';
 import { SelectBottomSheet, SelectTrigger, SelectOption } from '../../common/SelectBottomSheet';
 import { BottomSheet } from '../../common/BottomSheet';
@@ -76,7 +76,8 @@ export interface StudentMarkRow {
   name: string;
   regNo?: string;
   isRegisteredStudent?: boolean;
-  marks: Record<string, number>; // subjectCode -> obtained marks
+  marks: Record<string, number | null>; // subjectCode -> obtained marks
+  subjectFullMarks?: Record<string, number>; // subjectCode -> JSON/Result full marks
 }
 
 // =========================================================================
@@ -804,23 +805,76 @@ export const ResultSheetGenerator: React.FC = () => {
         setDbStudents(filtered);
         setDbResults(resultList);
 
-        // If in 'FROM_STUDENTS' mode, populate studentRows from registered students
-        if (creationMethod === 'FROM_STUDENTS') {
-          const rows: StudentMarkRow[] = filtered.map((s) => {
-            const existingRes = resultList.find(
-              (r) => r.roll === s.roll || r.studentId === s.studentId
-            );
-            const m: Record<string, number> = {};
-            if (existingRes?.subjects) {
-              existingRes.subjects.forEach((sub) => {
-                m[sub.subjectCode] = sub.obtainedMarks;
+        // Extract full marks from resultList if available (from JSON upload)
+        const resultFullMarksMap = new Map<string, number>();
+        if (resultList.length > 0) {
+          resultList.forEach((res) => {
+            if (res.subjects) {
+              res.subjects.forEach((sub) => {
+                if (Number(sub.fullMarks) > 0) {
+                  if (sub.subjectCode && !resultFullMarksMap.has(sub.subjectCode)) {
+                    resultFullMarksMap.set(sub.subjectCode, Number(sub.fullMarks));
+                  }
+                  if (sub.subjectName && !resultFullMarksMap.has(sub.subjectName)) {
+                    resultFullMarksMap.set(sub.subjectName, Number(sub.fullMarks));
+                  }
+                }
               });
             }
+          });
+        }
+
+        // If the selected exam or existing results have specific full marks (e.g. 50), adopt them
+        const examObj = exams.find((x) => x.id === selectedExamId);
+        if (examObj?.subjects && examObj.subjects.length > 0) {
+          const mapped: ConfiguredSubject[] = examObj.subjects.map((s) => ({
+            id: `subj-${s.code}`,
+            subjectCode: s.code,
+            subjectName: s.name,
+            fullMarks: resultFullMarksMap.get(s.code) || resultFullMarksMap.get(s.name) || Number(s.fullMarks) || 50,
+          }));
+          setConfiguredSubjects(mapped);
+        } else if (resultList.length > 0 && resultList[0].subjects && resultList[0].subjects.length > 0) {
+          const mapped: ConfiguredSubject[] = resultList[0].subjects.map((s) => ({
+            id: `subj-${s.subjectCode}`,
+            subjectCode: s.subjectCode,
+            subjectName: s.subjectName,
+            fullMarks: Number(s.fullMarks) || 50,
+          }));
+          setConfiguredSubjects(mapped);
+        }
+
+        // If in 'FROM_STUDENTS' mode, populate studentRows from registered students and any results
+        if (creationMethod === 'FROM_STUDENTS') {
+          const studentMap = new Map<string, StudentMarkRow>();
+
+          filtered.forEach((s) => {
             const cleanRoll = toEnglishDigits(String(s.roll || '')).trim();
+            const existingRes = resultList.find(
+              (r) => r.roll === cleanRoll || r.studentId === s.studentId
+            );
+            const m: Record<string, number | null> = {};
+            const sfm: Record<string, number> = {};
+            if (existingRes?.subjects) {
+              existingRes.subjects.forEach((sub) => {
+                if (sub.subjectCode) {
+                  m[sub.subjectCode] = sub.obtainedMarks;
+                  if (Number(sub.fullMarks) > 0) sfm[sub.subjectCode] = Number(sub.fullMarks);
+                }
+                if (sub.subjectName) {
+                  m[sub.subjectName] = sub.obtainedMarks;
+                  if (Number(sub.fullMarks) > 0) sfm[sub.subjectName] = Number(sub.fullMarks);
+                }
+                if (sub.originalSubjectName) {
+                  m[sub.originalSubjectName] = sub.obtainedMarks;
+                  if (Number(sub.fullMarks) > 0) sfm[sub.originalSubjectName] = Number(sub.fullMarks);
+                }
+              });
+            }
             const cleanSid = (s.studentId && !isFirestoreAutoId(s.studentId))
               ? s.studentId
               : generateDynamicStudentId(cleanRoll, selectedTech);
-            return {
+            studentMap.set(cleanRoll, {
               id: s.id || `student-${cleanRoll}`,
               studentId: cleanSid,
               roll: cleanRoll,
@@ -828,9 +882,45 @@ export const ResultSheetGenerator: React.FC = () => {
               regNo: s.registration,
               isRegisteredStudent: true,
               marks: m,
-            };
+              subjectFullMarks: sfm,
+            });
           });
 
+          // Also include any results in resultList for students not in filtered
+          resultList.forEach((res) => {
+            const cleanRoll = toEnglishDigits(String(res.roll || '')).trim();
+            if (!cleanRoll || studentMap.has(cleanRoll)) return;
+            const m: Record<string, number | null> = {};
+            const sfm: Record<string, number> = {};
+            if (res.subjects) {
+              res.subjects.forEach((sub) => {
+                if (sub.subjectCode) {
+                  m[sub.subjectCode] = sub.obtainedMarks;
+                  if (Number(sub.fullMarks) > 0) sfm[sub.subjectCode] = Number(sub.fullMarks);
+                }
+                if (sub.subjectName) {
+                  m[sub.subjectName] = sub.obtainedMarks;
+                  if (Number(sub.fullMarks) > 0) sfm[sub.subjectName] = Number(sub.fullMarks);
+                }
+                if (sub.originalSubjectName) {
+                  m[sub.originalSubjectName] = sub.obtainedMarks;
+                  if (Number(sub.fullMarks) > 0) sfm[sub.originalSubjectName] = Number(sub.fullMarks);
+                }
+              });
+            }
+            studentMap.set(cleanRoll, {
+              id: res.id || `result-${cleanRoll}`,
+              studentId: res.studentId || generateDynamicStudentId(cleanRoll, selectedTech),
+              roll: cleanRoll,
+              name: res.studentName,
+              regNo: res.registration,
+              isRegisteredStudent: false,
+              marks: m,
+              subjectFullMarks: sfm,
+            });
+          });
+
+          const rows = Array.from(studentMap.values());
           setStudentRows(rows);
           setSelectedStudentIds(new Set(rows.map((r) => r.id)));
         }
@@ -929,12 +1019,20 @@ export const ResultSheetGenerator: React.FC = () => {
 
     return activeList.map((st) => {
       const subjectCalcs = configuredSubjects.map((sub) => {
-        const obtained = st.marks[sub.subjectCode] ?? 0;
-        const gradeInfo = calculateSubjectGrade(obtained, sub.fullMarks);
+        const rawMark = st.marks[sub.subjectCode] ?? st.marks[sub.subjectName];
+        const isNull = isNullMarksValue(rawMark);
+        const obtained = isNull ? null : (rawMark !== undefined && !isNaN(Number(rawMark)) ? Number(rawMark) : 0);
+        const fullMarkForSub =
+          st.subjectFullMarks?.[sub.subjectCode] ??
+          st.subjectFullMarks?.[sub.subjectName] ??
+          sub.fullMarks;
+        const gradeInfo = isNull
+          ? { grade: '—', gradePoint: 0, isPassed: true }
+          : calculateSubjectGrade(obtained!, fullMarkForSub);
         return {
           subjectCode: sub.subjectCode,
           subjectName: sub.subjectName,
-          fullMarks: sub.fullMarks,
+          fullMarks: fullMarkForSub,
           obtainedMarks: obtained,
           grade: gradeInfo.grade,
           gradePoint: gradeInfo.gradePoint,
@@ -1040,10 +1138,14 @@ export const ResultSheetGenerator: React.FC = () => {
       } else {
         row.subjects.forEach((sm) => {
           const fm = Number(sm.fullMarks);
-          const om = Number(sm.obtainedMarks);
           if (isNaN(fm) || fm <= 0) {
             errors.push(`${label}: '${sm.subjectName || sm.subjectCode}' বিষয়ের পূর্ণমান সঠিক নয় (${sm.fullMarks})।`);
           }
+          if (isNullMarksValue(sm.obtainedMarks)) {
+            // Null marks are valid unassigned marks - do not flag as negative or error
+            return;
+          }
+          const om = Number(sm.obtainedMarks);
           if (isNaN(om) || om < 0) {
             errors.push(`${label}: '${sm.subjectName || sm.subjectCode}' প্রাপ্ত নম্বর নেতিবাচক হতে পারে না।`);
           } else if (fm > 0 && om > fm) {
@@ -1102,6 +1204,18 @@ export const ResultSheetGenerator: React.FC = () => {
         const cleanRoll = toEnglishDigits(String(row.roll || '')).trim();
         const subjectResults: SubjectResult[] = row.subjects.map((sm) => {
           const fm = Number(sm.fullMarks) > 0 ? Number(sm.fullMarks) : 0;
+          const isNull = isNullMarksValue(sm.obtainedMarks);
+          if (isNull) {
+            return {
+              subjectCode: sm.subjectCode,
+              subjectName: sm.subjectName,
+              obtainedMarks: null,
+              fullMarks: fm,
+              grade: '—',
+              gradePoint: 0,
+              isPassed: true,
+            };
+          }
           const om = Number(sm.obtainedMarks) || 0;
           const gradeInfo = calculateSubjectGrade(om, fm);
           return {
@@ -1410,10 +1524,14 @@ export const ResultSheetGenerator: React.FC = () => {
               const isSelected = selectedStudentIds.has(st.id);
 
               // Calculate overall gpa for row preview
-              const subCalcs = configuredSubjects.map((s) => ({
-                obtainedMarks: st.marks[s.subjectCode] || 0,
-                fullMarks: s.fullMarks,
-              }));
+              const subCalcs = configuredSubjects.map((s) => {
+                const rawMark = st.marks[s.subjectCode] !== undefined ? st.marks[s.subjectCode] : st.marks[s.subjectName];
+                const isNull = isNullMarksValue(rawMark);
+                return {
+                  obtainedMarks: isNull ? null : (rawMark !== undefined && !isNaN(Number(rawMark)) ? Number(rawMark) : 0),
+                  fullMarks: s.fullMarks,
+                };
+              });
               const overall = calculateOverallResult(subCalcs);
 
               return (
@@ -1682,18 +1800,21 @@ export const ResultSheetGenerator: React.FC = () => {
                             {row.name}
                           </td>
                           {row.subjects.map((sm, sIdx) => {
-                            const isFail = !sm.isPassed || sm.grade === 'F';
+                            const isNull = sm.obtainedMarks === null || isNullMarksValue(sm.obtainedMarks);
+                            const isFail = !isNull && (!sm.isPassed || sm.grade === 'F');
                             return (
                               <td
                                 key={sIdx}
                                 className={`border border-black px-1 py-2 text-center font-mono font-bold ${
-                                  isFail && sm.obtainedMarks > 0 ? 'text-red-600' : ''
+                                  isFail ? 'text-red-600' : ''
                                 }`}
                               >
-                                {sm.obtainedMarks > 0 ? (
-                                  <span>{sm.obtainedMarks}</span>
+                                {isNull ? (
+                                  <span className="text-slate-500 font-bold font-sans">—</span>
+                                ) : sm.obtainedMarks === 0 ? (
+                                  <span className="text-slate-800 font-normal">০</span>
                                 ) : (
-                                  <span className="text-slate-400 font-normal">০</span>
+                                  <span>{sm.obtainedMarks}</span>
                                 )}
                               </td>
                             );

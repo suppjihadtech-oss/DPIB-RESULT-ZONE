@@ -27,16 +27,33 @@ export function updateCachedPassMark(val: number) {
 
 /**
  * Calculates grade, gradePoint and pass status from obtainedMarks and subjectFullMarks.
- * Formula: percentage = (obtainedMarks / subjectFullMarks) * 100
+ * - When obtainedMarks is null / undefined: returns grade "—", gradePoint 0, isPassed true (not a fail).
+ * - When obtainedMarks is 0: returns grade "F", gradePoint 0.00, isPassed false (genuine fail).
+ * - Formula: percentage = (obtainedMarks / subjectFullMarks) * 100
  * Exactly passMarkPercentage or more is PASS (Grade D or higher). Default is 40%.
  */
 export function calculateSubjectGrade(
-  obtainedMarks: number,
+  obtainedMarks: number | null | undefined,
   fullMarks: number,
   rules: GradingRule[] = DEFAULT_GRADING_RULES,
   customPassMark?: number
-): { grade: string; gradePoint: number; isPassed: boolean; percentage: number } {
-  const obtained = Number(obtainedMarks) || 0;
+): { grade: string; gradePoint: number; isPassed: boolean; percentage: number; isNullMark?: boolean } {
+  // Explicitly check for null, undefined, or NaN
+  if (
+    obtainedMarks === null ||
+    obtainedMarks === undefined ||
+    (typeof obtainedMarks === 'number' && isNaN(obtainedMarks))
+  ) {
+    return {
+      grade: '—',
+      gradePoint: 0.00,
+      isPassed: true, // Not considered a failed subject!
+      percentage: 0,
+      isNullMark: true,
+    };
+  }
+
+  const obtained = Number(obtainedMarks);
   const full = Number(fullMarks);
 
   if (!full || full <= 0) {
@@ -120,11 +137,11 @@ export function calculateSubjectGrade(
 /**
  * Calculates overall result for a student across all subjects.
  * Each subject's own fullMarks is respected.
- * If student has NO subject with 'F' (all subjects percentage >= 40), student is marked as PASS.
- * Overall letterGrade and GPA reflect the student's actual performance.
+ * Subjects with null marks are safely excluded from being penalized as 0 or Fail.
+ * Overall letterGrade and GPA reflect the student's actual performance on evaluated subjects.
  */
 export function calculateOverallResult(
-  subjects: { obtainedMarks: number; fullMarks: number; gradePoint?: number; grade?: string; isPassed?: boolean }[],
+  subjects: { obtainedMarks: number | null; fullMarks: number; gradePoint?: number; grade?: string; isPassed?: boolean }[],
   rules: GradingRule[] = DEFAULT_GRADING_RULES,
   customPassMark?: number
 ): {
@@ -148,17 +165,32 @@ export function calculateOverallResult(
     };
   }
 
-  let totalFull = 0;
+  let allFullMarks = 0;
+  let evaluatedFullMarks = 0;
   let totalObtained = 0;
   let weightedGradePointsSum = 0;
   let unweightedGradePointsSum = 0;
   let failedSubjectCount = 0;
+  let evaluatedCount = 0;
 
   for (const sub of subjects) {
     const full = Number(sub.fullMarks) || 0;
-    const obtained = Number(sub.obtainedMarks) || 0;
-    totalFull += full;
+    allFullMarks += full;
+
+    const isNull =
+      sub.obtainedMarks === null ||
+      sub.obtainedMarks === undefined ||
+      (typeof sub.obtainedMarks === 'number' && isNaN(sub.obtainedMarks));
+
+    if (isNull) {
+      // Null mark subject: preserved in subject list, but not penalized as zero or failed
+      continue;
+    }
+
+    const obtained = Number(sub.obtainedMarks);
+    evaluatedFullMarks += full;
     totalObtained += obtained;
+    evaluatedCount++;
 
     // Calculate subject grade using its own actual full marks and obtained marks
     const calc = calculateSubjectGrade(obtained, full, rules, customPassMark);
@@ -172,16 +204,30 @@ export function calculateOverallResult(
     weightedGradePointsSum += (calc.gradePoint * (full > 0 ? full : 1));
   }
 
-  const overallPercentage = totalFull > 0 ? (totalObtained / totalFull) * 100 : 0;
-  const overallGradeInfo = calculateSubjectGrade(totalObtained, totalFull, rules, customPassMark);
+  // If no subject has any marks assigned yet (all null)
+  if (evaluatedCount === 0) {
+    return {
+      totalFullMarks: allFullMarks,
+      totalObtainedMarks: 0,
+      overallPercentage: 0,
+      gpa: 0.00,
+      letterGrade: '—',
+      isPassed: true,
+      failedSubjectCount: 0,
+    };
+  }
+
+  const effectiveFullMarks = evaluatedFullMarks > 0 ? evaluatedFullMarks : allFullMarks;
+  const overallPercentage = effectiveFullMarks > 0 ? (totalObtained / effectiveFullMarks) * 100 : 0;
+  const overallGradeInfo = calculateSubjectGrade(totalObtained, effectiveFullMarks, rules, customPassMark);
 
   const hasFailedSubject = failedSubjectCount > 0;
-  // A student with NO 'F' in any subject is PASSED
+  // A student with NO 'F' in any evaluated subject is PASSED
   const isPassed = !hasFailedSubject;
 
   if (hasFailedSubject) {
     return {
-      totalFullMarks: totalFull,
+      totalFullMarks: effectiveFullMarks,
       totalObtainedMarks: totalObtained,
       overallPercentage: Math.round(overallPercentage * 100) / 100,
       gpa: 0.00,
@@ -192,8 +238,8 @@ export function calculateOverallResult(
   }
 
   // Calculate weighted GPA (matching total marks weight) and unweighted GPA
-  const weightedGpa = totalFull > 0 ? weightedGradePointsSum / totalFull : 0;
-  const unweightedGpa = subjects.length > 0 ? unweightedGradePointsSum / subjects.length : 0;
+  const weightedGpa = effectiveFullMarks > 0 ? weightedGradePointsSum / effectiveFullMarks : 0;
+  const unweightedGpa = evaluatedCount > 0 ? unweightedGradePointsSum / evaluatedCount : 0;
 
   // Use weighted GPA and round to 2 decimal places
   let gpa = Number(weightedGpa.toFixed(2));
@@ -208,7 +254,7 @@ export function calculateOverallResult(
   const letterGrade = overallGradeInfo.grade;
 
   return {
-    totalFullMarks: totalFull,
+    totalFullMarks: effectiveFullMarks,
     totalObtainedMarks: totalObtained,
     overallPercentage: Math.round(overallPercentage * 100) / 100,
     gpa,

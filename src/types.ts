@@ -108,7 +108,7 @@ export interface SubjectResult {
   subjectName: string;
   originalSubjectName?: string;
   fullMarks: number;
-  obtainedMarks: number;
+  obtainedMarks: number | null;
   grade: string;
   gradePoint: number;
   isPassed: boolean;

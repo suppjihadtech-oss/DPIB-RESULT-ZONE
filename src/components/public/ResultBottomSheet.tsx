@@ -26,6 +26,7 @@ import {
   toBanglaNumber,
   toBanglaOrdinal,
   formatBanglaDate,
+  formatBanglaMarks,
   SEMESTER_MAP,
   toEnglishDigits,
 } from '../../utils/bangla';
@@ -315,23 +316,25 @@ export const ResultBottomSheet: React.FC<ResultBottomSheetProps> = ({
                         {toBanglaDigits(sub.fullMarks)}
                       </td>
                       <td className="py-2 px-3 text-center font-black font-outfit text-slate-900">
-                        {toBanglaDigits(sub.obtainedMarks)}
+                        {formatBanglaMarks(sub.obtainedMarks)}
                       </td>
                       <td className="py-2 px-3 text-center">
                         <span
                           className={`inline-block px-2 py-0.5 rounded-md font-black font-outfit text-[11px] ${
-                            sub.grade === 'A+'
+                            sub.obtainedMarks === null || sub.grade === '—'
+                              ? 'bg-slate-100 text-slate-500 border border-slate-200'
+                              : sub.grade === 'A+'
                               ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
                               : sub.grade === 'F'
                               ? 'bg-rose-100 text-rose-800 border border-rose-200'
                               : 'bg-slate-100 text-slate-800 border border-slate-200'
                           }`}
                         >
-                          {sub.grade}
+                          {sub.obtainedMarks === null ? '—' : sub.grade}
                         </span>
                       </td>
                       <td className="py-2 px-3 text-center font-bold font-outfit text-slate-800">
-                        {toBanglaNumber(sub.gradePoint, 2)}
+                        {sub.obtainedMarks === null ? '—' : toBanglaNumber(sub.gradePoint, 2)}
                       </td>
                     </tr>
                   ))}

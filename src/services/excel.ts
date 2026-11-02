@@ -10,8 +10,8 @@ import {
   AmbiguousMatchInfo,
 } from '../types';
 import { calculateOverallResult, calculateSubjectGrade, DEFAULT_GRADING_RULES } from './grading';
-import { toEnglishDigits, toBanglaDigits, SEMESTER_MAP } from '../utils/bangla';
-import { MASTER_CURRICULUM_DATA } from '../data/masterCurriculum';
+import { toEnglishDigits, toBanglaDigits, SEMESTER_MAP, isNullMarksValue, formatBanglaMarks } from '../utils/bangla';
+import { MASTER_CURRICULUM_DATA, getAutoLoadedCurriculumSubjects } from '../data/masterCurriculum';
 import { isFirestoreAutoId, generateDynamicStudentId } from './db';
 
 export interface ParsedRow {
@@ -468,8 +468,12 @@ const RESERVED_STUDENT_KEYS = new Set([
 export function normalizeSubjectKey(raw: string): string {
   if (!raw) return '';
   return String(raw)
+    .normalize('NFC')
     .trim()
     .toUpperCase()
+    .replace(/\u09AF\u09BC/g, '\u09DF') // য়
+    .replace(/\u09A1\u09BC/g, '\u09DC') // ড়
+    .replace(/\u09A2\u09BC/g, '\u09DD') // ঢ়
     .replace(/\bVIII\b/g, '8')
     .replace(/\bVII\b/g, '7')
     .replace(/\bVI\b/g, '6')
@@ -478,12 +482,14 @@ export function normalizeSubjectKey(raw: string): string {
     .replace(/\bIII\b/g, '3')
     .replace(/\bII\b/g, '2')
     .replace(/\bI\b/g, '1')
-    .replace(/-II$/g, '2')
-    .replace(/_II$/g, '2')
-    .replace(/-I$/g, '1')
-    .replace(/_I$/g, '1')
-    .replace(/-III$/g, '3')
-    .replace(/_III$/g, '3')
+    .replace(/[-_]VIII\b/g, '8')
+    .replace(/[-_]VII\b/g, '7')
+    .replace(/[-_]VI\b/g, '6')
+    .replace(/[-_]IV\b/g, '4')
+    .replace(/[-_]V\b/g, '5')
+    .replace(/[-_]III\b/g, '3')
+    .replace(/[-_]II\b/g, '2')
+    .replace(/[-_]I\b/g, '1')
     .replace(/১/g, '1')
     .replace(/২/g, '2')
     .replace(/৩/g, '3')
@@ -497,26 +503,35 @@ export function normalizeSubjectKey(raw: string): string {
     .replace(/[^A-Z0-9\u0980-\u09FF]/g, '');
 }
 
-export interface SearchableBookItem {
-  subjectCode: string;
-  subjectName: string;
-  technology?: string;
-  semesterId?: string;
-  fullMarks?: number;
-  normalizedBangla: string;
-  normalizedAliases: string[];
-}
-
 /**
  * Text normalizer for intelligent case-insensitive, punctuation-insensitive,
  * digit-normalized, and Roman numeral-normalized matching.
  */
 export function normalizeSubjectText(input: string): string {
   if (!input) return '';
-  let str = String(input).toLowerCase();
+  let str = String(input).normalize('NFC').toLowerCase();
+
+  // Normalize Bengali composite nukta characters to precomposed Unicode
+  str = str
+    .replace(/\u09af\u09bc/g, '\u09df') // য়
+    .replace(/\u09a1\u09bc/g, '\u09dc') // ড়
+    .replace(/\u09a2\u09bc/g, '\u09dd'); // ঢ়
 
   // Convert Bengali numbers to English digits
   str = toEnglishDigits(str);
+
+  // Convert symbols '&' and '+' to ' and '
+  str = str.replace(/[&+]/g, ' and ');
+
+  // Replace punctuation, dashes, underscores, slashes, brackets with spaces
+  str = str.replace(/[_\-\/\\.,;:()[\]{}"'`~!?*#^%$@|]/g, ' ');
+
+  // Separate attached digits and letters: e.g. "math3" -> "math 3", "গণিত৩" -> "গণিত 3"
+  str = str.replace(/([a-z\u0980-\u09ff])(\d+)/gi, '$1 $2');
+  str = str.replace(/(\d+)([a-z\u0980-\u09ff])/gi, '$1 $2');
+
+  // Trailing roman numeral attached to non-roman letters (e.g. 'mathiii' -> 'math iii')
+  str = str.replace(/([^ivx\s\d])(viii|vii|vi|iv|v|iii|ii|i)\b/gi, '$1 $2');
 
   // Roman numerals conversion with word boundary protection
   str = str
@@ -527,21 +542,275 @@ export function normalizeSubjectText(input: string): string {
     .replace(/\bv\b/g, '5')
     .replace(/\biii\b/g, '3')
     .replace(/\bii\b/g, '2')
-    .replace(/\bi\b/g, '1')
-    .replace(/[-_]viii\b/g, ' 8')
-    .replace(/[-_]vii\b/g, ' 7')
-    .replace(/[-_]vi\b/g, ' 6')
-    .replace(/[-_]iv\b/g, ' 4')
-    .replace(/[-_]v\b/g, ' 5')
-    .replace(/[-_]iii\b/g, ' 3')
-    .replace(/[-_]ii\b/g, ' 2')
-    .replace(/[-_]i\b/g, ' 1');
-
-  // Replace punctuation, dashes, underscores, slashes, brackets with spaces
-  str = str.replace(/[_\-\/\\.,;:()[\]{}"'`~!?*+#&^%$@|]/g, ' ');
+    .replace(/\bi\b/g, '1');
 
   // Collapse multiple whitespaces
   return str.replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Safely extracts subject level / part number (1 through 8) from a normalized string.
+ * Example: "mathematics 3" -> 3, "গণিত 3" -> 3, "surveying 1" -> 1, "basic electricity" -> null
+ */
+export function extractSubjectLevelNumber(str: string): number | null {
+  if (!str) return null;
+  const matches = str.match(/\b([1-8])\b/g);
+  if (matches && matches.length > 0) {
+    return parseInt(matches[matches.length - 1], 10);
+  }
+  return null;
+}
+
+/**
+ * Safely extracts subject name and embedded full marks from subject header or JSON key.
+ * Supports patterns like:
+ * - "MATHEMATICS-III (50)" -> name: "MATHEMATICS-III", fullMarks: 50
+ * - "গণিত-৩ [৫০]" -> name: "গণিত-৩", fullMarks: 50
+ * - "PHYSICS (পূর্ণমান ৪০)" -> name: "PHYSICS", fullMarks: 40
+ * - "25931_50" or "MATHEMATICS-III_50" -> fullMarks: 50
+ */
+export function extractFullMarksFromKey(rawKey: string): { cleanKey: string; extractedFullMarks?: number } {
+  if (!rawKey) return { cleanKey: '' };
+  const trimmed = String(rawKey).trim();
+  // 1. In parentheses or brackets, e.g. "MATHEMATICS-III (50)", "গণিত ৩ [৫০]", "PHYSICS (পূর্ণমান ৪০)"
+  const bracketMatch = trimmed.match(/^(.+?)\s*[\(\[]\s*(?:পূর্ণমান|full|fm|marks)?\s*[:\s]*([0-9\u09e6-\u09ef]+)\s*[\)\]]$/i);
+  if (bracketMatch) {
+    const num = Number(toEnglishDigits(bracketMatch[2]));
+    if (num > 0) return { cleanKey: bracketMatch[1].trim(), extractedFullMarks: num };
+  }
+  // 2. Explicit prefix "পূর্ণমান", e.g. "MATHEMATICS-III পূর্ণমান ৫০"
+  const bnMatch = trimmed.match(/^(.+?)\s+পূর্ণমান\s*[:\s]*([0-9\u09e6-\u09ef]+)$/i);
+  if (bnMatch) {
+    const num = Number(toEnglishDigits(bnMatch[2]));
+    if (num > 0) return { cleanKey: bnMatch[1].trim(), extractedFullMarks: num };
+  }
+  // 3. Underscore or suffix with valid marks (>= 10 and <= 300), e.g. "MATHEMATICS-III_50", "25931_50", "গণিত_৫০"
+  const suffixMatch = trimmed.match(/^(.+?)[_ ]([0-9\u09e6-\u09ef]{2,3})$/);
+  if (suffixMatch) {
+    const num = Number(toEnglishDigits(suffixMatch[2]));
+    if (num >= 10 && num <= 300) return { cleanKey: suffixMatch[1].trim(), extractedFullMarks: num };
+  }
+  return { cleanKey: trimmed };
+}
+
+/**
+ * Cross-lingual and transliteration synonym dictionary.
+ * Maps English names, transliterated Bengali, and colloquial variations to canonical tokens.
+ */
+export const SUBJECT_TOKEN_SYNONYMS: { [token: string]: string } = {
+  // Math
+  mathematics: 'গণিত',
+  math: 'গণিত',
+  maths: 'গণিত',
+  গণিত: 'গণিত',
+  ম্যাথমেটিক্স: 'গণিত',
+  ম্যাথ: 'গণিত',
+
+  // Physics
+  physics: 'পদার্থবিজ্ঞান',
+  পদার্থবিজ্ঞান: 'পদার্থবিজ্ঞান',
+  পদার্থ: 'পদার্থবিজ্ঞান',
+  ফিজিক্স: 'পদার্থবিজ্ঞান',
+  ফিজিকস: 'পদার্থবিজ্ঞান',
+
+  // Chemistry
+  chemistry: 'রসায়ন',
+  রসায়ন: 'রসায়ন',
+  রসায়ন: 'রসায়ন',
+  কেমিস্ট্রি: 'রসায়ন',
+  কেমেস্ট্রি: 'রসায়ন',
+
+  // English & Bangla
+  english: 'ইংরেজি',
+  ইংরেজি: 'ইংরেজি',
+  ইংলিশ: 'ইংরেজি',
+  bangla: 'বাংলা',
+  bengali: 'বাংলা',
+  বাংলা: 'বাংলা',
+
+  // Common Engineering Terms
+  engineering: 'ইঞ্জিনিয়ারিং',
+  ইঞ্জিনিয়ারিং: 'ইঞ্জিনিয়ারিং',
+  ইঞ্জিনিয়ারিং: 'ইঞ্জিনিয়ারিং',
+  mechanical: 'মেকানিক্যাল',
+  মেকানিক্যাল: 'মেকানিক্যাল',
+  মেকানিকাল: 'মেকানিক্যাল',
+  electrical: 'ইলেকট্রিক্যাল',
+  ইলেকট্রিক্যাল: 'ইলেকট্রিক্যাল',
+  ইলেকট্রিকাল: 'ইলেকট্রিক্যাল',
+  বৈদ্যুতিক: 'ইলেকট্রিক্যাল',
+  electronic: 'ইলেকট্রনিক্স',
+  electronics: 'ইলেকট্রনিক্স',
+  ইলেকট্রনিক্স: 'ইলেকট্রনিক্স',
+  ইলেকট্রনিক: 'ইলেকট্রনিক্স',
+  civil: 'সিভিল',
+  সিভিল: 'সিভিল',
+  computer: 'কম্পিউটার',
+  কম্পিউটার: 'কম্পিউটার',
+
+  // Specific subjects
+  drawing: 'ড্রয়িং',
+  ড্রয়িং: 'ড্রয়িং',
+  ড্রইং: 'ড্রয়িং',
+  অঙ্কন: 'ড্রয়িং',
+  surveying: 'সার্ভেয়িং',
+  সার্ভেয়িং: 'সার্ভেয়িং',
+  সার্ভেয়িং: 'সার্ভেয়িং',
+  সার্ভে: 'সার্ভেয়িং',
+  circuit: 'সার্কিট',
+  circuits: 'সার্কিট',
+  সার্কিট: 'সার্কিট',
+  সার্কিটস: 'সার্কিট',
+  machine: 'মেশিন',
+  machines: 'মেশিন',
+  মেশিন: 'মেশিন',
+  materials: 'মেটেরিয়ালস',
+  material: 'মেটেরিয়ালস',
+  মেটেরিয়ালস: 'মেটেরিয়ালস',
+  মেটেরিয়ালস: 'মেটেরিয়ালস',
+  মেটেরিয়াল: 'মেটেরিয়ালস',
+  structure: 'স্ট্রাকচার',
+  structures: 'স্ট্রাকচার',
+  structural: 'স্ট্রাকচারাল',
+  স্ট্রাকচার: 'স্ট্রাকচার',
+  স্ট্রাকচারাল: 'স্ট্রাকচারাল',
+  programming: 'প্রোগ্রামিং',
+  প্রোগ্রামিং: 'প্রোগ্রামিং',
+  algorithm: 'অ্যালগরিদম',
+  algorithms: 'অ্যালগরিদম',
+  অ্যালগরিদম: 'অ্যালগরিদম',
+  এলগরিদম: 'অ্যালগরিদম',
+  data: 'ডাটা',
+  ডাটা: 'ডাটা',
+  উপাত্ত: 'ডাটা',
+  database: 'ডাটাবেজ',
+  dbms: 'ডাটাবেজ',
+  ডাটাবেজ: 'ডাটাবেজ',
+  ডাটাবেস: 'ডাটাবেজ',
+  network: 'নেটওয়ার্কিং',
+  networking: 'নেটওয়ার্কিং',
+  নেটওয়ার্ক: 'নেটওয়ার্কিং',
+  নেটওয়ার্কিং: 'নেটওয়ার্কিং',
+  নেটওয়ার্ক: 'নেটওয়ার্কিং',
+  নেটওয়ার্কিং: 'নেটওয়ার্কিং',
+  operating: 'অপারেটিং',
+  অপারেটিং: 'অপারেটিং',
+  system: 'সিস্টেম',
+  systems: 'সিস্টেম',
+  সিস্টেম: 'সিস্টেম',
+  mechanics: 'মেকানিক্স',
+  মেকানিক্স: 'মেকানিক্স',
+  thermodynamics: 'থার্মোডায়নামিক্স',
+  থার্মোডায়নামিক্স: 'থার্মোডায়নামিক্স',
+  application: 'অ্যাপ্লিকেশন',
+  applications: 'অ্যাপ্লিকেশন',
+  অ্যাপ্লিকেশন: 'অ্যাপ্লিকেশন',
+  এপ্লিকেশন: 'অ্যাপ্লিকেশন',
+  office: 'অফিস',
+  অফিস: 'অফিস',
+  coa: 'কম্পিউটার অফিস অ্যাপ্লিকেশন',
+  hydraulics: 'হাইড্রোলিক্স',
+  হাইড্রোলিক্স: 'হাইড্রোলিক্স',
+  hydrology: 'হাইড্রোলজি',
+  হাইড্রোলজি: 'হাইড্রোলজি',
+  foundation: 'ফাউন্ডেশন',
+  ফাউন্ডেশন: 'ফাউন্ডেশন',
+  estimating: 'এস্টিমেটিং',
+  এস্টিমেটিং: 'এস্টিমেটিং',
+  costing: 'কস্টিং',
+  কস্টিং: 'কস্টিং',
+  construction: 'কনস্ট্রাকশন',
+  কনস্ট্রাকশন: 'কনস্ট্রাকশন',
+  process: 'প্রসেস',
+  প্রসেস: 'প্রসেস',
+  management: 'ম্যানেজমেন্ট',
+  ম্যানেজমেন্ট: 'ম্যানেজমেন্ট',
+  security: 'সিকিউরিটি',
+  সাইবার: 'সাইবার',
+  cyber: 'সাইবার',
+  সিকিউরিটি: 'সিকিউরিটি',
+  iot: 'আইওটি',
+  আইওটি: 'আইওটি',
+  sensor: 'সেন্সর',
+  sensors: 'সেন্সর',
+  সেন্সর: 'সেন্সর',
+  fluid: 'ফ্লুইড',
+  ফ্লুইড: 'ফ্লুইড',
+  strength: 'স্ট্রেন্থ',
+  স্ট্রেন্থ: 'স্ট্রেন্থ',
+  cad: 'ক্যাড',
+  ক্যাড: 'ক্যাড',
+  cam: 'ক্যাম',
+  ক্যাম: 'ক্যাম',
+  shop: 'শপ',
+  শপ: 'শপ',
+  practice: 'প্র্যাকটিস',
+  প্র্যাকটিস: 'প্র্যাকটিস',
+  প্রাকটিস: 'প্র্যাকটিস',
+  basic: 'বেসিক',
+  বেসিক: 'বেসিক',
+  electricity: 'ইলেকট্রিসিটি',
+  ইলেকট্রিসিটি: 'ইলেকট্রিসিটি',
+  environmental: 'এনভায়রনমেন্টাল',
+  এনভায়রনমেন্টাল: 'এনভায়রনমেন্টাল',
+  studies: 'স্টাডিজ',
+  স্টাডিজ: 'স্টাডিজ',
+  social: 'সোশ্যাল',
+  সোশ্যাল: 'সোশ্যাল',
+  science: 'সাইন্স',
+  সাইন্স: 'সাইন্স',
+  accounting: 'একাউন্টিং',
+  একাউন্টিং: 'একাউন্টিং',
+  communication: 'কমিউনিকেশন',
+  কমিউনিকেশন: 'কমিউনিকেশন',
+  python: 'পাইথন',
+  পাইথন: 'পাইথন',
+  java: 'জাভা',
+  জাভা: 'জাভা',
+  graphics: 'গ্রাফিক্স',
+  গ্রাফিক্স: 'গ্রাফিক্স',
+  design: 'ডিজাইন',
+  ডিজাইন: 'ডিজাইন',
+  web: 'ওয়েব',
+  ওয়েব: 'ওয়েব',
+  development: 'ডেভেলপমেন্ট',
+  ডেভেলপমেন্ট: 'ডেভেলপমেন্ট',
+  architecture: 'আর্কিটেকচার',
+  আর্কিটেকচার: 'আর্কিটেকচার',
+  microprocessor: 'মাইক্রোপ্রসেসর',
+  মাইক্রোপ্রসেসর: 'মাইক্রোপ্রসেসর',
+  switchgear: 'সুইচ গিয়ার',
+  switch: 'সুইচ',
+  সুইচ: 'সুইচ',
+  gear: 'গিয়ার',
+  গিয়ার: 'গিয়ার',
+  protection: 'প্রোটেকশন',
+  প্রোটেকশন: 'প্রোটেকশন',
+  dc: 'ডি সি',
+  ac: 'এসি',
+};
+
+/**
+ * Converts a normalized subject string into canonical token sequence using the synonym dictionary.
+ */
+export function canonicalizeSubjectTokens(normalizedText: string): string {
+  if (!normalizedText) return '';
+  const tokens = normalizedText.split(' ').filter(Boolean);
+  const canonicalTokens = tokens.map((t) => SUBJECT_TOKEN_SYNONYMS[t] || t);
+  return canonicalTokens.join(' ').replace(/\s+/g, ' ').trim();
+}
+
+export interface SearchableBookItem {
+  subjectCode: string;
+  subjectName: string;
+  technology?: string;
+  semesterId?: string;
+  fullMarks?: number;
+  normalizedBangla: string;
+  canonicalBangla: string;
+  levelNumber: number | null;
+  normalizedAliases: string[];
+  canonicalAliases: string[];
 }
 
 /**
@@ -564,11 +833,20 @@ export function buildSearchableBookPool(
     const cleanCode = toEnglishDigits(code || '').trim();
     if (!cleanCode) return;
 
-    // Collect English aliases from BTEB_ENGLISH_TO_BANGLA_MAP
-    const aliases: string[] = [];
+    const normBangla = normalizeSubjectText(name);
+    const canonBangla = canonicalizeSubjectTokens(normBangla);
+    const levelNumber = extractSubjectLevelNumber(normBangla);
+
+    // Collect English & legacy aliases from BTEB_ENGLISH_TO_BANGLA_MAP
+    const normalizedAliases: string[] = [];
+    const canonicalAliases: string[] = [];
+
     Object.entries(BTEB_ENGLISH_TO_BANGLA_MAP).forEach(([enKey, info]) => {
       if (info.code === cleanCode) {
-        aliases.push(normalizeSubjectText(enKey));
+        const na = normalizeSubjectText(enKey);
+        const ca = canonicalizeSubjectTokens(na);
+        normalizedAliases.push(na);
+        canonicalAliases.push(ca);
       }
     });
 
@@ -578,8 +856,11 @@ export function buildSearchableBookPool(
       technology: tech ? tech.toUpperCase() : undefined,
       semesterId: semId ? String(semId).trim() : undefined,
       fullMarks: fullMarks || 100,
-      normalizedBangla: normalizeSubjectText(name),
-      normalizedAliases: Array.from(new Set(aliases)),
+      normalizedBangla: normBangla,
+      canonicalBangla: canonBangla,
+      levelNumber,
+      normalizedAliases: Array.from(new Set(normalizedAliases)),
+      canonicalAliases: Array.from(new Set(canonicalAliases)),
     });
   };
 
@@ -635,9 +916,21 @@ export function resolveSubjectMeta(
   semesterContext?: SemesterId,
   availableBooks?: BookItem[]
 ): ResolvedSubjectMeta {
-  const trimmedRaw = String(rawCodeOrName || '').trim();
+  const rawKeyInfo = extractFullMarksFromKey(rawCodeOrName);
+  const cleanRaw = rawKeyInfo.cleanKey || String(rawCodeOrName || '').trim();
+  if ((!explicitFullMarks || explicitFullMarks <= 0) && rawKeyInfo.extractedFullMarks) {
+    explicitFullMarks = rawKeyInfo.extractedFullMarks;
+  }
+
+  const nameKeyInfo = extractFullMarksFromKey(explicitSubjectName || '');
+  const cleanName = nameKeyInfo.cleanKey || String(explicitSubjectName || '').trim();
+  if ((!explicitFullMarks || explicitFullMarks <= 0) && nameKeyInfo.extractedFullMarks) {
+    explicitFullMarks = nameKeyInfo.extractedFullMarks;
+  }
+
+  const trimmedRaw = cleanRaw;
   const trimmedCode = String(explicitSubjectCode || '').trim();
-  const trimmedName = String(explicitSubjectName || '').trim();
+  const trimmedName = cleanName;
 
   const originalCandidate = trimmedName || (trimmedCode && trimmedCode !== trimmedRaw ? trimmedRaw : '') || trimmedRaw;
   const pool = buildSearchableBookPool(availableBooks, examSubjects);
@@ -646,7 +939,26 @@ export function resolveSubjectMeta(
   const cleanContextSem = semesterContext ? String(semesterContext).trim() : '';
 
   // Determine explicit 5-digit code or explicitSubjectCode
-  const rawCleanCode = toEnglishDigits(trimmedCode || (/^\d{5}$/.test(trimmedRaw) ? trimmedRaw : ''));
+  let rawCleanCode = toEnglishDigits(trimmedCode || (/^\d{5}$/.test(trimmedRaw) ? trimmedRaw : ''));
+
+  // If explicit code is an alias or legacy key from BTEB_ENGLISH_TO_BANGLA_MAP
+  if (!rawCleanCode && trimmedCode) {
+    const aliasMatch = BTEB_ENGLISH_TO_BANGLA_MAP[trimmedCode.toUpperCase()] || BTEB_ENGLISH_TO_BANGLA_MAP[normalizeSubjectKey(trimmedCode)];
+    if (aliasMatch) {
+      rawCleanCode = aliasMatch.code;
+    }
+  }
+
+  // Also check if trimmedRaw directly matches an alias in BTEB_ENGLISH_TO_BANGLA_MAP
+  if (!rawCleanCode && trimmedRaw) {
+    const aliasMatch =
+      BTEB_ENGLISH_TO_BANGLA_MAP[trimmedRaw.toUpperCase()] ||
+      BTEB_ENGLISH_TO_BANGLA_MAP[normalizeSubjectKey(trimmedRaw)] ||
+      BTEB_ENGLISH_TO_BANGLA_MAP[normalizeSubjectText(trimmedRaw).toUpperCase()];
+    if (aliasMatch) {
+      rawCleanCode = aliasMatch.code;
+    }
+  }
 
   // =========================================================================
   // CASE 1: SUBJECT CODE IS PROVIDED (Validate code, check for name mismatch)
@@ -675,13 +987,20 @@ export function resolveSubjectMeta(
       const testName = trimmedName || (trimmedCode && trimmedCode !== trimmedRaw ? trimmedRaw : '');
       if (testName && !/^\d{5}$/.test(testName)) {
         const normTest = normalizeSubjectText(testName);
-        const canonTest = normalizeSubjectKey(testName);
+        const canonTest = canonicalizeSubjectTokens(normTest);
+        const canonKeyTest = normalizeSubjectKey(testName);
+
         const nameMatchesOfficial =
           normTest === selectedBook.normalizedBangla ||
+          canonTest === selectedBook.canonicalBangla ||
           selectedBook.normalizedAliases.includes(normTest) ||
-          canonTest === normalizeSubjectKey(selectedBook.subjectName) ||
+          selectedBook.canonicalAliases.includes(canonTest) ||
+          canonKeyTest === normalizeSubjectKey(selectedBook.subjectName) ||
           (normTest.length >= 4 &&
-            (selectedBook.normalizedBangla.includes(normTest) || normTest.includes(selectedBook.normalizedBangla)));
+            (selectedBook.normalizedBangla.includes(normTest) ||
+              normTest.includes(selectedBook.normalizedBangla) ||
+              selectedBook.canonicalBangla.includes(canonTest) ||
+              canonTest.includes(selectedBook.canonicalBangla)));
 
         if (!nameMatchesOfficial) {
           codeMismatchWarning = `সতর্কতা: বিষয় কোড ${rawCleanCode}-এর অফিশিয়াল নাম '${selectedBook.subjectName}', কিন্তু JSON-এ '${testName}' দেওয়া হয়েছে!`;
@@ -715,9 +1034,11 @@ export function resolveSubjectMeta(
   // =========================================================================
   const searchQuery = trimmedName || trimmedRaw;
   const normSearch = normalizeSubjectText(searchQuery);
-  const canonSearch = normalizeSubjectKey(searchQuery);
+  const canonSearch = canonicalizeSubjectTokens(normSearch);
+  const canonKeySearch = normalizeSubjectKey(searchQuery);
+  const searchLevel = extractSubjectLevelNumber(normSearch);
 
-  if (!normSearch && !canonSearch) {
+  if (!normSearch && !canonSearch && !canonKeySearch) {
     return {
       code: 'N/A',
       name: originalCandidate,
@@ -738,43 +1059,52 @@ export function resolveSubjectMeta(
   const scoredList: ScoredCandidate[] = [];
 
   pool.forEach((b) => {
+    // Strict Guard: If part/level number is explicitly specified, enforce strict equality
+    if (searchLevel !== null && b.levelNumber !== null && searchLevel !== b.levelNumber) {
+      return; // Part number mismatch (e.g. Mathematics 3 cannot match Mathematics 1 or 2)
+    }
+
     let nameScore = 0;
 
-    // 1. Exact match with Bengali name or English aliases
+    // 1. Exact match with canonical tokens or normalized Bengali or English aliases
     if (
+      canonSearch === b.canonicalBangla ||
+      b.canonicalAliases.includes(canonSearch) ||
       normSearch === b.normalizedBangla ||
       b.normalizedAliases.includes(normSearch) ||
-      canonSearch === normalizeSubjectKey(b.subjectName)
-    ) {
-      nameScore = 100;
-    } else if (
-      b.normalizedAliases.some((a) => normalizeSubjectKey(a) === canonSearch)
+      canonKeySearch === normalizeSubjectKey(b.subjectName) ||
+      b.normalizedAliases.some((a) => normalizeSubjectKey(a) === canonKeySearch)
     ) {
       nameScore = 100;
     }
-    // 2. Starts-with or ends-with match
+    // 2. Starts-with / prefix match
     else if (
-      normSearch.length >= 3 &&
-      (b.normalizedBangla.startsWith(normSearch) || b.normalizedAliases.some((a) => a.startsWith(normSearch)))
+      (normSearch.length >= 3 && (b.normalizedBangla.startsWith(normSearch) || b.normalizedAliases.some((a) => a.startsWith(normSearch)))) ||
+      (canonSearch.length >= 3 && (b.canonicalBangla.startsWith(canonSearch) || b.canonicalAliases.some((a) => a.startsWith(canonSearch))))
     ) {
-      nameScore = 80;
+      nameScore = 85;
     }
     // 3. Word-token inclusion match
-    else if (normSearch.length >= 4) {
-      const searchTokens = normSearch.split(' ').filter((t) => t.length >= 2);
-      const banglaTokens = b.normalizedBangla.split(' ');
+    else if (canonSearch.length >= 3 || normSearch.length >= 3) {
+      const searchTokens = canonSearch.split(' ').filter((t) => t.length >= 2);
+      const banglaTokens = b.canonicalBangla.split(' ');
       const allTokensInBangla =
         searchTokens.length > 0 &&
         searchTokens.every((st) => banglaTokens.some((bt) => bt.includes(st) || st.includes(bt)));
 
-      const aliasTokensMatch = b.normalizedAliases.some((alias) => {
+      const aliasTokensMatch = b.canonicalAliases.some((alias) => {
         const at = alias.split(' ');
-        return searchTokens.every((st) => at.some((att) => att.includes(st) || st.includes(att)));
+        return searchTokens.length > 0 && searchTokens.every((st) => at.some((att) => att.includes(st) || st.includes(att)));
       });
 
       if (allTokensInBangla || aliasTokensMatch) {
-        nameScore = 75;
-      } else if (b.normalizedBangla.includes(normSearch) || b.normalizedAliases.some((a) => a.includes(normSearch))) {
+        nameScore = 80;
+      } else if (
+        b.canonicalBangla.includes(canonSearch) ||
+        b.canonicalAliases.some((a) => a.includes(canonSearch)) ||
+        b.normalizedBangla.includes(normSearch) ||
+        b.normalizedAliases.some((a) => a.includes(normSearch))
+      ) {
         nameScore = 65;
       }
     }
@@ -788,6 +1118,10 @@ export function resolveSubjectMeta(
       // Boost for matching technology
       if (cleanContextTech && b.technology && cleanContextTech.includes(b.technology.toLowerCase())) {
         contextBoost += 25;
+      }
+      // Boost for matching level number
+      if (searchLevel !== null && b.levelNumber === searchLevel) {
+        contextBoost += 15;
       }
 
       scoredList.push({
@@ -1447,15 +1781,31 @@ export async function parseExcelFile(
             if (excludedIndices.has(colIdx) || !colName) return;
 
             const rawVal = row[colIdx];
-            // If cell is empty or absent, skip or record 0
-            if (rawVal === undefined || rawVal === null || String(rawVal).trim() === '') {
-              return;
-            }
-
             const meta = colSubjectMap[colIdx] || resolveSubjectMeta(colName, undefined, targetExam?.subjects);
             let subFullMarks = Number(meta.fullMarks) > 0 ? Number(meta.fullMarks) : 0;
             if (!subFullMarks || subFullMarks <= 0) {
               subFullMarks = 100;
+            }
+
+            // If cell is empty, null, or dash, do NOT drop the subject: keep it with null marks
+            if (rawVal === undefined || rawVal === null || isNullMarksValue(rawVal)) {
+              subjectMarks[meta.code] = null as any;
+              subjectResults.push({
+                subjectCode: meta.code,
+                subjectName: meta.name,
+                originalSubjectName: meta.originalName || colName,
+                fullMarks: subFullMarks,
+                obtainedMarks: null,
+                grade: '—',
+                gradePoint: 0,
+                isPassed: true,
+                isMatchedFromDatabase: meta.isMatchedFromDatabase,
+                isAmbiguous: meta.isAmbiguous,
+                isCodeInvalid: meta.isCodeInvalid,
+                codeMismatchWarning: meta.codeMismatchWarning,
+                ambiguousCandidates: meta.ambiguousCandidates,
+              });
+              return;
             }
             const cleanStr = String(rawVal).trim().toLowerCase();
 
@@ -1672,6 +2022,73 @@ export function parseJsonResults(
     let rawDetectedDept = '';
     let explicitTopFullMarks: number | undefined;
 
+    // Registry of all subject-specific full marks detected in the JSON
+    const jsonSubjectFullMarksMap = new Map<string, number>();
+
+    const recordJsonSubjectFullMark = (key: string, full: any) => {
+      const num = Number(toEnglishDigits(String(full ?? '')));
+      if (isNaN(num) || num <= 0 || !key) return;
+      const trimmed = key.trim();
+      const normKey = normalizeSubjectKey(trimmed);
+      const normText = normalizeSubjectText(trimmed);
+      const canonText = canonicalizeSubjectTokens(normText);
+      const cleanDigits = toEnglishDigits(trimmed);
+
+      jsonSubjectFullMarksMap.set(trimmed, num);
+      jsonSubjectFullMarksMap.set(trimmed.toLowerCase(), num);
+      jsonSubjectFullMarksMap.set(normKey, num);
+      jsonSubjectFullMarksMap.set(normText, num);
+      jsonSubjectFullMarksMap.set(canonText, num);
+
+      if (/^\d{5}$/.test(cleanDigits)) {
+        jsonSubjectFullMarksMap.set(cleanDigits, num);
+      }
+
+      // Cross-register with BTEB_ENGLISH_TO_BANGLA_MAP
+      const btebDirect =
+        BTEB_ENGLISH_TO_BANGLA_MAP[trimmed.toUpperCase()] ||
+        BTEB_ENGLISH_TO_BANGLA_MAP[normKey.toUpperCase()] ||
+        BTEB_ENGLISH_TO_BANGLA_MAP[normText.toUpperCase()];
+      if (btebDirect) {
+        jsonSubjectFullMarksMap.set(btebDirect.code, num);
+        jsonSubjectFullMarksMap.set(btebDirect.name, num);
+        jsonSubjectFullMarksMap.set(btebDirect.name.toLowerCase(), num);
+        jsonSubjectFullMarksMap.set(normalizeSubjectText(btebDirect.name), num);
+        jsonSubjectFullMarksMap.set(canonicalizeSubjectTokens(normalizeSubjectText(btebDirect.name)), num);
+      }
+
+      // Cross-register with MASTER_CURRICULUM_DATA
+      const curriMatch = MASTER_CURRICULUM_DATA.find((c) => {
+        const cCode = toEnglishDigits(c.subjectCode).trim();
+        if (cleanDigits === cCode) return true;
+        const cNorm = normalizeSubjectText(c.subjectName);
+        if (normText === cNorm || canonText === canonicalizeSubjectTokens(cNorm)) return true;
+        return false;
+      });
+      if (curriMatch) {
+        jsonSubjectFullMarksMap.set(curriMatch.subjectCode, num);
+        jsonSubjectFullMarksMap.set(curriMatch.subjectName, num);
+        jsonSubjectFullMarksMap.set(curriMatch.subjectName.toLowerCase(), num);
+        jsonSubjectFullMarksMap.set(normalizeSubjectText(curriMatch.subjectName), num);
+        jsonSubjectFullMarksMap.set(canonicalizeSubjectTokens(normalizeSubjectText(curriMatch.subjectName)), num);
+      }
+
+      // Cross-register with availableBooks if passed
+      if (Array.isArray(availableBooks) && availableBooks.length > 0) {
+        const bookMatch = availableBooks.find((b) => {
+          const bCode = toEnglishDigits(b.subjectCode).trim();
+          if (cleanDigits === bCode) return true;
+          const bNorm = normalizeSubjectText(b.subjectName);
+          if (normText === bNorm || canonText === canonicalizeSubjectTokens(bNorm)) return true;
+          return false;
+        });
+        if (bookMatch) {
+          jsonSubjectFullMarksMap.set(bookMatch.subjectCode, num);
+          jsonSubjectFullMarksMap.set(bookMatch.subjectName, num);
+        }
+      }
+    };
+
     // Check top-level properties if parsed is an object
     if (!Array.isArray(parsed) && typeof parsed === 'object' && parsed !== null) {
       rawDetectedExamTitle =
@@ -1703,11 +2120,44 @@ export function parseJsonResults(
         parsed['বিভাগ'] ||
         parsed.departmentId ||
         '';
-      const rawF = parsed.fullMarks || parsed.defaultFullMarks || parsed.subjectFullMarks || parsed.maxMarks;
-      if (Number(rawF) > 0) explicitTopFullMarks = Number(rawF);
+
+      // Accept explicit top-level default subject full marks if explicitly specified
+      const rawF = parsed.defaultFullMarks || parsed.defaultSubjectFullMarks || parsed.subjectDefaultFullMarks || parsed.subjectFullMarks;
+      if (typeof rawF === 'number' && rawF > 0) {
+        explicitTopFullMarks = rawF;
+      } else if (typeof rawF === 'string' && Number(toEnglishDigits(rawF)) > 0) {
+        explicitTopFullMarks = Number(toEnglishDigits(rawF));
+      } else if (typeof parsed.fullMarks === 'number' && parsed.fullMarks > 0) {
+        explicitTopFullMarks = parsed.fullMarks;
+      } else if (typeof parsed.fullMarks === 'string' && Number(toEnglishDigits(parsed.fullMarks)) > 0) {
+        explicitTopFullMarks = Number(toEnglishDigits(parsed.fullMarks));
+      }
+
+      if (parsed.fullMarks && typeof parsed.fullMarks === 'object' && !Array.isArray(parsed.fullMarks)) {
+        Object.entries(parsed.fullMarks).forEach(([k, v]) => recordJsonSubjectFullMark(k, v));
+      }
+      if (parsed.fullMarksMap && typeof parsed.fullMarksMap === 'object') {
+        Object.entries(parsed.fullMarksMap).forEach(([k, v]) => recordJsonSubjectFullMark(k, v));
+      }
+      if (parsed.f && typeof parsed.f === 'object') {
+        Object.entries(parsed.f).forEach(([k, v]) => recordJsonSubjectFullMark(k, v));
+      }
+      if (parsed.full && typeof parsed.full === 'object') {
+        Object.entries(parsed.full).forEach(([k, v]) => recordJsonSubjectFullMark(k, v));
+      }
+      if (Array.isArray(parsed.subjects)) {
+        parsed.subjects.forEach((s: any) => {
+          if (!s || typeof s !== 'object') return;
+          const fm = s.fullMarks ?? s.f ?? s.full ?? s.maxMarks ?? s.fm;
+          if (s.subjectCode) recordJsonSubjectFullMark(String(s.subjectCode), fm);
+          if (s.code) recordJsonSubjectFullMark(String(s.code), fm);
+          if (s.subjectName) recordJsonSubjectFullMark(String(s.subjectName), fm);
+          if (s.name) recordJsonSubjectFullMark(String(s.name), fm);
+        });
+      }
     }
 
-    // If any metadata is still empty, scan each item in dataList
+    // Scan each item in dataList for exam info and full marks definitions
     for (const item of dataList) {
       if (!item || typeof item !== 'object') continue;
       if (!rawDetectedExamTitle) {
@@ -1745,12 +2195,100 @@ export function parseJsonResults(
           item.departmentId ||
           '';
       }
-      if (!explicitTopFullMarks) {
-        const rawF = item.fullMarks || item.defaultFullMarks || item.subjectFullMarks || item.maxMarks;
-        if (Number(rawF) > 0) explicitTopFullMarks = Number(rawF);
+
+      if (item.defaultFullMarks && typeof item.defaultFullMarks === 'number' && item.defaultFullMarks > 0) {
+        if (!explicitTopFullMarks) explicitTopFullMarks = item.defaultFullMarks;
       }
-      if (rawDetectedExamTitle && rawDetectedSemester && rawDetectedDept) break;
+      if (item.fullMarks && typeof item.fullMarks === 'object' && !Array.isArray(item.fullMarks)) {
+        Object.entries(item.fullMarks).forEach(([k, v]) => recordJsonSubjectFullMark(k, v));
+      }
+      if (item.fullMarksMap && typeof item.fullMarksMap === 'object') {
+        Object.entries(item.fullMarksMap).forEach(([k, v]) => recordJsonSubjectFullMark(k, v));
+      }
+      if (item.f && typeof item.f === 'object') {
+        Object.entries(item.f).forEach(([k, v]) => recordJsonSubjectFullMark(k, v));
+      }
+      if (Array.isArray(item.subjects)) {
+        item.subjects.forEach((s: any) => {
+          if (!s || typeof s !== 'object') return;
+          const fm = s.fullMarks ?? s.f ?? s.full ?? s.maxMarks ?? s.fm ?? s.fMarks;
+          if (s.subjectCode) recordJsonSubjectFullMark(String(s.subjectCode), fm);
+          if (s.code) recordJsonSubjectFullMark(String(s.code), fm);
+          if (s.subjectName) recordJsonSubjectFullMark(String(s.subjectName), fm);
+          if (s.name) recordJsonSubjectFullMark(String(s.name), fm);
+        });
+      }
+
+      // Check object subjects map
+      const objSubjects =
+        typeof item.subjects === 'object' && !Array.isArray(item.subjects)
+          ? item.subjects
+          : typeof item.marks === 'object' && !Array.isArray(item.marks)
+          ? item.marks
+          : null;
+      if (objSubjects) {
+        Object.entries(objSubjects).forEach(([k, val]) => {
+          if (typeof val === 'object' && val !== null) {
+            const fm = (val as any).fullMarks ?? (val as any).f ?? (val as any).full ?? (val as any).maxMarks ?? (val as any).fm;
+            if (fm) recordJsonSubjectFullMark(k, fm);
+          }
+        });
+      }
+
+      // Check flat keys for f_ or embedded full marks
+      Object.entries(item).forEach(([k, val]) => {
+        if (/^(f_|full_|fm_|fullMarks_|পূর্ণমান_)/i.test(k)) {
+          const targetSub = k.replace(/^(f_|full_|fm_|fullMarks_|পূর্ণমান_)/i, '');
+          recordJsonSubjectFullMark(targetSub, val);
+        }
+        const keyInfo = extractFullMarksFromKey(k);
+        if (keyInfo.extractedFullMarks) {
+          recordJsonSubjectFullMark(keyInfo.cleanKey, keyInfo.extractedFullMarks);
+        }
+        if (typeof val === 'object' && val !== null) {
+          const fm = (val as any).fullMarks ?? (val as any).f ?? (val as any).full ?? (val as any).maxMarks ?? (val as any).fm;
+          if (fm) {
+            recordJsonSubjectFullMark(keyInfo.cleanKey || k, fm);
+          }
+        }
+      });
     }
+
+    const defaultSubjectFullMarks = explicitTopFullMarks;
+
+    // Helper to query full marks explicitly supplied by the user in the JSON
+    const lookupJsonFullMarks = (code?: string, name?: string, rawKey?: string): number | undefined => {
+      if (rawKey) {
+        const keyInfo = extractFullMarksFromKey(rawKey);
+        if (keyInfo.extractedFullMarks) return keyInfo.extractedFullMarks;
+        const normKey = rawKey.trim();
+        if (jsonSubjectFullMarksMap.has(normKey)) return jsonSubjectFullMarksMap.get(normKey);
+        if (jsonSubjectFullMarksMap.has(normKey.toLowerCase())) return jsonSubjectFullMarksMap.get(normKey.toLowerCase());
+        const cleanedNorm = normalizeSubjectKey(normKey);
+        if (jsonSubjectFullMarksMap.has(cleanedNorm)) return jsonSubjectFullMarksMap.get(cleanedNorm);
+        const normText = normalizeSubjectText(normKey);
+        if (jsonSubjectFullMarksMap.has(normText)) return jsonSubjectFullMarksMap.get(normText);
+        const canonText = canonicalizeSubjectTokens(normText);
+        if (jsonSubjectFullMarksMap.has(canonText)) return jsonSubjectFullMarksMap.get(canonText);
+      }
+      if (code) {
+        const cleanCode = toEnglishDigits(code.trim());
+        if (jsonSubjectFullMarksMap.has(cleanCode)) return jsonSubjectFullMarksMap.get(cleanCode);
+        if (jsonSubjectFullMarksMap.has(code.trim())) return jsonSubjectFullMarksMap.get(code.trim());
+      }
+      if (name) {
+        const normName = name.trim();
+        if (jsonSubjectFullMarksMap.has(normName)) return jsonSubjectFullMarksMap.get(normName);
+        if (jsonSubjectFullMarksMap.has(normName.toLowerCase())) return jsonSubjectFullMarksMap.get(normName.toLowerCase());
+        const normSubject = normalizeSubjectText(normName);
+        if (jsonSubjectFullMarksMap.has(normSubject)) return jsonSubjectFullMarksMap.get(normSubject);
+        const canonSubject = canonicalizeSubjectTokens(normSubject);
+        if (jsonSubjectFullMarksMap.has(canonSubject)) return jsonSubjectFullMarksMap.get(canonSubject);
+        const canonKey = normalizeSubjectKey(normName);
+        if (jsonSubjectFullMarksMap.has(canonKey)) return jsonSubjectFullMarksMap.get(canonKey);
+      }
+      return undefined;
+    };
 
     const topExamTitle = String(rawDetectedExamTitle || '').trim();
     const topSemester = normalizeSemester(rawDetectedSemester);
@@ -1764,9 +2302,6 @@ export function parseJsonResults(
       );
       if (match) targetExam = match;
     }
-
-    // Optional explicit top-level full marks
-    const defaultSubjectFullMarks = explicitTopFullMarks;
 
     // Step 1: Detect all unique subjects present in the JSON payload
     const detectedSubjectMetaMap = new Map<string, ResolvedSubjectMeta>();
@@ -1786,8 +2321,11 @@ export function parseJsonResults(
         explicitSubName?: string
       ) => {
         if (!rawKey && !explicitSubCode && !explicitSubName) return;
-        let explicitFull: number | undefined;
-        if (typeof rawVal === 'object' && rawVal !== null) {
+        const keyInfo = extractFullMarksFromKey(rawKey);
+        const actualKey = keyInfo.cleanKey || rawKey;
+
+        let explicitFull: number | undefined = keyInfo.extractedFullMarks;
+        if (!explicitFull && typeof rawVal === 'object' && rawVal !== null) {
           const rawF =
             (rawVal as any).fullMarks ??
             (rawVal as any).f ??
@@ -1800,13 +2338,21 @@ export function parseJsonResults(
         if (!explicitFull) {
           const rawF =
             (item as any)[`f_${rawKey}`] ??
+            (item as any)[`f_${actualKey}`] ??
             (item as any)[`full_${rawKey}`] ??
+            (item as any)[`full_${actualKey}`] ??
             (item as any)?.f?.[rawKey] ??
-            (item as any)?.fullMarks?.[rawKey];
+            (item as any)?.f?.[actualKey] ??
+            (item as any)?.fullMarks?.[rawKey] ??
+            (item as any)?.fullMarks?.[actualKey];
           if (Number(rawF) > 0) explicitFull = Number(rawF);
         }
+        if (!explicitFull) {
+          explicitFull = lookupJsonFullMarks(explicitSubCode, explicitSubName || actualKey, rawKey);
+        }
+
         const meta = resolveSubjectMeta(
-          rawKey,
+          actualKey,
           explicitFull || defaultSubjectFullMarks,
           targetExam?.subjects,
           explicitSubCode,
@@ -1815,7 +2361,21 @@ export function parseJsonResults(
           topSemester,
           availableBooks
         );
-        if (explicitFull) meta.fullMarks = explicitFull;
+
+        // Strictly prioritize JSON-provided full marks over database defaults
+        const finalFull =
+          explicitFull ||
+          lookupJsonFullMarks(meta.code, meta.name, actualKey) ||
+          (Number(meta.fullMarks) > 0 ? Number(meta.fullMarks) : 0) ||
+          defaultSubjectFullMarks ||
+          100;
+        meta.fullMarks = finalFull;
+        if (explicitFull || finalFull) {
+          recordJsonSubjectFullMark(meta.code, finalFull);
+          recordJsonSubjectFullMark(meta.name, finalFull);
+          recordJsonSubjectFullMark(actualKey, finalFull);
+        }
+
         if (!meta.isBanglaResolved && !containsBangla(meta.name)) {
           unresolvedBanglaSet.add(meta.name);
         }
@@ -1836,6 +2396,12 @@ export function parseJsonResults(
         }
         if (meta.isUnmatched) {
           unmatchedSubjectsSet.add(meta.originalName || meta.name);
+        }
+
+        // Retain any explicit full marks if already registered
+        const existingMeta = detectedSubjectMetaMap.get(meta.code);
+        if (existingMeta && Number(existingMeta.fullMarks) > 0 && (!explicitFull && !defaultSubjectFullMarks)) {
+          meta.fullMarks = existingMeta.fullMarks;
         }
         detectedSubjectMetaMap.set(meta.code, meta);
       };
@@ -1881,6 +2447,7 @@ export function parseJsonResults(
         if (
           typeof val === 'number' ||
           (typeof val === 'string' && val.trim() !== '' && !isNaN(Number(toEnglishDigits(val)))) ||
+          isNullMarksValue(val) ||
           (typeof val === 'object' && val !== null && ((val as any).obtainedMarks !== undefined || (val as any).marks !== undefined || (val as any).score !== undefined))
         ) {
           let subCode: string | undefined = /^\d{5}$/.test(k.trim()) ? k.trim() : undefined;
@@ -1896,12 +2463,72 @@ export function parseJsonResults(
 
     const detectedSubjects: ExamSubject[] = Array.from(detectedSubjectMetaMap.values());
 
-    const effectiveSubjects: ExamSubject[] =
-      detectedSubjects.length > 0
-        ? detectedSubjects
-        : targetExam && targetExam.subjects.length > 0
-        ? targetExam.subjects
-        : [];
+    // Determine applicable curriculum subjects based on topSemester and topDept,
+    // prioritizing any JSON-supplied full marks over database defaults
+    const curriculumSubjects = getAutoLoadedCurriculumSubjects(
+      [topDept.id, topDept.name],
+      topSemester
+    ).map((s) => {
+      const jsonFull = lookupJsonFullMarks(s.subjectCode, s.subjectName);
+      return {
+        code: s.subjectCode,
+        name: s.subjectName,
+        fullMarks:
+          jsonFull ||
+          (Number(s.curriculumFullMarks) > 0 ? Number(s.curriculumFullMarks) : 0) ||
+          defaultSubjectFullMarks ||
+          100,
+      };
+    });
+
+    // Build effective subject map ensuring all applicable subjects for this semester and technology are included
+    const effectiveSubjectMap = new Map<string, ExamSubject>();
+
+    // A. First add targetExam subjects if predefined (updating any fullMarks specified in JSON)
+    if (targetExam && targetExam.subjects && targetExam.subjects.length > 0) {
+      targetExam.subjects.forEach((s) => {
+        if (s.code) {
+          const jsonFull = lookupJsonFullMarks(s.code, s.name);
+          effectiveSubjectMap.set(s.code, {
+            ...s,
+            fullMarks: jsonFull || Number(s.fullMarks) || 100,
+          });
+        }
+      });
+    }
+
+    // B. Second add curriculum subjects for this semester and technology
+    curriculumSubjects.forEach((s) => {
+      if (!effectiveSubjectMap.has(s.code)) {
+        effectiveSubjectMap.set(s.code, s);
+      }
+    });
+
+    // C. Third add all detected subjects from the JSON
+    detectedSubjects.forEach((s) => {
+      const existing = effectiveSubjectMap.get(s.code);
+      const jsonFull = lookupJsonFullMarks(s.code, s.name, (s as any).originalName);
+      const chosenFull =
+        jsonFull ||
+        (Number(s.fullMarks) > 0 ? Number(s.fullMarks) : 0) ||
+        (Number(existing?.fullMarks) > 0 ? Number(existing?.fullMarks) : 0) ||
+        defaultSubjectFullMarks ||
+        100;
+      if (existing) {
+        effectiveSubjectMap.set(s.code, {
+          ...existing,
+          ...s,
+          fullMarks: chosenFull,
+        });
+      } else {
+        effectiveSubjectMap.set(s.code, {
+          ...s,
+          fullMarks: chosenFull,
+        });
+      }
+    });
+
+    const effectiveSubjects: ExamSubject[] = Array.from(effectiveSubjectMap.values());
 
     const dynamicExamTotalFullMarks = effectiveSubjects.reduce(
       (sum, s) => sum + (Number(s.fullMarks) || defaultSubjectFullMarks || 100),
@@ -1924,6 +2551,12 @@ export function parseJsonResults(
         allowMeritList: true,
         createdAt: Date.now(),
         updatedAt: Date.now(),
+      };
+    } else {
+      targetExam = {
+        ...targetExam,
+        subjects: effectiveSubjects,
+        totalMarks: dynamicExamTotalFullMarks,
       };
     }
 
@@ -2002,12 +2635,12 @@ export function parseJsonResults(
           const k = s.subjectCode || s.code || s.name || s.subject;
           const subCode = s.subjectCode || s.code;
           const subName = s.subjectName || s.name || s.subject;
-          const v = s.obtainedMarks ?? s.marks ?? s.score ?? s.val;
+          const v = s.obtainedMarks !== undefined ? s.obtainedMarks : s.marks !== undefined ? s.marks : s.score !== undefined ? s.score : s.val;
           const rawF = s.fullMarks ?? s.f ?? s.full ?? s.maxMarks ?? s.subjectFullMarks ?? s.fm ?? s.fMarks;
-          if (k && v !== undefined && v !== null && String(v).trim() !== '') {
+          if (k && (v !== undefined || isNullMarksValue(v) || s.obtainedMarks === null || s.marks === null || s.score === null)) {
             studentSubjectEntries.push({
               rawKey: String(k),
-              rawVal: v,
+              rawVal: v ?? null,
               explicitFullMarks: Number(rawF) > 0 ? Number(rawF) : undefined,
               explicitSubjectCode: subCode,
               explicitSubjectName: subName,
@@ -2026,13 +2659,13 @@ export function parseJsonResults(
 
       if (objMap) {
         Object.entries(objMap).forEach(([k, v]) => {
-          if (!k || v === undefined || v === null) return;
+          if (!k || v === undefined) return;
           let val = v;
           let full: number | undefined;
           let subCode: string | undefined = /^\d{5}$/.test(k.trim()) ? k.trim() : undefined;
           let subName: string | undefined;
           if (typeof v === 'object' && v !== null) {
-            val = (v as any).obtainedMarks ?? (v as any).marks ?? (v as any).score ?? (v as any).val;
+            val = (v as any).obtainedMarks !== undefined ? (v as any).obtainedMarks : (v as any).marks !== undefined ? (v as any).marks : (v as any).score !== undefined ? (v as any).score : (v as any).val;
             const rawF = (v as any).fullMarks ?? (v as any).f ?? (v as any).full ?? (v as any).maxMarks ?? (v as any).subjectFullMarks ?? (v as any).fm;
             if (Number(rawF) > 0) full = Number(rawF);
             if ((v as any).subjectCode || (v as any).code) subCode = (v as any).subjectCode || (v as any).code;
@@ -2042,7 +2675,7 @@ export function parseJsonResults(
             const rawF = (item as any)[`f_${k}`] ?? (item as any)[`full_${k}`] ?? (item as any)?.f?.[k] ?? (item as any)?.fullMarks?.[k];
             if (Number(rawF) > 0) full = Number(rawF);
           }
-          if (val !== undefined && val !== null && String(val).trim() !== '') {
+          if (val !== undefined) {
             studentSubjectEntries.push({
               rawKey: k,
               rawVal: val,
@@ -2056,17 +2689,20 @@ export function parseJsonResults(
 
       // 3. Check flat keys on item
       Object.entries(item).forEach(([k, v]) => {
-        if (!k || v === undefined || v === null) return;
+        if (!k || v === undefined) return;
         const lowerK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
         if (RESERVED_STUDENT_KEYS.has(lowerK) || RESERVED_STUDENT_KEYS.has(k.toLowerCase())) return;
         if (k.startsWith('f_') || k.startsWith('full_') || k.startsWith('fm_')) return;
 
+        const keyInfo = extractFullMarksFromKey(k);
+        const actualK = keyInfo.cleanKey || k;
+
         let val = v;
-        let full: number | undefined;
-        let subCode: string | undefined = /^\d{5}$/.test(k.trim()) ? k.trim() : undefined;
+        let full: number | undefined = keyInfo.extractedFullMarks;
+        let subCode: string | undefined = /^\d{5}$/.test(actualK.trim()) ? actualK.trim() : undefined;
         let subName: string | undefined;
         if (typeof v === 'object' && v !== null) {
-          val = (v as any).obtainedMarks ?? (v as any).marks ?? (v as any).score ?? (v as any).val;
+          val = (v as any).obtainedMarks !== undefined ? (v as any).obtainedMarks : (v as any).marks !== undefined ? (v as any).marks : (v as any).score !== undefined ? (v as any).score : (v as any).val;
           const rawF = (v as any).fullMarks ?? (v as any).f ?? (v as any).full ?? (v as any).maxMarks ?? (v as any).subjectFullMarks ?? (v as any).fm;
           if (Number(rawF) > 0) full = Number(rawF);
           if ((v as any).subjectCode || (v as any).code) subCode = (v as any).subjectCode || (v as any).code;
@@ -2074,28 +2710,176 @@ export function parseJsonResults(
         }
 
         if (!full) {
-          const rawF = (item as any)[`f_${k}`] ?? (item as any)[`full_${k}`] ?? (item as any)?.f?.[k] ?? (item as any)?.fullMarks?.[k];
+          const rawF =
+            (item as any)[`f_${k}`] ??
+            (item as any)[`f_${actualK}`] ??
+            (item as any)[`full_${k}`] ??
+            (item as any)[`full_${actualK}`] ??
+            (item as any)?.f?.[k] ??
+            (item as any)?.f?.[actualK] ??
+            (item as any)?.fullMarks?.[k] ??
+            (item as any)?.fullMarks?.[actualK];
           if (Number(rawF) > 0) full = Number(rawF);
         }
 
-        if (val !== undefined && val !== null && String(val).trim() !== '') {
-          const cleanStr = String(val).trim();
-          if (!isNaN(Number(toEnglishDigits(cleanStr)))) {
-            const alreadyAdded = studentSubjectEntries.some((e) => e.rawKey.toLowerCase() === k.toLowerCase());
-            if (!alreadyAdded) {
-              studentSubjectEntries.push({
-                rawKey: k,
-                rawVal: val,
-                explicitFullMarks: full,
-                explicitSubjectCode: subCode,
-                explicitSubjectName: subName,
-              });
-            }
+        if (!full) {
+          full = lookupJsonFullMarks(subCode, subName || actualK, k);
+        }
+
+        const isNumeric = val !== null && val !== undefined && String(val).trim() !== '' && !isNaN(Number(toEnglishDigits(String(val).trim())));
+        const isNullMark = isNullMarksValue(val);
+
+        if (isNumeric || isNullMark) {
+          const alreadyAdded = studentSubjectEntries.some((e) => e.rawKey.toLowerCase() === k.toLowerCase() || e.rawKey.toLowerCase() === actualK.toLowerCase());
+          if (!alreadyAdded) {
+            studentSubjectEntries.push({
+              rawKey: k,
+              rawVal: isNullMark ? null : val,
+              explicitFullMarks: full,
+              explicitSubjectCode: subCode,
+              explicitSubjectName: subName,
+            });
           }
         }
       });
 
-      // Process subjects for this student
+      // Process subjects for this student:
+      // Iterate over all applicable subjects for this exam/semester/technology (effectiveSubjects)
+      // to guarantee that no subject disappears or is dropped from the result.
+      effectiveSubjects.forEach((subj) => {
+        // Find if this student provided a mark for this subject
+        const matchEntry = studentSubjectEntries.find((entry) => {
+          if (entry.explicitSubjectCode && entry.explicitSubjectCode === subj.code) return true;
+          const meta = resolveSubjectMeta(
+            entry.rawKey,
+            entry.explicitFullMarks,
+            targetExam?.subjects,
+            entry.explicitSubjectCode,
+            entry.explicitSubjectName,
+            itemDept?.name || topDept?.name,
+            itemSemester || topSemester,
+            availableBooks
+          );
+          return meta.code === subj.code || meta.name.toLowerCase() === subj.name.toLowerCase();
+        });
+
+        const jsonFull = lookupJsonFullMarks(subj.code, subj.name, matchEntry?.rawKey);
+        let subFullMarks =
+          Number(matchEntry?.explicitFullMarks) > 0
+            ? Number(matchEntry?.explicitFullMarks)
+            : jsonFull
+            ? jsonFull
+            : Number(subj.fullMarks) > 0
+            ? Number(subj.fullMarks)
+            : defaultSubjectFullMarks
+            ? defaultSubjectFullMarks
+            : 100;
+
+        if (!matchEntry || isNullMarksValue(matchEntry.rawVal)) {
+          // Marks are null, empty, unassigned, or subject was not in student object (absent):
+          // Always keep subject row in result with null marks and "—"
+          subjectResults.push({
+            subjectCode: subj.code,
+            subjectName: subj.name,
+            originalSubjectName: matchEntry?.rawKey || subj.originalName,
+            fullMarks: subFullMarks,
+            obtainedMarks: null,
+            grade: '—',
+            gradePoint: 0,
+            isPassed: true,
+            isMatchedFromDatabase: subj.isMatchedFromDatabase,
+            isAmbiguous: subj.isAmbiguous,
+            isCodeInvalid: subj.isCodeInvalid,
+            codeMismatchWarning: subj.codeMismatchWarning,
+            ambiguousCandidates: subj.ambiguousCandidates,
+          });
+          return;
+        }
+
+        const rawVal = matchEntry.rawVal;
+        const numericVal = Number(toEnglishDigits(String(rawVal).trim()));
+
+        if (isNaN(numericVal)) {
+          rowErrors.push(`সারি ${rowNumber}: '${subj.name}' বিষয়ের নম্বর সঠিক নয় (${rawVal})`);
+          subjectMarks[subj.code] = 0;
+          subjectResults.push({
+            subjectCode: subj.code,
+            subjectName: subj.name,
+            originalSubjectName: matchEntry?.rawKey || subj.originalName,
+            fullMarks: subFullMarks,
+            obtainedMarks: 0,
+            grade: 'F',
+            gradePoint: 0,
+            isPassed: false,
+            isMatchedFromDatabase: subj.isMatchedFromDatabase,
+            isAmbiguous: subj.isAmbiguous,
+            isCodeInvalid: subj.isCodeInvalid,
+            codeMismatchWarning: subj.codeMismatchWarning,
+            ambiguousCandidates: subj.ambiguousCandidates,
+          });
+        } else if (numericVal < 0) {
+          rowErrors.push(`সারি ${rowNumber}: '${subj.name}' প্রাপ্ত নম্বর নেতিবাচক হতে পারে না (${numericVal})`);
+          subjectMarks[subj.code] = numericVal;
+          subjectResults.push({
+            subjectCode: subj.code,
+            subjectName: subj.name,
+            originalSubjectName: matchEntry?.rawKey || subj.originalName,
+            fullMarks: subFullMarks,
+            obtainedMarks: numericVal,
+            grade: 'F',
+            gradePoint: 0,
+            isPassed: false,
+            isMatchedFromDatabase: subj.isMatchedFromDatabase,
+            isAmbiguous: subj.isAmbiguous,
+            isCodeInvalid: subj.isCodeInvalid,
+            codeMismatchWarning: subj.codeMismatchWarning,
+            ambiguousCandidates: subj.ambiguousCandidates,
+          });
+        } else if (subFullMarks > 0 && numericVal > subFullMarks) {
+          if (matchEntry?.explicitFullMarks) {
+            rowErrors.push(`সারি ${rowNumber}: '${subj.name}' প্রাপ্ত নম্বর (${numericVal}) পূর্ণমান (${subFullMarks})-এর চেয়ে বেশি!`);
+          } else {
+            subFullMarks = numericVal <= 100 ? 100 : Math.ceil(numericVal / 50) * 50;
+          }
+          const gradeInfo = calculateSubjectGrade(numericVal, subFullMarks);
+          subjectMarks[subj.code] = numericVal;
+          subjectResults.push({
+            subjectCode: subj.code,
+            subjectName: subj.name,
+            originalSubjectName: matchEntry?.rawKey || subj.originalName,
+            fullMarks: subFullMarks,
+            obtainedMarks: numericVal,
+            grade: gradeInfo.grade,
+            gradePoint: gradeInfo.gradePoint,
+            isPassed: gradeInfo.isPassed,
+            isMatchedFromDatabase: subj.isMatchedFromDatabase,
+            isAmbiguous: subj.isAmbiguous,
+            isCodeInvalid: subj.isCodeInvalid,
+            codeMismatchWarning: subj.codeMismatchWarning,
+            ambiguousCandidates: subj.ambiguousCandidates,
+          });
+        } else {
+          subjectMarks[subj.code] = numericVal;
+          const subGrade = calculateSubjectGrade(numericVal, subFullMarks, gradingRules);
+          subjectResults.push({
+            subjectCode: subj.code,
+            subjectName: subj.name,
+            originalSubjectName: matchEntry?.rawKey || subj.originalName,
+            fullMarks: subFullMarks,
+            obtainedMarks: numericVal,
+            grade: subGrade.grade,
+            gradePoint: subGrade.gradePoint,
+            isPassed: subGrade.isPassed,
+            isMatchedFromDatabase: subj.isMatchedFromDatabase,
+            isAmbiguous: subj.isAmbiguous,
+            isCodeInvalid: subj.isCodeInvalid,
+            codeMismatchWarning: subj.codeMismatchWarning,
+            ambiguousCandidates: subj.ambiguousCandidates,
+          });
+        }
+      });
+
+      // Second, preserve any extra student subjects not already in effectiveSubjects
       studentSubjectEntries.forEach((entry) => {
         const meta = resolveSubjectMeta(
           entry.rawKey,
@@ -2107,82 +2891,42 @@ export function parseJsonResults(
           itemSemester || topSemester,
           availableBooks
         );
+        const alreadyAdded = subjectResults.some(
+          (s) => s.subjectCode === meta.code || s.subjectName.toLowerCase() === meta.name.toLowerCase()
+        );
+        if (alreadyAdded) return;
+
         let subFullMarks =
           Number(entry.explicitFullMarks) > 0
             ? Number(entry.explicitFullMarks)
             : Number(meta.fullMarks) > 0
             ? Number(meta.fullMarks)
-            : 0;
-
-        if (!subFullMarks || subFullMarks <= 0) {
-          subFullMarks = 100;
-        }
+            : 100;
 
         const rawVal = entry.rawVal;
-        const numericVal = Number(toEnglishDigits(String(rawVal).trim()));
+        if (isNullMarksValue(rawVal)) {
+          subjectResults.push({
+            subjectCode: meta.code,
+            subjectName: meta.name,
+            originalSubjectName: meta.originalName || entry.explicitSubjectName,
+            fullMarks: subFullMarks,
+            obtainedMarks: null,
+            grade: '—',
+            gradePoint: 0,
+            isPassed: true,
+            isMatchedFromDatabase: meta.isMatchedFromDatabase,
+            isAmbiguous: meta.isAmbiguous,
+            isCodeInvalid: meta.isCodeInvalid,
+            codeMismatchWarning: meta.codeMismatchWarning,
+            ambiguousCandidates: meta.ambiguousCandidates,
+          });
+          return;
+        }
 
-        if (isNaN(numericVal)) {
-          rowErrors.push(`সারি ${rowNumber}: '${meta.name}' বিষয়ের নম্বর সঠিক নয় (${rawVal})`);
-          subjectMarks[meta.code] = 0;
-          subjectResults.push({
-            subjectCode: meta.code,
-            subjectName: meta.name,
-            originalSubjectName: meta.originalName || entry.explicitSubjectName,
-            fullMarks: subFullMarks,
-            obtainedMarks: 0,
-            grade: 'F',
-            gradePoint: 0,
-            isPassed: false,
-            isMatchedFromDatabase: meta.isMatchedFromDatabase,
-            isAmbiguous: meta.isAmbiguous,
-            isCodeInvalid: meta.isCodeInvalid,
-            codeMismatchWarning: meta.codeMismatchWarning,
-            ambiguousCandidates: meta.ambiguousCandidates,
-          });
-        } else if (numericVal < 0) {
-          rowErrors.push(`সারি ${rowNumber}: '${meta.name}' প্রাপ্ত নম্বর নেতিবাচক হতে পারে না (${numericVal})`);
-          subjectMarks[meta.code] = numericVal;
-          subjectResults.push({
-            subjectCode: meta.code,
-            subjectName: meta.name,
-            originalSubjectName: meta.originalName || entry.explicitSubjectName,
-            fullMarks: subFullMarks,
-            obtainedMarks: numericVal,
-            grade: 'F',
-            gradePoint: 0,
-            isPassed: false,
-            isMatchedFromDatabase: meta.isMatchedFromDatabase,
-            isAmbiguous: meta.isAmbiguous,
-            isCodeInvalid: meta.isCodeInvalid,
-            codeMismatchWarning: meta.codeMismatchWarning,
-            ambiguousCandidates: meta.ambiguousCandidates,
-          });
-        } else if (subFullMarks > 0 && numericVal > subFullMarks) {
-          if (entry.explicitFullMarks) {
-            rowErrors.push(`সারি ${rowNumber}: '${meta.name}' প্রাপ্ত নম্বর (${numericVal}) পূর্ণমান (${subFullMarks})-এর চেয়ে বেশি!`);
-          } else {
-            subFullMarks = numericVal <= 100 ? 100 : Math.ceil(numericVal / 50) * 50;
-          }
-          const gradeInfo = calculateSubjectGrade(numericVal, subFullMarks);
-          subjectMarks[meta.code] = numericVal;
-          subjectResults.push({
-            subjectCode: meta.code,
-            subjectName: meta.name,
-            originalSubjectName: meta.originalName || entry.explicitSubjectName,
-            fullMarks: subFullMarks,
-            obtainedMarks: numericVal,
-            grade: gradeInfo.grade,
-            gradePoint: gradeInfo.gradePoint,
-            isPassed: gradeInfo.isPassed,
-            isMatchedFromDatabase: meta.isMatchedFromDatabase,
-            isAmbiguous: meta.isAmbiguous,
-            isCodeInvalid: meta.isCodeInvalid,
-            codeMismatchWarning: meta.codeMismatchWarning,
-            ambiguousCandidates: meta.ambiguousCandidates,
-          });
-        } else {
-          subjectMarks[meta.code] = numericVal;
+        const numericVal = Number(toEnglishDigits(String(rawVal).trim()));
+        if (!isNaN(numericVal) && numericVal >= 0) {
           const subGrade = calculateSubjectGrade(numericVal, subFullMarks, gradingRules);
+          subjectMarks[meta.code] = numericVal;
           subjectResults.push({
             subjectCode: meta.code,
             subjectName: meta.name,
