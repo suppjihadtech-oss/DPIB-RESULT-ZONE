@@ -50,6 +50,7 @@ import { PublicMoreBottomSheet } from './components/public/PublicMoreBottomSheet
 import { GpaCalculatorPage } from './components/public/GpaCalculatorPage';
 import { SmartCalendarPage } from './components/public/SmartCalendarPage';
 import { StudentBookListPage } from './components/public/StudentBookListPage';
+import { AboutUsPage } from './components/public/AboutUsPage';
 
 // Admission & Applicant Profile Components
 import { ApplicantProfileView } from './components/admission/ApplicantProfileView';
@@ -82,7 +83,7 @@ export function App() {
   const [adminDocTab, setAdminDocTab] = useState<DocumentTab>('result-generator');
   const [adminStudentAction, setAdminStudentAction] = useState<'add' | 'json' | null>(null);
   const [publicTab, setPublicTab] = useState<
-    'home' | 'search' | 'merit' | 'exams' | 'notices' | 'verify' | 'gpa-calculator' | 'smart-calendar' | 'admission' | 'analysis' | 'books'
+    'home' | 'search' | 'merit' | 'exams' | 'notices' | 'verify' | 'gpa-calculator' | 'smart-calendar' | 'admission' | 'analysis' | 'books' | 'about'
   >('home');
   const [verificationCodeParam, setVerificationCodeParam] = useState<string>('');
   const [moreSheetOpen, setMoreSheetOpen] = useState(false);
@@ -220,7 +221,7 @@ export function App() {
       }
 
       const tabParam = urlParams.get('tab');
-      if (tabParam && ['home', 'search', 'analysis', 'merit', 'exams', 'notices', 'verify', 'gpa-calculator', 'smart-calendar'].includes(tabParam)) {
+      if (tabParam && ['home', 'search', 'analysis', 'merit', 'exams', 'notices', 'verify', 'gpa-calculator', 'smart-calendar', 'books', 'about'].includes(tabParam)) {
         setPublicTab(tabParam as any);
       }
     };
@@ -728,6 +729,15 @@ export function App() {
                   setSearchResultData(res);
                   setResultSheetOpen(true);
                 }}
+              />
+            </PageTransition>
+          )}
+
+          {publicTab === 'about' && (
+            <PageTransition key="public-about">
+              <AboutUsPage
+                onBack={() => handleNavigatePublicTab('home')}
+                onNavigateTab={handleNavigatePublicTab}
               />
             </PageTransition>
           )}

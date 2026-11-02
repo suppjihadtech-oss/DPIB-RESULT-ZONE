@@ -272,8 +272,8 @@ export const AdminMenuPage: React.FC<AdminMenuPageProps> = ({ onNavigate }) => {
           </span>
         </div>
 
-        {/* Modern Compact Horizontal List Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5">
+        {/* Modern Compact Square Cards Grid: 3-4 cards per row */}
+        <div className="grid grid-cols-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 gap-2 sm:gap-3">
           {documentTools.map((item) => {
             const Icon = item.icon;
             return (
@@ -282,41 +282,36 @@ export const AdminMenuPage: React.FC<AdminMenuPageProps> = ({ onNavigate }) => {
                 type="button"
                 id={`btn-menu-${item.id}`}
                 onClick={() => onNavigate(item.section, item.id)}
-                className={`w-full bg-white px-3.5 py-2.5 sm:py-3 rounded-2xl border border-slate-200/90 ${item.borderHover} shadow-2xs hover:shadow-xs transition-all active:scale-[0.98] group cursor-pointer flex items-center justify-between gap-3 text-left`}
+                className={`relative flex flex-col items-center justify-center text-center p-2 sm:p-3 rounded-2xl bg-white border border-slate-200/90 ${item.borderHover} shadow-2xs hover:shadow-md transition-all active:scale-95 group cursor-pointer aspect-square min-h-[92px] sm:min-h-[105px]`}
               >
-                {/* Left: SVG Icon + Bangla Label */}
-                <div className="flex items-center gap-3 min-w-0 flex-1">
-                  <div className={`w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center shrink-0 transition-all ${item.iconBg}`}>
-                    <Icon className="w-4 h-4 sm:w-4.5 sm:h-4.5 transition-transform group-hover:scale-110" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-xs sm:text-sm font-bold text-slate-900 group-hover:text-teal-800 transition-colors truncate">
-                        {item.title}
-                      </span>
-                    </div>
-                    <div className="text-[9.5px] text-slate-400 font-outfit uppercase tracking-wider font-semibold truncate leading-tight mt-0.5">
-                      {item.en}
-                    </div>
-                  </div>
+                {/* Top Badge */}
+                {item.badge && (
+                  <span className="absolute top-1.5 right-1.5 text-[8px] sm:text-[8.5px] font-bold px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-600 font-outfit">
+                    {item.badge}
+                  </span>
+                )}
+
+                {/* Centered Squircle Icon */}
+                <div className={`w-9 h-9 sm:w-10 sm:h-10 rounded-2xl flex items-center justify-center shrink-0 mb-1 sm:mb-1.5 transition-all ${item.iconBg} shadow-2xs group-hover:scale-110`}>
+                  <Icon className="w-4.5 h-4.5 sm:w-5 sm:h-5" />
                 </div>
 
-                {/* Right: Small Badge + Chevron */}
-                <div className="flex items-center gap-1.5 shrink-0">
-                  {item.badge && (
-                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-600 font-outfit">
-                      {item.badge}
-                    </span>
-                  )}
-                  <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-teal-700 group-hover:translate-x-0.5 transition-all" />
-                </div>
+                {/* Bangla Title */}
+                <span className="text-[11px] sm:text-xs font-bold text-slate-900 group-hover:text-teal-800 transition-colors line-clamp-2 leading-snug px-0.5">
+                  {item.title}
+                </span>
+
+                {/* English Subtitle */}
+                <span className="text-[8.5px] sm:text-[9.5px] text-slate-400 font-outfit uppercase tracking-wider font-semibold truncate leading-tight mt-0.5 hidden sm:block">
+                  {item.en}
+                </span>
               </button>
             );
           })}
         </div>
       </div>
 
-      {/* SECTION 2: CORE SYSTEM MANAGEMENT (Modern Sleek Horizontal Bars) */}
+      {/* SECTION 2: CORE SYSTEM MANAGEMENT (Modern Compact Square Cards) */}
       <div className="space-y-3">
         <div className="flex items-center justify-between px-1">
           <div className="flex items-center gap-2">
@@ -333,8 +328,8 @@ export const AdminMenuPage: React.FC<AdminMenuPageProps> = ({ onNavigate }) => {
           </span>
         </div>
 
-        {/* Modern Compact Horizontal List Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5">
+        {/* Modern Compact Square Cards Grid: 3-4 cards per row */}
+        <div className="grid grid-cols-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 gap-2 sm:gap-3">
           {coreModules.map((item) => {
             const Icon = item.icon;
             return (
@@ -343,34 +338,29 @@ export const AdminMenuPage: React.FC<AdminMenuPageProps> = ({ onNavigate }) => {
                 type="button"
                 id={`btn-menu-${item.id}`}
                 onClick={() => onNavigate(item.id)}
-                className={`w-full bg-white px-3.5 py-2.5 sm:py-3 rounded-2xl border border-slate-200/90 ${item.borderHover} shadow-2xs hover:shadow-xs transition-all active:scale-[0.98] group cursor-pointer flex items-center justify-between gap-3 text-left`}
+                className={`relative flex flex-col items-center justify-center text-center p-2 sm:p-3 rounded-2xl bg-white border border-slate-200/90 ${item.borderHover} shadow-2xs hover:shadow-md transition-all active:scale-95 group cursor-pointer aspect-square min-h-[92px] sm:min-h-[105px]`}
               >
-                {/* Left: SVG Icon + Bangla Label */}
-                <div className="flex items-center gap-3 min-w-0 flex-1">
-                  <div className={`w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center shrink-0 transition-all ${item.iconBg}`}>
-                    <Icon className="w-4 h-4 sm:w-4.5 sm:h-4.5 transition-transform group-hover:scale-110" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-xs sm:text-sm font-bold text-slate-900 group-hover:text-indigo-800 transition-colors truncate">
-                        {item.title}
-                      </span>
-                    </div>
-                    <div className="text-[9.5px] text-slate-400 font-outfit uppercase tracking-wider font-semibold truncate leading-tight mt-0.5">
-                      {item.en}
-                    </div>
-                  </div>
+                {/* Top Badge */}
+                {item.badge && (
+                  <span className="absolute top-1.5 right-1.5 text-[8px] sm:text-[8.5px] font-bold px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-600 font-outfit">
+                    {item.badge}
+                  </span>
+                )}
+
+                {/* Centered Squircle Icon */}
+                <div className={`w-9 h-9 sm:w-10 sm:h-10 rounded-2xl flex items-center justify-center shrink-0 mb-1 sm:mb-1.5 transition-all ${item.iconBg} shadow-2xs group-hover:scale-110`}>
+                  <Icon className="w-4.5 h-4.5 sm:w-5 sm:h-5" />
                 </div>
 
-                {/* Right: Small Badge + Chevron */}
-                <div className="flex items-center gap-1.5 shrink-0">
-                  {item.badge && (
-                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-600 font-outfit">
-                      {item.badge}
-                    </span>
-                  )}
-                  <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-indigo-700 group-hover:translate-x-0.5 transition-all" />
-                </div>
+                {/* Bangla Title */}
+                <span className="text-[11px] sm:text-xs font-bold text-slate-900 group-hover:text-indigo-800 transition-colors line-clamp-2 leading-snug px-0.5">
+                  {item.title}
+                </span>
+
+                {/* English Subtitle */}
+                <span className="text-[8.5px] sm:text-[9.5px] text-slate-400 font-outfit uppercase tracking-wider font-semibold truncate leading-tight mt-0.5 hidden sm:block">
+                  {item.en}
+                </span>
               </button>
             );
           })}

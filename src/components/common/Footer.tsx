@@ -15,7 +15,7 @@ export const Footer: React.FC<FooterProps> = ({ currentTab, isHome = false, onTa
     return (
       <footer className="bg-[#F0F8FF] text-slate-700 pt-8 pb-36 sm:pb-20 px-4 border-t border-sky-200/75 select-none font-bengali w-full max-w-full overflow-hidden">
         <div className="max-w-7xl mx-auto">
-          <CompactAttribution />
+          <CompactAttribution onNavigateTab={onTabChange} />
         </div>
       </footer>
     );
@@ -104,6 +104,14 @@ export const Footer: React.FC<FooterProps> = ({ currentTab, isHome = false, onTa
                   <span className="text-blue-500 font-bold">›</span> সর্বশেষ নোটিশ বোর্ড
                 </button>
               </li>
+              <li>
+                <button
+                  onClick={() => onTabChange('about')}
+                  className="text-slate-600 hover:text-blue-600 transition-colors cursor-pointer flex items-center gap-1.5"
+                >
+                  <span className="text-blue-500 font-bold">›</span> আমাদের সম্পর্কে
+                </button>
+              </li>
             </ul>
           </div>
 
@@ -152,7 +160,7 @@ export const Footer: React.FC<FooterProps> = ({ currentTab, isHome = false, onTa
 
         {/* Compact Attribution on Home */}
         <div className="pt-6">
-          <CompactAttribution />
+          <CompactAttribution onNavigateTab={onTabChange} />
         </div>
 
         {/* Bottom copyright */}
