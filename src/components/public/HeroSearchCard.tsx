@@ -4,6 +4,7 @@ import { Exam, SemesterId } from '../../types';
 import { SEMESTER_MAP, toBanglaDigits } from '../../utils/bangla';
 import { BottomSheet } from '../common/BottomSheet';
 import { toast } from '../../context/ToastContext';
+import { SmartRollKeypadModal } from './SmartRollKeypadModal';
 
 interface HeroSearchCardProps {
   exams: Exam[];
@@ -23,9 +24,10 @@ export const HeroSearchCard: React.FC<HeroSearchCardProps> = ({
   const [selectedExamId, setSelectedExamId] = useState<string>('ALL');
   const [validationError, setValidationError] = useState<string | null>(null);
 
-  // Bottom Sheet states for Mobile pickers
+  // Bottom Sheet states for Mobile pickers & Smart 1-2-3 Dialpad
   const [semesterPickerOpen, setSemesterPickerOpen] = useState(false);
   const [examPickerOpen, setExamPickerOpen] = useState(false);
+  const [keypadOpen, setKeypadOpen] = useState(false);
 
   // Filter exams by selected semester if any
   const publishedExams = exams.filter((e) => e.status === 'PUBLISHED');
@@ -34,8 +36,8 @@ export const HeroSearchCard: React.FC<HeroSearchCardProps> = ({
       ? publishedExams.filter((e) => e.semesterId === selectedSemester)
       : publishedExams;
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = (e?: React.FormEvent) => {
+    if (e && e.preventDefault) e.preventDefault();
     setValidationError(null);
 
     const cleanRoll = roll.trim();
@@ -97,25 +99,89 @@ export const HeroSearchCard: React.FC<HeroSearchCardProps> = ({
             <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5 sm:gap-5 md:items-end">
               {/* Roll Number Input (Takes 5 cols) */}
               <div className="md:col-span-5 flex flex-col gap-2">
-                <label className="text-xs font-extrabold text-slate-600 ml-1 uppercase tracking-wider flex items-center gap-1.5 font-outfit">
-                  <span>STUDENT ROLL</span>
-                  <span className="text-rose-500 font-bold">*</span>
-                </label>
-                <div className="relative">
+                <div className="flex items-center justify-between ml-1">
+                  <label className="text-xs font-extrabold text-slate-600 uppercase tracking-wider flex items-center gap-1.5 font-outfit">
+                    <span>STUDENT ROLL</span>
+                    <span className="text-rose-500 font-bold">*</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setKeypadOpen(true)}
+                    className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-600 hover:text-blue-800 transition-colors cursor-pointer group"
+                    title="স্মার্ট ১-২-৩ ডায়াল প্যাড কিবোর্ড খুলুন"
+                  >
+                    <Sparkles className="w-3 h-3 text-blue-500 group-hover:rotate-12 transition-transform" />
+                    <span>স্মার্ট ডায়াল প্যাড</span>
+                  </button>
+                </div>
+
+                <div
+                  className="relative group cursor-pointer"
+                  onClick={() => setKeypadOpen(true)}
+                >
                   <input
                     id="input-student-roll"
                     type="text"
-                    inputMode="numeric"
+                    readOnly
+                    inputMode="none"
                     placeholder="আপনার রোল নম্বর দিন"
                     value={roll}
-                    onChange={(e) => {
-                      setRoll(e.target.value);
-                      if (validationError) setValidationError(null);
+                    onFocus={(e) => {
+                      e.preventDefault();
+                      e.target.blur();
+                      setKeypadOpen(true);
                     }}
-                    className="w-full bg-white/90 backdrop-blur-md border border-slate-200/90 rounded-2xl px-5 py-4 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-4 focus:ring-blue-500/15 focus:border-blue-500 transition-all font-bold font-outfit text-base shadow-2xs hover:border-slate-300"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      (e.target as HTMLElement).blur();
+                      setKeypadOpen(true);
+                    }}
+                    className="w-full bg-white/90 backdrop-blur-md border border-slate-200/90 rounded-2xl px-5 py-4 pr-32 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-4 focus:ring-blue-500/15 focus:border-blue-500 transition-all font-bold font-outfit text-base shadow-2xs hover:border-blue-300 cursor-pointer select-none"
                   />
-                  <div className="w-9 h-9 rounded-xl bg-slate-100/80 border border-slate-200/60 flex items-center justify-center absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
-                    <Search className="w-4 h-4 text-slate-500" />
+
+                  {/* Smart 1-2-3 Dialpad Launcher Button inside input */}
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+                    {roll.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setRoll('');
+                          if (validationError) setValidationError(null);
+                        }}
+                        className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-rose-50 text-slate-400 hover:text-rose-600 flex items-center justify-center transition-colors cursor-pointer"
+                        title="রোল মুছুন"
+                      >
+                        <span className="text-xs font-black leading-none">✕</span>
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      id="btn-open-roll-dialpad"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setKeypadOpen(true);
+                      }}
+                      title="স্মার্ট ১-২-৩ ডায়াল প্যাড কিবোর্ড খুলুন"
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200/80 transition-all shadow-2xs group cursor-pointer active:scale-95"
+                    >
+                      <div className="grid grid-cols-3 gap-0.5 w-3.5 h-3.5">
+                        <span className="w-0.5 h-0.5 rounded-full bg-blue-600" />
+                        <span className="w-0.5 h-0.5 rounded-full bg-blue-600" />
+                        <span className="w-0.5 h-0.5 rounded-full bg-blue-600" />
+                        <span className="w-0.5 h-0.5 rounded-full bg-blue-600" />
+                        <span className="w-0.5 h-0.5 rounded-full bg-blue-600" />
+                        <span className="w-0.5 h-0.5 rounded-full bg-blue-600" />
+                        <span className="w-0.5 h-0.5 rounded-full bg-blue-600" />
+                        <span className="w-0.5 h-0.5 rounded-full bg-blue-600" />
+                        <span className="w-0.5 h-0.5 rounded-full bg-blue-600" />
+                      </div>
+                      <span className="text-[11px] font-black font-outfit uppercase tracking-tight">
+                        123 PAD
+                      </span>
+                    </button>
                   </div>
                 </div>
               </div>
@@ -336,6 +402,22 @@ export const HeroSearchCard: React.FC<HeroSearchCardProps> = ({
           )}
         </div>
       </BottomSheet>
+
+      {/* Smart 1-2-3 Numeric Dialpad Modal (Slide up from bottom) */}
+      <SmartRollKeypadModal
+        isOpen={keypadOpen}
+        onClose={() => setKeypadOpen(false)}
+        roll={roll}
+        onChangeRoll={(newRoll) => {
+          setRoll(newRoll);
+          if (validationError) setValidationError(null);
+        }}
+        onSubmit={() => {
+          handleSubmit();
+        }}
+        semesterLabel={selectedSemesterLabel}
+        examLabel={selectedExamLabel}
+      />
     </div>
   );
 };
