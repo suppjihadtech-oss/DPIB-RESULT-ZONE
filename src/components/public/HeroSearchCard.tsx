@@ -55,6 +55,27 @@ export const HeroSearchCard: React.FC<HeroSearchCardProps> = ({
     });
   };
 
+  const openKeypad = () => {
+    setKeypadOpen(true);
+    if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+      const inputEl = document.getElementById('input-student-roll');
+      if (inputEl) {
+        const rect = inputEl.getBoundingClientRect();
+        if (rect.bottom > window.innerHeight * 0.48) {
+          window.scrollBy({
+            top: rect.bottom - window.innerHeight * 0.42,
+            behavior: 'smooth',
+          });
+        } else if (rect.top < 72) {
+          window.scrollBy({
+            top: rect.top - 84,
+            behavior: 'smooth',
+          });
+        }
+      }
+    }
+  };
+
   const selectedSemesterLabel =
     selectedSemester === 'ALL'
       ? 'সকল সেমিস্টার'
@@ -106,7 +127,7 @@ export const HeroSearchCard: React.FC<HeroSearchCardProps> = ({
                   </label>
                   <button
                     type="button"
-                    onClick={() => setKeypadOpen(true)}
+                    onClick={openKeypad}
                     className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-600 hover:text-blue-800 transition-colors cursor-pointer group"
                     title="স্মার্ট ১-২-৩ ডায়াল প্যাড কিবোর্ড খুলুন"
                   >
@@ -117,7 +138,7 @@ export const HeroSearchCard: React.FC<HeroSearchCardProps> = ({
 
                 <div
                   className="relative group cursor-pointer"
-                  onClick={() => setKeypadOpen(true)}
+                  onClick={openKeypad}
                 >
                   <input
                     id="input-student-roll"
@@ -129,12 +150,12 @@ export const HeroSearchCard: React.FC<HeroSearchCardProps> = ({
                     onFocus={(e) => {
                       e.preventDefault();
                       e.target.blur();
-                      setKeypadOpen(true);
+                      openKeypad();
                     }}
                     onClick={(e) => {
                       e.preventDefault();
                       (e.target as HTMLElement).blur();
-                      setKeypadOpen(true);
+                      openKeypad();
                     }}
                     className="w-full bg-white/90 backdrop-blur-md border border-slate-200/90 rounded-2xl px-5 py-4 pr-32 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-4 focus:ring-blue-500/15 focus:border-blue-500 transition-all font-bold font-outfit text-base shadow-2xs hover:border-blue-300 cursor-pointer select-none"
                   />
@@ -162,7 +183,7 @@ export const HeroSearchCard: React.FC<HeroSearchCardProps> = ({
                       onClick={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
-                        setKeypadOpen(true);
+                        openKeypad();
                       }}
                       title="স্মার্ট ১-২-৩ ডায়াল প্যাড কিবোর্ড খুলুন"
                       className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200/80 transition-all shadow-2xs group cursor-pointer active:scale-95"
