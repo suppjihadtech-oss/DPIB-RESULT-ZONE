@@ -333,21 +333,22 @@ export const HeroSearchCard: React.FC<HeroSearchCardProps> = ({
         onClose={() => setSemesterPickerOpen(false)}
         title="সেমিস্টার নির্বাচন করুন"
         subtitle="ফলাফল খোঁজার জন্য আপনার সেমিস্টার বেছে নিন"
+        compact={true}
       >
-        <div className="space-y-2">
+        <div className="space-y-1.5">
           <button
             onClick={() => {
               setSelectedSemester('ALL');
               setSemesterPickerOpen(false);
             }}
-            className={`w-full flex items-center justify-between p-4 rounded-2xl border text-sm font-bold transition-all ${
+            className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl border text-xs sm:text-sm font-bold transition-all cursor-pointer ${
               selectedSemester === 'ALL'
                 ? 'bg-blue-50 border-blue-400 text-blue-800'
                 : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
             }`}
           >
             <span>সকল সেমিস্টার (যেকোনো সেমিস্টার)</span>
-            {selectedSemester === 'ALL' && <Check className="w-5 h-5 text-blue-600" />}
+            {selectedSemester === 'ALL' && <Check className="w-4 h-4 text-blue-600" />}
           </button>
 
           {(['1', '2', '3', '4', '5', '6', '7', '8'] as SemesterId[]).map((semId) => (
@@ -357,14 +358,14 @@ export const HeroSearchCard: React.FC<HeroSearchCardProps> = ({
                 setSelectedSemester(semId);
                 setSemesterPickerOpen(false);
               }}
-              className={`w-full flex items-center justify-between p-4 rounded-2xl border text-sm font-bold transition-all ${
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl border text-xs sm:text-sm font-bold transition-all cursor-pointer ${
                 selectedSemester === semId
                   ? 'bg-blue-50 border-blue-400 text-blue-800'
                   : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
               }`}
             >
               <span>{SEMESTER_MAP[semId]}</span>
-              {selectedSemester === semId && <Check className="w-5 h-5 text-blue-600" />}
+              {selectedSemester === semId && <Check className="w-4 h-4 text-blue-600" />}
             </button>
           ))}
         </div>
@@ -376,25 +377,26 @@ export const HeroSearchCard: React.FC<HeroSearchCardProps> = ({
         onClose={() => setExamPickerOpen(false)}
         title="পরীক্ষা নির্বাচন করুন"
         subtitle="নির্দিষ্ট পরীক্ষার ফলাফল দেখতে নির্বাচন করুন"
+        compact={true}
       >
-        <div className="space-y-2">
+        <div className="space-y-1.5">
           <button
             onClick={() => {
               setSelectedExamId('ALL');
               setExamPickerOpen(false);
             }}
-            className={`w-full flex items-center justify-between p-4 rounded-2xl border text-sm font-bold transition-all ${
+            className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl border text-xs sm:text-sm font-bold transition-all cursor-pointer ${
               selectedExamId === 'ALL'
                 ? 'bg-blue-50 border-blue-400 text-blue-800'
                 : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
             }`}
           >
             <span>সকল পরীক্ষা (সর্বশেষ প্রকাশিত পরীক্ষা)</span>
-            {selectedExamId === 'ALL' && <Check className="w-5 h-5 text-blue-600" />}
+            {selectedExamId === 'ALL' && <Check className="w-4 h-4 text-blue-600" />}
           </button>
 
           {filteredExams.length === 0 ? (
-            <div className="p-4 text-center text-xs text-slate-500 bg-slate-50 rounded-2xl">
+            <div className="p-3.5 text-center text-xs text-slate-500 bg-slate-50 rounded-xl">
               এই সেমিস্টারের কোনো প্রকাশিত পরীক্ষা নেই।
             </div>
           ) : (
@@ -405,19 +407,19 @@ export const HeroSearchCard: React.FC<HeroSearchCardProps> = ({
                   setSelectedExamId(exam.id);
                   setExamPickerOpen(false);
                 }}
-                className={`w-full flex items-center justify-between p-4 rounded-2xl border text-sm font-bold transition-all ${
+                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl border text-xs sm:text-sm font-bold transition-all cursor-pointer text-left ${
                   selectedExamId === exam.id
                     ? 'bg-blue-50 border-blue-400 text-blue-800'
                     : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
                 }`}
               >
-                <div>
-                  <span className="block">{exam.title}</span>
-                  <span className="text-xs text-slate-400 font-normal">
+                <div className="min-w-0 pr-2">
+                  <span className="block truncate">{exam.title}</span>
+                  <span className="text-[11px] text-slate-400 font-normal block truncate">
                     {exam.departmentName} • {exam.examType}
                   </span>
                 </div>
-                {selectedExamId === exam.id && <Check className="w-5 h-5 text-blue-600" />}
+                {selectedExamId === exam.id && <Check className="w-4 h-4 text-blue-600 shrink-0" />}
               </button>
             ))
           )}

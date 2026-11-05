@@ -690,6 +690,18 @@ export async function getSystemSettings(): Promise<SystemSettings> {
         examTypes: data.examTypes || DEFAULT_EXAM_TYPES,
         shifts: data.shifts && data.shifts.length > 0 ? data.shifts : DEFAULT_SHIFTS,
         passMarkPercentage: passPct,
+        donationConfig: {
+          enabled: data.donationConfig?.enabled ?? true,
+          bkashNumber: data.donationConfig?.bkashNumber || '01700000000',
+          bkashAccountType: data.donationConfig?.bkashAccountType || 'PERSONAL',
+          nagadNumber: data.donationConfig?.nagadNumber || '01800000000',
+          nagadAccountType: data.donationConfig?.nagadAccountType || 'PERSONAL',
+          smsWebhookSecret: data.donationConfig?.smsWebhookSecret || '',
+          donationTitle: data.donationConfig?.donationTitle || 'DPIB RESULT ZONE ও মানবিক কল্যাণে সহায়তা করুন',
+          donationDescription:
+            data.donationConfig?.donationDescription ||
+            'আপনার সামান্য অনুদান (১০ টাকা থেকে শুরু করে যেকোনো পরিমাণ) এই ডিজিটাল ফলাফল প্ল্যাটফর্মের উন্নয়ন, সার্ভার রক্ষণাবেক্ষণ এবং অসহায় ও মেধাবী শিক্ষার্থীদের কল্যাণমূলক কাজে ব্যয় করা হবে।',
+        },
       };
     }
   } catch (e) {
@@ -706,6 +718,17 @@ export async function getSystemSettings(): Promise<SystemSettings> {
     examTypes: DEFAULT_EXAM_TYPES,
     shifts: DEFAULT_SHIFTS,
     passMarkPercentage: 40,
+    donationConfig: {
+      enabled: true,
+      bkashNumber: '01700000000',
+      bkashAccountType: 'PERSONAL',
+      nagadNumber: '01800000000',
+      nagadAccountType: 'PERSONAL',
+      smsWebhookSecret: '',
+      donationTitle: 'DPIB RESULT ZONE ও মানবিক কল্যাণে সহায়তা করুন',
+      donationDescription:
+        'আপনার সামান্য অনুদান (১০ টাকা থেকে শুরু করে যেকোনো পরিমাণ) এই ডিজিটাল ফলাফল প্ল্যাটফর্মের উন্নয়ন, সার্ভার রক্ষণাবেক্ষণ এবং অসহায় ও মেধাবী শিক্ষার্থীদের কল্যাণমূলক কাজে ব্যয় করা হবে।',
+    },
   };
 }
 

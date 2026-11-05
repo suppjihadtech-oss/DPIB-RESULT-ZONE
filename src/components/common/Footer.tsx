@@ -112,6 +112,14 @@ export const Footer: React.FC<FooterProps> = ({ currentTab, isHome = false, onTa
                   <span className="text-blue-500 font-bold">›</span> আমাদের সম্পর্কে
                 </button>
               </li>
+              <li>
+                <button
+                  onClick={() => onTabChange('donate')}
+                  className="text-slate-600 hover:text-rose-600 transition-colors cursor-pointer flex items-center gap-1.5 font-bold"
+                >
+                  <span className="text-rose-500 font-bold">›</span> অনুদান দিন / ডোনেট করুন
+                </button>
+              </li>
             </ul>
           </div>
 

@@ -186,6 +186,81 @@ export interface ShiftConfig {
   description?: string; // যেমন: 'সকাল ০৮:০০ টা হতে দুপুর ০১:০০ টা পর্যন্ত'
 }
 
+export type DonationPaymentMethod = 'BKASH' | 'NAGAD';
+
+export type DonationStatus = 'PENDING' | 'VERIFIED' | 'REJECTED';
+
+export type DonationPurpose =
+  | 'APP_DEVELOPMENT'
+  | 'STUDENT_WELFARE'
+  | 'CHARITY_FUND'
+  | 'GENERAL';
+
+export interface DonationConfig {
+  enabled: boolean;
+  bkashNumber: string;
+  bkashAccountType: 'PERSONAL' | 'MERCHANT' | 'AGENT';
+  nagadNumber: string;
+  nagadAccountType: 'PERSONAL' | 'MERCHANT' | 'AGENT';
+  smsWebhookSecret?: string;
+  donationTitle?: string;
+  donationDescription?: string;
+}
+
+export interface DonationRecord {
+  id: string;
+  referenceCode: string; // e.g., DPIB-4829
+  paymentMethod: DonationPaymentMethod;
+  amount: number; // Minimum 10 BDT
+  senderPhone: string; // e.g., 017XXXXXXXX
+  transactionId: string; // e.g., BKH9X21M4P
+  transactionIdUpper: string; // Normalized uppercase for instant matching
+  donorName?: string;
+  purpose?: DonationPurpose | string;
+  note?: string;
+  status: DonationStatus;
+  verificationSource?: 'AUTO_SMS_APP' | 'MANUAL_ADMIN';
+  matchedSmsId?: string;
+  matchedSmsText?: string;
+  verifiedAt?: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface DonationSmsLog {
+  id: string;
+  provider: DonationPaymentMethod;
+  senderAddress: string; // e.g., 'bKash', 'NAGAD', '16247', '16167'
+  rawMessage: string;
+  parsedAmount?: number;
+  parsedTrxId?: string;
+  parsedSenderPhone?: string;
+  parsedReference?: string;
+  matchedDonationId?: string;
+  matchedReferenceCode?: string;
+  matchStatus: 'MATCHED' | 'UNMATCHED' | 'DUPLICATE';
+  receivedAt: number;
+}
+
+export type TransactionStatus = 'COMPLETED';
+
+export interface TransactionRecord {
+  id: string;
+  transactionNumber: string; // e.g., TXN-261105-4829
+  donationId: string;
+  referenceCode: string; // e.g., DPIB-4829
+  paymentMethod: DonationPaymentMethod;
+  amount: number;
+  senderPhone: string;
+  gatewayTrxId: string; // bKash TrxID or Nagad TxnId
+  donorName?: string;
+  purpose?: DonationPurpose | string;
+  verificationSource: 'AUTO_SMS_APP' | 'MANUAL_ADMIN';
+  status: TransactionStatus;
+  completedAt: number;
+  createdAt: number;
+}
+
 export interface SystemSettings {
   id?: string;
   instituteName: string;
@@ -200,6 +275,7 @@ export interface SystemSettings {
   examTypes: string[];
   shifts?: ShiftConfig[];
   passMarkPercentage?: number; // Default 40%, customizable by authority (e.g. 45%)
+  donationConfig?: DonationConfig;
   updatedAt?: number;
 }
 

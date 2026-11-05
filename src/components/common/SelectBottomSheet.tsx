@@ -59,20 +59,21 @@ export const SelectBottomSheet: React.FC<SelectBottomSheetProps> = ({
       }}
       title={title}
       subtitle={subtitle}
-      maxHeight="max-h-[85vh]"
+      compact={true}
+      maxHeight="max-h-[58dvh] sm:max-h-[78vh]"
       zIndex="z-[10001]"
     >
-      <div className="space-y-3 pb-4">
+      <div className="space-y-2.5 pb-2">
         {/* Search input if searchable */}
         {isSearchable && (
-          <div className="relative mb-3">
+          <div className="relative mb-2">
             <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
             <input
               type="text"
               placeholder="খুঁজুন..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-9.5 pr-4 py-2.5 bg-slate-50 border border-slate-200/90 rounded-xl text-xs sm:text-sm font-medium focus:bg-white focus:border-blue-500 outline-none transition-all placeholder:text-slate-400"
+              className="w-full pl-9.5 pr-4 py-2 bg-slate-50 border border-slate-200/90 rounded-xl text-xs sm:text-sm font-medium focus:bg-white focus:border-blue-500 outline-none transition-all placeholder:text-slate-400"
             />
             {searchTerm && (
               <button
@@ -87,7 +88,7 @@ export const SelectBottomSheet: React.FC<SelectBottomSheetProps> = ({
         )}
 
         {/* Options List */}
-        <div className="space-y-1.5 max-h-[50vh] overflow-y-auto pr-1">
+        <div className="space-y-1.5 max-h-[38dvh] sm:max-h-[48vh] overflow-y-auto pr-1">
           {filteredOptions.length === 0 ? (
             <div className="py-8 text-center text-xs text-slate-400 font-medium">
               {emptyText}

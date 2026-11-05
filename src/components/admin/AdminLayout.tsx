@@ -17,6 +17,7 @@ import {
   Menu as MenuIcon,
   ShieldCheck,
   Clock,
+  HeartHandshake,
 } from 'lucide-react';
 import { User } from 'firebase/auth';
 import { getFirebaseStatus } from '../../services/firebase';
@@ -75,6 +76,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
     { id: 'books', label: 'বুক লিস্ট ব্যবস্থাপনা', enLabel: 'BOOK LIST', icon: BookOpen },
     { id: 'documents', label: 'একাডেমিক ডকুমেন্ট হাব', enLabel: 'DOCUMENTS', icon: Layers },
     { id: 'shifts', label: 'শিফট ও সময়সূচী', enLabel: 'SHIFTS', icon: Clock },
+    { id: 'donations', label: 'অনুদান ও পেমেন্ট', enLabel: 'DONATIONS', icon: HeartHandshake },
     { id: 'security', label: 'নিরাপত্তা ও অ্যাক্সেস', enLabel: 'SECURITY', icon: ShieldCheck },
     { id: 'settings', label: 'সিস্টেম সেটিংস', enLabel: 'SETTINGS', icon: Settings },
     { id: 'menu', label: 'মেনু পেজ', enLabel: 'MENU HUB', icon: MenuIcon },

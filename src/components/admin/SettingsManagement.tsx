@@ -20,6 +20,7 @@ import {
   Percent,
   Award,
   AlertCircle,
+  HeartHandshake,
 } from 'lucide-react';
 import { Department, GradingRule, ShiftConfig, SystemSettings } from '../../types';
 import {
@@ -438,6 +439,32 @@ export const SettingsManagement: React.FC<SettingsManagementProps> = ({
             ))}
           </div>
         </div>
+      </div>
+
+      {/* ================= DONATION & SMS AUTO-VERIFICATION HUB LINK CARD ================= */}
+      <div className="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center space-x-3.5">
+          <div className="w-11 h-11 rounded-2xl bg-rose-50 border border-rose-200/80 flex items-center justify-center text-rose-600 shrink-0">
+            <HeartHandshake className="w-5 h-5" />
+          </div>
+          <div>
+            <h3 className="text-base sm:text-lg font-bold text-slate-900">
+              অনুদান, বিকাশ/নগদ নম্বর ও অটো-SMS ওয়েবহুক সেটিংস
+            </h3>
+            <p className="text-xs text-slate-500 mt-0.5">
+              বিকাশ ও নগদ অ্যাকাউন্ট নম্বর নির্ধারণ, অনুদান তালিকা এবং অ্যান্ড্রয়েড SMS রিডিং অ্যাপ ওয়েবহুক কনফিগার করুন।
+            </p>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => onNavigate?.('donations')}
+          className="px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs active:scale-95 flex items-center space-x-2 cursor-pointer shrink-0 self-start sm:self-auto"
+        >
+          <span>অনুদান ও SMS হাব খুলুন</span>
+          <ChevronRight className="w-4 h-4" />
+        </button>
       </div>
 
       {/* Cloud DB Status & Seed Generator */}

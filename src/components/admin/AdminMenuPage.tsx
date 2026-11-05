@@ -21,6 +21,7 @@ import {
   Phone,
   ShieldCheck,
   Clock,
+  HeartHandshake,
 } from 'lucide-react';
 import { DocumentTab } from './documents/AcademicDocumentsHub';
 
@@ -203,6 +204,15 @@ export const AdminMenuPage: React.FC<AdminMenuPageProps> = ({ onNavigate }) => {
       borderHover: 'hover:border-teal-500/80 hover:bg-teal-50/30',
     },
     {
+      id: 'donations',
+      title: 'অনুদান ও পেমেন্ট হাব',
+      en: 'DONATIONS & SMS VERIFY',
+      badge: 'বিকাশ/নগদ',
+      icon: HeartHandshake,
+      iconBg: 'bg-rose-50 text-rose-600 group-hover:bg-rose-600 group-hover:text-white',
+      borderHover: 'hover:border-rose-500/80 hover:bg-rose-50/30',
+    },
+    {
       id: 'settings',
       title: 'সিস্টেম সেটিংস',
       en: 'SYSTEM SETTINGS',
@@ -272,8 +282,8 @@ export const AdminMenuPage: React.FC<AdminMenuPageProps> = ({ onNavigate }) => {
           </span>
         </div>
 
-        {/* Modern Compact Square Cards Grid: 3-4 cards per row */}
-        <div className="grid grid-cols-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 gap-2 sm:gap-3">
+        {/* Wide Sleek Horizontal Bars Grid: 1 full-width bar on mobile, 2 wide bars on md+ */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-3.5">
           {documentTools.map((item) => {
             const Icon = item.icon;
             return (
@@ -282,36 +292,43 @@ export const AdminMenuPage: React.FC<AdminMenuPageProps> = ({ onNavigate }) => {
                 type="button"
                 id={`btn-menu-${item.id}`}
                 onClick={() => onNavigate(item.section, item.id)}
-                className={`relative flex flex-col items-center justify-center text-center p-2 sm:p-3 rounded-2xl bg-white border border-slate-200/90 ${item.borderHover} shadow-2xs hover:shadow-md transition-all active:scale-95 group cursor-pointer aspect-square min-h-[92px] sm:min-h-[105px]`}
+                className={`w-full flex items-center justify-between gap-3.5 px-4 py-3.5 sm:px-5 sm:py-4 rounded-2xl bg-white border border-slate-200/90 ${item.borderHover} shadow-2xs hover:shadow-md transition-all active:scale-[0.99] group cursor-pointer text-left`}
               >
-                {/* Top Badge */}
-                {item.badge && (
-                  <span className="absolute top-1.5 right-1.5 text-[8px] sm:text-[8.5px] font-bold px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-600 font-outfit">
-                    {item.badge}
-                  </span>
-                )}
+                <div className="flex items-center gap-3.5 min-w-0 flex-1">
+                  {/* Left Squircle Icon */}
+                  <div
+                    className={`w-10 h-10 sm:w-11 sm:h-11 rounded-xl flex items-center justify-center shrink-0 transition-all ${item.iconBg} shadow-2xs`}
+                  >
+                    <Icon className="w-4.5 h-4.5 sm:w-5 sm:h-5" />
+                  </div>
 
-                {/* Centered Squircle Icon */}
-                <div className={`w-9 h-9 sm:w-10 sm:h-10 rounded-2xl flex items-center justify-center shrink-0 mb-1 sm:mb-1.5 transition-all ${item.iconBg} shadow-2xs group-hover:scale-110`}>
-                  <Icon className="w-4.5 h-4.5 sm:w-5 sm:h-5" />
+                  {/* Title & Subtitle */}
+                  <div className="min-w-0 flex-1">
+                    <span className="text-[13px] sm:text-[15px] font-bold text-slate-900 group-hover:text-teal-800 transition-colors truncate block leading-tight">
+                      {item.title}
+                    </span>
+                    <span className="text-[10px] sm:text-[11px] text-slate-400 font-outfit uppercase tracking-wider font-semibold truncate block leading-tight mt-0.5">
+                      {item.en}
+                    </span>
+                  </div>
                 </div>
 
-                {/* Bangla Title */}
-                <span className="text-[11px] sm:text-xs font-bold text-slate-900 group-hover:text-teal-800 transition-colors line-clamp-2 leading-snug px-0.5">
-                  {item.title}
-                </span>
-
-                {/* English Subtitle */}
-                <span className="text-[8.5px] sm:text-[9.5px] text-slate-400 font-outfit uppercase tracking-wider font-semibold truncate leading-tight mt-0.5 hidden sm:block">
-                  {item.en}
-                </span>
+                {/* Right Badge & Arrow */}
+                <div className="flex items-center gap-2 shrink-0">
+                  {item.badge && (
+                    <span className="text-[10px] sm:text-[11px] font-bold px-2.5 py-0.5 rounded-md bg-slate-100 text-slate-600 font-outfit">
+                      {item.badge}
+                    </span>
+                  )}
+                  <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-teal-700 group-hover:translate-x-0.5 transition-all" />
+                </div>
               </button>
             );
           })}
         </div>
       </div>
 
-      {/* SECTION 2: CORE SYSTEM MANAGEMENT (Modern Compact Square Cards) */}
+      {/* SECTION 2: CORE SYSTEM MANAGEMENT (Modern Sleek Horizontal Bars) */}
       <div className="space-y-3">
         <div className="flex items-center justify-between px-1">
           <div className="flex items-center gap-2">
@@ -328,8 +345,8 @@ export const AdminMenuPage: React.FC<AdminMenuPageProps> = ({ onNavigate }) => {
           </span>
         </div>
 
-        {/* Modern Compact Square Cards Grid: 3-4 cards per row */}
-        <div className="grid grid-cols-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 gap-2 sm:gap-3">
+        {/* Wide Sleek Horizontal Bars Grid: 1 full-width bar on mobile, 2 wide bars on md+ */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-3.5">
           {coreModules.map((item) => {
             const Icon = item.icon;
             return (
@@ -338,29 +355,36 @@ export const AdminMenuPage: React.FC<AdminMenuPageProps> = ({ onNavigate }) => {
                 type="button"
                 id={`btn-menu-${item.id}`}
                 onClick={() => onNavigate(item.id)}
-                className={`relative flex flex-col items-center justify-center text-center p-2 sm:p-3 rounded-2xl bg-white border border-slate-200/90 ${item.borderHover} shadow-2xs hover:shadow-md transition-all active:scale-95 group cursor-pointer aspect-square min-h-[92px] sm:min-h-[105px]`}
+                className={`w-full flex items-center justify-between gap-3.5 px-4 py-3.5 sm:px-5 sm:py-4 rounded-2xl bg-white border border-slate-200/90 ${item.borderHover} shadow-2xs hover:shadow-md transition-all active:scale-[0.99] group cursor-pointer text-left`}
               >
-                {/* Top Badge */}
-                {item.badge && (
-                  <span className="absolute top-1.5 right-1.5 text-[8px] sm:text-[8.5px] font-bold px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-600 font-outfit">
-                    {item.badge}
-                  </span>
-                )}
+                <div className="flex items-center gap-3.5 min-w-0 flex-1">
+                  {/* Left Squircle Icon */}
+                  <div
+                    className={`w-10 h-10 sm:w-11 sm:h-11 rounded-xl flex items-center justify-center shrink-0 transition-all ${item.iconBg} shadow-2xs`}
+                  >
+                    <Icon className="w-4.5 h-4.5 sm:w-5 sm:h-5" />
+                  </div>
 
-                {/* Centered Squircle Icon */}
-                <div className={`w-9 h-9 sm:w-10 sm:h-10 rounded-2xl flex items-center justify-center shrink-0 mb-1 sm:mb-1.5 transition-all ${item.iconBg} shadow-2xs group-hover:scale-110`}>
-                  <Icon className="w-4.5 h-4.5 sm:w-5 sm:h-5" />
+                  {/* Title & Subtitle */}
+                  <div className="min-w-0 flex-1">
+                    <span className="text-[13px] sm:text-[15px] font-bold text-slate-900 group-hover:text-indigo-800 transition-colors truncate block leading-tight">
+                      {item.title}
+                    </span>
+                    <span className="text-[10px] sm:text-[11px] text-slate-400 font-outfit uppercase tracking-wider font-semibold truncate block leading-tight mt-0.5">
+                      {item.en}
+                    </span>
+                  </div>
                 </div>
 
-                {/* Bangla Title */}
-                <span className="text-[11px] sm:text-xs font-bold text-slate-900 group-hover:text-indigo-800 transition-colors line-clamp-2 leading-snug px-0.5">
-                  {item.title}
-                </span>
-
-                {/* English Subtitle */}
-                <span className="text-[8.5px] sm:text-[9.5px] text-slate-400 font-outfit uppercase tracking-wider font-semibold truncate leading-tight mt-0.5 hidden sm:block">
-                  {item.en}
-                </span>
+                {/* Right Badge & Arrow */}
+                <div className="flex items-center gap-2 shrink-0">
+                  {item.badge && (
+                    <span className="text-[10px] sm:text-[11px] font-bold px-2.5 py-0.5 rounded-md bg-slate-100 text-slate-600 font-outfit">
+                      {item.badge}
+                    </span>
+                  )}
+                  <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-indigo-700 group-hover:translate-x-0.5 transition-all" />
+                </div>
               </button>
             );
           })}

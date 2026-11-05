@@ -1,11 +1,62 @@
 import express from 'express';
-import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
+import fs from 'fs';
+import path from 'path';
+
+function resolveServerPort(): number {
+  const portArgIdx = process.argv.indexOf('--port');
+  if (portArgIdx !== -1 && process.argv[portArgIdx + 1]) {
+    const parsed = Number(process.argv[portArgIdx + 1]);
+    if (!Number.isNaN(parsed) && parsed > 0) return parsed;
+  }
+  const eqPortArg = process.argv.find((arg) => arg.startsWith('--port='));
+  if (eqPortArg) {
+    const parsed = Number(eqPortArg.split('=')[1]);
+    if (!Number.isNaN(parsed) && parsed > 0) return parsed;
+  }
+  if (process.env.NODE_ENV === 'production' && process.env.PORT) {
+    const envPort = Number(process.env.PORT);
+    if (!Number.isNaN(envPort) && envPort > 0) return envPort;
+  }
+  return Number(process.env.DEFAULT_APP_PORT) || 3000;
+}
+
+function resolveServerHost(): string {
+  const hostArgIdx = process.argv.indexOf('--host');
+  if (hostArgIdx !== -1 && process.argv[hostArgIdx + 1]) {
+    return process.argv[hostArgIdx + 1];
+  }
+  const eqHostArg = process.argv.find((arg) => arg.startsWith('--host='));
+  if (eqHostArg) {
+    return eqHostArg.split('=')[1] || '0.0.0.0';
+  }
+  return '0.0.0.0';
+}
 
 const app = express();
-const port = 3000;
+const port = resolveServerPort();
+const host = resolveServerHost();
 
 app.use(express.json({ limit: '10mb' }));
+
+app.get('/api/health', (_req, res) => {
+  res.json({ status: 'ok', uptime: Math.round(process.uptime()) });
+});
+
+// Load Firebase Applet Config for Server-Side SMS Auto-Verification Webhook
+let firebaseConfig: {
+  projectId: string;
+  apiKey: string;
+  firestoreDatabaseId?: string;
+} | null = null;
+try {
+  const cfgPath = path.resolve(process.cwd(), 'firebase-applet-config.json');
+  if (fs.existsSync(cfgPath)) {
+    firebaseConfig = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
+  }
+} catch (err) {
+  console.warn('[SERVER] Could not load firebase-applet-config.json:', err);
+}
 
 // Initialize GoogleGenAI SDK with server-side API Key
 const apiKey = process.env.GEMINI_API_KEY;
@@ -318,10 +369,487 @@ app.post('/api/assistant/chat', async (req, res) => {
   }
 });
 
+// ================= DONATION SMS AUTO-VERIFICATION WEBHOOK ENGINE =================
+
+function convertToEnglishDigitsServer(input: string): string {
+  const banglaDigits = ['০', '১', '২', '৩', '৪', '৫', '৬', '৭', '৮', '৯'];
+  return String(input || '').replace(/[০-৯]/g, (d) => {
+    const idx = banglaDigits.indexOf(d);
+    return idx >= 0 ? String(idx) : d;
+  });
+}
+
+function normalizePhoneServer(rawPhone: string): string {
+  const eng = convertToEnglishDigitsServer(rawPhone).replace(/[\s\-()]/g, '');
+  if (eng.startsWith('+880')) return '0' + eng.slice(4);
+  if (eng.startsWith('880') && eng.length >= 13) return '0' + eng.slice(3);
+  return eng;
+}
+
+function parseMobileBankingSmsServer(rawMessage: string, senderAddress?: string) {
+  const cleanText = convertToEnglishDigitsServer(rawMessage || '').trim();
+  const senderLower = (senderAddress || '').toLowerCase();
+  const bodyLower = cleanText.toLowerCase();
+
+  let provider: 'BKASH' | 'NAGAD' = 'BKASH';
+  if (
+    senderLower.includes('nagad') ||
+    senderLower === '16167' ||
+    bodyLower.includes('nagad') ||
+    (/\btxnid\b/i.test(cleanText) && !/\btrxid\b/i.test(cleanText))
+  ) {
+    provider = 'NAGAD';
+  }
+
+  let parsedTrxId: string | undefined;
+  const trxMatch = cleanText.match(
+    /(?:TrxID|TxnId|TxnID|Transaction\s*ID|Trans\s*ID)\s*[:#-]?\s*([A-Z0-9]{6,22})/i
+  );
+  if (trxMatch && trxMatch[1]) {
+    parsedTrxId = trxMatch[1].toUpperCase();
+  }
+
+  let parsedAmount: number | undefined;
+  const primaryAmountMatch = cleanText.match(
+    /(?:received|cash\s*in|payment|amount|send\s*money)[^0-9]{0,25}(?:Tk|BDT|৳)\s*\.?\s*([0-9,]+(?:\.[0-9]{1,2})?)/i
+  );
+  const fallbackAmountMatch = cleanText.match(
+    /(?:Tk|BDT|৳)\s*\.?\s*([0-9,]+(?:\.[0-9]{1,2})?)/i
+  );
+  const amountRaw = primaryAmountMatch?.[1] || fallbackAmountMatch?.[1];
+  if (amountRaw) {
+    const num = parseFloat(amountRaw.replace(/,/g, ''));
+    if (!isNaN(num) && num > 0) parsedAmount = num;
+  }
+
+  let parsedSenderPhone: string | undefined;
+  const labeledPhoneMatch = cleanText.match(
+    /(?:from|sender|customer|account|a\/c|no)\s*[:#-]?\s*((?:\+?88)?01[3-9]\d{8})/i
+  );
+  const anyPhoneMatch = cleanText.match(/((?:\+?88)?01[3-9]\d{8})/);
+  const phoneRaw = labeledPhoneMatch?.[1] || anyPhoneMatch?.[1];
+  if (phoneRaw) {
+    parsedSenderPhone = normalizePhoneServer(phoneRaw);
+  }
+
+  let parsedReference: string | undefined;
+  const dpibRefMatch = cleanText.match(/\b(DPIB[-\s]?\d{3,8})\b/i);
+  if (dpibRefMatch && dpibRefMatch[1]) {
+    parsedReference = dpibRefMatch[1].toUpperCase().replace(/\s+/g, '-');
+    if (!parsedReference.includes('-')) {
+      parsedReference = parsedReference.replace(/^DPIB/, 'DPIB-');
+    }
+  } else {
+    const genericRefMatch = cleanText.match(
+      /\b(?:Ref|Reference)\s*[:#-]?\s*([A-Z0-9][A-Z0-9-]{2,18})\b/i
+    );
+    if (genericRefMatch && genericRefMatch[1]) {
+      const candidate = genericRefMatch[1].toUpperCase();
+      if (!['FEE', 'BALANCE', 'TRXID', 'TXNID', 'TK', 'BDT'].includes(candidate)) {
+        parsedReference = candidate;
+      }
+    }
+  }
+
+  return {
+    provider,
+    parsedAmount,
+    parsedTrxId,
+    parsedSenderPhone,
+    parsedReference,
+  };
+}
+
+function getFirestoreRestBaseUrl(): string | null {
+  if (!firebaseConfig?.projectId) return null;
+  const dbId =
+    firebaseConfig.firestoreDatabaseId && firebaseConfig.firestoreDatabaseId !== '(default)'
+      ? firebaseConfig.firestoreDatabaseId
+      : '(default)';
+  return `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/${dbId}/documents`;
+}
+
+function toFirestoreFieldValue(val: any): any {
+  if (val === null || val === undefined) return { nullValue: null };
+  if (typeof val === 'boolean') return { booleanValue: val };
+  if (typeof val === 'number') {
+    return Number.isInteger(val) ? { integerValue: String(val) } : { doubleValue: val };
+  }
+  if (typeof val === 'string') return { stringValue: val };
+  if (Array.isArray(val)) {
+    return { arrayValue: { values: val.map((item) => toFirestoreFieldValue(item)) } };
+  }
+  if (typeof val === 'object') {
+    const fields: Record<string, any> = {};
+    for (const [k, v] of Object.entries(val)) {
+      if (v !== undefined) {
+        fields[k] = toFirestoreFieldValue(v);
+      }
+    }
+    return { mapValue: { fields } };
+  }
+  return { stringValue: String(val) };
+}
+
+function toFirestoreDocumentFields(obj: Record<string, any>): Record<string, any> {
+  const fields: Record<string, any> = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (v !== undefined) {
+      fields[k] = toFirestoreFieldValue(v);
+    }
+  }
+  return fields;
+}
+
+function fromFirestoreFieldValue(fv: any): any {
+  if (!fv || typeof fv !== 'object') return undefined;
+  if ('stringValue' in fv) return fv.stringValue;
+  if ('integerValue' in fv) return Number(fv.integerValue);
+  if ('doubleValue' in fv) return Number(fv.doubleValue);
+  if ('booleanValue' in fv) return Boolean(fv.booleanValue);
+  if ('nullValue' in fv) return null;
+  if ('arrayValue' in fv) {
+    return Array.isArray(fv.arrayValue?.values)
+      ? fv.arrayValue.values.map((v: any) => fromFirestoreFieldValue(v))
+      : [];
+  }
+  if ('mapValue' in fv) {
+    return fromFirestoreFields(fv.mapValue?.fields || {});
+  }
+  return undefined;
+}
+
+function fromFirestoreFields(fields: Record<string, any> = {}): Record<string, any> {
+  const out: Record<string, any> = {};
+  for (const [k, v] of Object.entries(fields)) {
+    out[k] = fromFirestoreFieldValue(v);
+  }
+  return out;
+}
+
+// Endpoint metadata for Android SMS Reading App configuration
+app.get('/api/donations/webhook-info', (req, res) => {
+  const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+  const host = req.headers.host || 'localhost:3000';
+  res.json({
+    webhookUrl: `${protocol}://${host}/api/donations/sms-webhook`,
+    method: 'POST',
+    contentType: 'application/json',
+    supportedProviders: ['BKASH', 'NAGAD'],
+    samplePayload: {
+      sender: 'bKash',
+      message:
+        'You have received Tk 100.00 from 01712345678. Ref DPIB-4829. Fee Tk 0.00. Balance Tk 1500.00. TrxID BKH9A21M4P at 05/11/2026 14:30',
+      secret: 'OPTIONAL_WEBHOOK_SECRET',
+    },
+  });
+});
+
+// Webhook called by external Android SMS Reader / SMS Forwarder App (or Admin Simulator)
+app.post('/api/donations/sms-webhook', async (req, res) => {
+  try {
+    const body = req.body || {};
+    const rawMessage = String(
+      body.message || body.text || body.body || body.sms || body.smsBody || ''
+    ).trim();
+    const senderAddress = String(
+      body.sender || body.from || body.address || body.senderNumber || 'bKash'
+    ).trim();
+    const providedSecret = String(
+      body.secret ||
+        body.apiKey ||
+        body.webhookSecret ||
+        req.headers['x-webhook-secret'] ||
+        (typeof req.headers.authorization === 'string' &&
+        req.headers.authorization.startsWith('Bearer ')
+          ? req.headers.authorization.slice(7)
+          : '')
+    ).trim();
+    const isAdminSimulation = Boolean(body.adminSimulation);
+
+    if (!rawMessage) {
+      res.status(400).json({
+        success: false,
+        error: 'SMS message body is required (fields: message, text, or body).',
+      });
+      return;
+    }
+
+    const baseUrl = getFirestoreRestBaseUrl();
+    const apiKeyParam = firebaseConfig?.apiKey ? `key=${encodeURIComponent(firebaseConfig.apiKey)}` : '';
+
+    // 1. Validate Webhook Secret if configured in settings/general
+    if (baseUrl && !isAdminSimulation) {
+      try {
+        const settingsResp = await fetch(`${baseUrl}/settings/general?${apiKeyParam}`);
+        if (settingsResp.ok) {
+          const settingsDoc = await settingsResp.json();
+          const parsedSettings = fromFirestoreFields(settingsDoc.fields || {});
+          const configuredSecret = String(
+            parsedSettings?.donationConfig?.smsWebhookSecret || ''
+          ).trim();
+          if (configuredSecret && providedSecret !== configuredSecret) {
+            res.status(401).json({
+              success: false,
+              error: 'Unauthorized: Invalid SMS webhook secret key.',
+            });
+            return;
+          }
+        }
+      } catch (cfgErr) {
+        console.warn('[SMS Webhook] Settings secret check skipped:', cfgErr);
+      }
+    }
+
+    // 2. Parse SMS (or merge with explicit pre-parsed fields from custom Android app)
+    const parsed = parseMobileBankingSmsServer(rawMessage, senderAddress);
+    if (body.provider && (body.provider === 'BKASH' || body.provider === 'NAGAD')) {
+      parsed.provider = body.provider;
+    }
+    if (body.trxId && !parsed.parsedTrxId) {
+      parsed.parsedTrxId = String(body.trxId).trim().toUpperCase();
+    }
+    if (body.amount && !parsed.parsedAmount) {
+      const amt = Number(body.amount);
+      if (!isNaN(amt) && amt > 0) parsed.parsedAmount = amt;
+    }
+    if (body.senderPhone && !parsed.parsedSenderPhone) {
+      parsed.parsedSenderPhone = normalizePhoneServer(String(body.senderPhone));
+    }
+    if (body.reference && !parsed.parsedReference) {
+      parsed.parsedReference = String(body.reference).trim().toUpperCase();
+    }
+
+    const now = Date.now();
+    const smsLogId = `sms_${now}_${Math.random().toString(36).slice(2, 8)}`;
+
+    let matchedDonationId: string | undefined;
+    let matchedReferenceCode: string | undefined;
+    let generatedTransactionNumber: string | undefined;
+    let matchStatus: 'MATCHED' | 'UNMATCHED' | 'DUPLICATE' = 'UNMATCHED';
+
+    if (baseUrl) {
+      // 3. Query PENDING donations from Firestore
+      const queryResp = await fetch(`${baseUrl}:runQuery?${apiKeyParam}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          structuredQuery: {
+            from: [{ collectionId: 'donations' }],
+            where: {
+              fieldFilter: {
+                field: { fieldPath: 'status' },
+                op: 'EQUAL',
+                value: { stringValue: 'PENDING' },
+              },
+            },
+            limit: 100,
+          },
+        }),
+      });
+
+      let matchedDocData: Record<string, any> | null = null;
+      let matchedDocId: string | null = null;
+
+      if (queryResp.ok) {
+        const rows = await queryResp.json();
+        const pendingDonations: Array<{ id: string; data: Record<string, any> }> = [];
+
+        if (Array.isArray(rows)) {
+          for (const row of rows) {
+            if (row?.document?.name && row?.document?.fields) {
+              const docId = row.document.name.split('/').pop() as string;
+              pendingDonations.push({
+                id: docId,
+                data: fromFirestoreFields(row.document.fields),
+              });
+            }
+          }
+        }
+
+        // Priority 1: Exact TrxID match
+        if (parsed.parsedTrxId) {
+          const foundByTrx = pendingDonations.find((item) => {
+            const d = item.data;
+            const dTrx = String(d.transactionIdUpper || d.transactionId || '').toUpperCase();
+            const amountOk =
+              typeof parsed.parsedAmount === 'number'
+                ? parsed.parsedAmount >= Number(d.amount || 0)
+                : true;
+            return dTrx === parsed.parsedTrxId && amountOk;
+          });
+          if (foundByTrx) {
+            matchedDocId = foundByTrx.id;
+            matchedDocData = foundByTrx.data;
+          }
+        }
+
+        // Priority 2: Exact Reference Code match (e.g. DPIB-4829)
+        if (!matchedDocId && parsed.parsedReference) {
+          const foundByRef = pendingDonations.find((item) => {
+            const d = item.data;
+            const dRef = String(d.referenceCode || '').toUpperCase();
+            const amountOk =
+              typeof parsed.parsedAmount === 'number'
+                ? parsed.parsedAmount >= Number(d.amount || 0)
+                : true;
+            return dRef === parsed.parsedReference && d.paymentMethod === parsed.provider && amountOk;
+          });
+          if (foundByRef) {
+            matchedDocId = foundByRef.id;
+            matchedDocData = foundByRef.data;
+          }
+        }
+
+        // Priority 3: Exact Sender Phone + Exact Amount + Same Provider within 2 hours
+        if (!matchedDocId && parsed.parsedSenderPhone && typeof parsed.parsedAmount === 'number') {
+          const twoHoursAgo = now - 2 * 60 * 60 * 1000;
+          const foundByPhoneAmt = pendingDonations.find((item) => {
+            const d = item.data;
+            return (
+              d.senderPhone === parsed.parsedSenderPhone &&
+              Number(d.amount) === parsed.parsedAmount &&
+              d.paymentMethod === parsed.provider &&
+              Number(d.createdAt || 0) >= twoHoursAgo
+            );
+          });
+          if (foundByPhoneAmt) {
+            matchedDocId = foundByPhoneAmt.id;
+            matchedDocData = foundByPhoneAmt.data;
+          }
+        }
+      }
+
+      // 4. If matched, update donation status to VERIFIED and automatically create a Transaction in Firestore!
+      if (matchedDocId && matchedDocData) {
+        const updatedDonation = {
+          ...matchedDocData,
+          status: 'VERIFIED',
+          verificationSource: 'AUTO_SMS_APP',
+          matchedSmsId: smsLogId,
+          matchedSmsText: rawMessage.slice(0, 550),
+          verifiedAt: now,
+          updatedAt: now,
+        };
+
+        const patchResp = await fetch(
+          `${baseUrl}/donations/${encodeURIComponent(matchedDocId)}?${apiKeyParam}`,
+          {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              fields: toFirestoreDocumentFields(updatedDonation),
+            }),
+          }
+        );
+
+        if (patchResp.ok) {
+          matchedDonationId = matchedDocId;
+          matchedReferenceCode = String(matchedDocData.referenceCode || '');
+          matchStatus = 'MATCHED';
+
+          // Automatically generate completed Transaction document in /transactions
+          const txnId = `txn_${matchedDocId}`;
+          const refSuffix =
+            matchedReferenceCode.replace(/[^A-Z0-9]/gi, '').slice(-4) || '0000';
+          const dateStamp = new Date(now).toISOString().slice(2, 10).replace(/-/g, '');
+          const txnNumber = `TXN-${dateStamp}-${refSuffix}`;
+          generatedTransactionNumber = txnNumber;
+
+          const transactionRecord = {
+            id: txnId,
+            transactionNumber: txnNumber,
+            donationId: matchedDocId,
+            referenceCode: matchedReferenceCode,
+            paymentMethod: matchedDocData.paymentMethod === 'NAGAD' ? 'NAGAD' : 'BKASH',
+            amount: Number(matchedDocData.amount || 0),
+            senderPhone: String(matchedDocData.senderPhone || ''),
+            gatewayTrxId: String(
+              matchedDocData.transactionIdUpper || matchedDocData.transactionId || ''
+            ),
+            donorName: String(matchedDocData.donorName || 'শুভাকাঙ্ক্ষী'),
+            purpose: String(matchedDocData.purpose || 'APP_DEVELOPMENT'),
+            verificationSource: 'AUTO_SMS_APP',
+            status: 'COMPLETED',
+            completedAt: now,
+            createdAt: now,
+          };
+
+          await fetch(
+            `${baseUrl}/transactions/${encodeURIComponent(txnId)}?${apiKeyParam}`,
+            {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                fields: toFirestoreDocumentFields(transactionRecord),
+              }),
+            }
+          );
+        }
+      }
+
+      // 5. Save SMS log into donation_sms_logs
+      const smsLogRecord: Record<string, any> = {
+        provider: parsed.provider,
+        senderAddress: senderAddress.slice(0, 50),
+        rawMessage: rawMessage.slice(0, 950),
+        matchStatus,
+        receivedAt: now,
+      };
+      if (typeof parsed.parsedAmount === 'number') smsLogRecord.parsedAmount = parsed.parsedAmount;
+      if (parsed.parsedTrxId) smsLogRecord.parsedTrxId = parsed.parsedTrxId;
+      if (parsed.parsedSenderPhone) smsLogRecord.parsedSenderPhone = parsed.parsedSenderPhone;
+      if (parsed.parsedReference) smsLogRecord.parsedReference = parsed.parsedReference;
+      if (matchedDonationId) smsLogRecord.matchedDonationId = matchedDonationId;
+      if (matchedReferenceCode) smsLogRecord.matchedReferenceCode = matchedReferenceCode;
+
+      await fetch(
+        `${baseUrl}/donation_sms_logs?documentId=${encodeURIComponent(smsLogId)}&${apiKeyParam}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fields: toFirestoreDocumentFields(smsLogRecord),
+          }),
+        }
+      );
+    }
+
+    res.json({
+      success: true,
+      matched: matchStatus === 'MATCHED',
+      matchStatus,
+      smsLogId,
+      matchedDonationId: matchedDonationId || null,
+      matchedReferenceCode: matchedReferenceCode || null,
+      transactionNumber: generatedTransactionNumber || null,
+      parsed,
+    });
+  } catch (err: any) {
+    console.error('[API /api/donations/sms-webhook Error]:', err);
+    res.status(500).json({
+      success: false,
+      error: err?.message || 'Failed to process incoming payment SMS webhook.',
+    });
+  }
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[DPIB Server] Unhandled Promise Rejection:', reason);
+});
+
+process.on('uncaughtException', (err: any) => {
+  console.error('[DPIB Server] Uncaught Exception:', err);
+  if (err?.code === 'EADDRINUSE') {
+    process.exit(1);
+  }
+});
+
 async function startServer() {
   process.env.DISABLE_HMR = 'true';
   // Mount Vite development middlewares in dev mode
   if (process.env.NODE_ENV !== 'production') {
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: {
         middlewareMode: true,
@@ -331,15 +859,28 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    // In production serve dist
-    app.use(express.static('dist'));
+    // In production serve built dist bundle with SPA fallback
+    const distDir = path.resolve(process.cwd(), 'dist');
+    app.use(express.static(distDir));
+    app.get('/{*splat}', (_req, res) => {
+      res.sendFile(path.join(distDir, 'index.html'));
+    });
   }
 
-  app.listen(port, '0.0.0.0', () => {
+  const server = app.listen(port, host, () => {
     console.log(`[DPIB Server] Dev server running on http://localhost:${port}`);
   });
+
+  const shutdown = () => {
+    server.close(() => {
+      process.exit(0);
+    });
+  };
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
 }
 
 startServer().catch((err) => {
   console.error('[DPIB Server] Failed to start:', err);
+  process.exit(1);
 });

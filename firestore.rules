@@ -117,6 +117,78 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    // Donations & Payment Verification
+    function isValidDonationData(data) {
+      return data.keys().hasAll(['referenceCode', 'paymentMethod', 'amount', 'senderPhone', 'transactionId', 'status', 'createdAt'])
+        && data.referenceCode is string && data.referenceCode.size() >= 4 && data.referenceCode.size() <= 30
+        && data.paymentMethod in ['BKASH', 'NAGAD']
+        && data.amount is number && data.amount >= 10 && data.amount <= 500000
+        && data.senderPhone is string && data.senderPhone.size() >= 10 && data.senderPhone.size() <= 20
+        && data.transactionId is string && data.transactionId.size() >= 4 && data.transactionId.size() <= 50
+        && data.status in ['PENDING', 'VERIFIED', 'REJECTED']
+        && data.createdAt is number;
+    }
+
+    match /donations/{donationId} {
+      allow read: if true;
+      allow create: if isValidId(donationId)
+        && isValidDonationData(request.resource.data)
+        && request.resource.data.status in ['PENDING', 'VERIFIED'];
+      allow update: if isValidId(donationId)
+        && isValidDonationData(request.resource.data)
+        && request.resource.data.amount == resource.data.amount
+        && request.resource.data.referenceCode == resource.data.referenceCode;
+      allow delete: if true;
+    }
+
+    match /donation_sms_logs/{logId} {
+      allow read: if true;
+      allow write: if isValidId(logId)
+        && request.resource.data.keys().hasAll(['provider', 'senderAddress', 'rawMessage', 'matchStatus', 'receivedAt'])
+        && request.resource.data.provider in ['BKASH', 'NAGAD']
+        && request.resource.data.rawMessage is string
+        && request.resource.data.rawMessage.size() > 0
+        && request.resource.data.rawMessage.size() <= 1000
+        && request.resource.data.matchStatus in ['MATCHED', 'UNMATCHED', 'DUPLICATE'];
+    }
+
+    // Auto-Generated Completed Payment Transactions History
+    function isValidTransactionData(data) {
+      return data.keys().hasAll([
+          'transactionNumber',
+          'donationId',
+          'referenceCode',
+          'paymentMethod',
+          'amount',
+          'senderPhone',
+          'gatewayTrxId',
+          'status',
+          'completedAt',
+          'createdAt'
+        ])
+        && data.transactionNumber is string && data.transactionNumber.size() >= 5 && data.transactionNumber.size() <= 40
+        && data.donationId is string && data.donationId.size() >= 4 && data.donationId.size() <= 128
+        && data.referenceCode is string && data.referenceCode.size() >= 4 && data.referenceCode.size() <= 30
+        && data.paymentMethod in ['BKASH', 'NAGAD']
+        && data.amount is number && data.amount >= 10 && data.amount <= 500000
+        && data.senderPhone is string && data.senderPhone.size() >= 10 && data.senderPhone.size() <= 20
+        && data.gatewayTrxId is string && data.gatewayTrxId.size() >= 4 && data.gatewayTrxId.size() <= 50
+        && data.status in ['COMPLETED']
+        && data.completedAt is number
+        && data.createdAt is number;
+    }
+
+    match /transactions/{transactionId} {
+      allow read: if true;
+      allow create: if isValidId(transactionId)
+        && isValidTransactionData(request.resource.data);
+      allow update: if isValidId(transactionId)
+        && isValidTransactionData(request.resource.data)
+        && request.resource.data.amount == resource.data.amount
+        && request.resource.data.donationId == resource.data.donationId;
+      allow delete: if true;
+    }
+
     // Catch-all default deny
     match /{document=**} {
       allow read, write: if false;

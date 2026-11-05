@@ -10,6 +10,7 @@ import {
   subscribeToPublishedEvents,
   searchPublicResult,
   searchAllPublicResults,
+  testConnection,
   DEFAULT_DEPARTMENTS,
 } from './services/db';
 import {
@@ -51,6 +52,7 @@ import { GpaCalculatorPage } from './components/public/GpaCalculatorPage';
 import { SmartCalendarPage } from './components/public/SmartCalendarPage';
 import { StudentBookListPage } from './components/public/StudentBookListPage';
 import { AboutUsPage } from './components/public/AboutUsPage';
+import { DonationPage } from './components/public/DonationPage';
 
 // Admission & Applicant Profile Components
 import { ApplicantProfileView } from './components/admission/ApplicantProfileView';
@@ -75,6 +77,7 @@ import { ShiftManagementPage } from './components/admin/ShiftManagementPage';
 import { EventManagement } from './components/admin/EventManagement';
 import { AdmissionManagement } from './components/admin/AdmissionManagement';
 import { BookManagement } from './components/admin/BookManagement';
+import { DonationManagement } from './components/admin/DonationManagement';
 
 export function App() {
   // Navigation State
@@ -83,7 +86,7 @@ export function App() {
   const [adminDocTab, setAdminDocTab] = useState<DocumentTab>('result-generator');
   const [adminStudentAction, setAdminStudentAction] = useState<'add' | 'json' | null>(null);
   const [publicTab, setPublicTab] = useState<
-    'home' | 'search' | 'merit' | 'exams' | 'notices' | 'verify' | 'gpa-calculator' | 'smart-calendar' | 'admission' | 'analysis' | 'books' | 'about'
+    'home' | 'search' | 'merit' | 'exams' | 'notices' | 'verify' | 'gpa-calculator' | 'smart-calendar' | 'admission' | 'analysis' | 'books' | 'about' | 'donate' | 'transactions'
   >('home');
   const [verificationCodeParam, setVerificationCodeParam] = useState<string>('');
   const [moreSheetOpen, setMoreSheetOpen] = useState(false);
@@ -221,7 +224,7 @@ export function App() {
       }
 
       const tabParam = urlParams.get('tab');
-      if (tabParam && ['home', 'search', 'analysis', 'merit', 'exams', 'notices', 'verify', 'gpa-calculator', 'smart-calendar', 'books', 'about'].includes(tabParam)) {
+      if (tabParam && ['home', 'search', 'analysis', 'merit', 'exams', 'notices', 'verify', 'gpa-calculator', 'smart-calendar', 'books', 'about', 'donate', 'transactions'].includes(tabParam)) {
         setPublicTab(tabParam as any);
       }
     };
@@ -295,6 +298,7 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    testConnection();
     loadPortalData();
 
     // Subscribe to realtime published events so countdowns & user panel update instantly
@@ -567,6 +571,11 @@ export function App() {
               <ShiftManagementPage onBackToSettings={() => handleAdminSectionChange('settings')} />
             </PageTransition>
           )}
+          {adminSection === 'donations' && (
+            <PageTransition key="admin-donations">
+              <DonationManagement onRefreshSettings={loadPortalData} />
+            </PageTransition>
+          )}
           {adminSection === 'security' && (
             <PageTransition key="admin-security">
               <SecurityPage onBackToSettings={() => handleAdminSectionChange('settings')} />
@@ -738,6 +747,26 @@ export function App() {
               <AboutUsPage
                 onBack={() => handleNavigatePublicTab('home')}
                 onNavigateTab={handleNavigatePublicTab}
+              />
+            </PageTransition>
+          )}
+
+          {publicTab === 'donate' && (
+            <PageTransition key="public-donate">
+              <DonationPage
+                settings={settings}
+                initialMode="WIZARD"
+                onBack={() => handleNavigatePublicTab('home')}
+              />
+            </PageTransition>
+          )}
+
+          {publicTab === 'transactions' && (
+            <PageTransition key="public-transactions">
+              <DonationPage
+                settings={settings}
+                initialMode="HISTORY"
+                onBack={() => handleNavigatePublicTab('home')}
               />
             </PageTransition>
           )}

@@ -20,15 +20,12 @@ import {
   CalendarDays,
   GraduationCap,
   BarChart3,
-  Code2,
-  Mail,
 } from 'lucide-react';
 import { Exam, Notice, SystemSettings, AppEvent } from '../../types';
 import { toBanglaDigits, formatBanglaDate } from '../../utils/bangla';
 import { BottomSheet } from '../common/BottomSheet';
 import { EventCountdownCard } from './EventCountdownCard';
 import { DpibBrandTitle } from '../common/DpibBrandTitle';
-import { DeveloperProfileModal } from '../common/DeveloperProfileModal';
 
 interface PublicHomePageProps {
   exams: Exam[];
@@ -46,7 +43,6 @@ export const PublicHomePage: React.FC<PublicHomePageProps> = ({
   onNavigateTab,
 }) => {
   const [selectedNotice, setSelectedNotice] = useState<Notice | null>(null);
-  const [isDevModalOpen, setIsDevModalOpen] = useState(false);
 
   const publishedExams = exams.filter((e) => e.status === 'PUBLISHED');
   const publishedNotices = notices.filter((n) => n.status === 'PUBLISHED');
@@ -404,92 +400,6 @@ export const PublicHomePage: React.FC<PublicHomePageProps> = ({
           ))}
         </div>
       </section>
-
-      {/* ================= DEVELOPER SPOTLIGHT SECTION (RULE 5) ================= */}
-      <section className="max-w-5xl mx-auto px-4 sm:px-6">
-        <div className="relative overflow-hidden rounded-[32px] bg-white/80 backdrop-blur-2xl border border-violet-200/80 p-6 sm:p-8 shadow-[0_20px_45px_-12px_rgba(109,40,217,0.12)]">
-          {/* Subtle top edge gradient sheen */}
-          <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-transparent via-violet-500 to-transparent opacity-80" />
-
-          <div className="flex flex-col md:flex-row items-center gap-6 sm:gap-8">
-            {/* Developer Portrait */}
-            <div className="relative shrink-0 group">
-              <div className="w-28 h-28 sm:w-32 sm:h-32 rounded-3xl overflow-hidden ring-4 ring-violet-200/90 shadow-md border-2 border-white bg-slate-100">
-                <img
-                  src="/assets/aistudio/1769429789676_88504b83.jpg"
-                  alt="মোঃ জিহাদ - সফটওয়্যার ডেভেলপার"
-                  className="w-full h-full object-cover object-top transition-transform duration-300 group-hover:scale-105"
-                  referrerPolicy="no-referrer"
-                />
-              </div>
-              <div className="absolute -bottom-2 -right-1 px-2.5 py-0.5 rounded-full bg-violet-600 text-white text-[11px] font-bold font-outfit shadow-xs flex items-center gap-1 border border-white">
-                <Code2 className="w-3 h-3" />
-                <span>LEAD DEV</span>
-              </div>
-            </div>
-
-            {/* Information & Highlights */}
-            <div className="space-y-2.5 text-center md:text-left flex-1 min-w-0">
-              <div className="flex flex-wrap items-center justify-center md:justify-start gap-2">
-                <span className="px-3 py-1 rounded-full bg-violet-500/10 text-violet-900 border border-violet-400/25 text-xs font-bold font-outfit tracking-wider">
-                  ABOUT US • আমাদের সম্পর্কে
-                </span>
-                <span className="px-3 py-1 rounded-full bg-slate-100 text-slate-700 text-xs font-semibold">
-                  মেকানিক্যাল টেকনোলজি
-                </span>
-              </div>
-
-              {/* Developer Name highlighted with Violet/Lavender Gradient */}
-              <h3
-                className="text-2xl sm:text-3xl font-black tracking-tight"
-                style={{
-                  background: 'linear-gradient(135deg, #581C87 0%, #7E22CE 40%, #9333EA 70%, #A855F7 100%)',
-                  WebkitBackgroundClip: 'text',
-                  backgroundClip: 'text',
-                  WebkitTextFillColor: 'transparent',
-                  color: 'transparent',
-                }}
-              >
-                মোঃ জিহাদ <span className="text-base sm:text-lg font-bold font-outfit tracking-wide text-violet-900 ml-1.5">(MD JIHAD)</span>
-              </h3>
-
-              {/* Institute & Core Identity */}
-              <p className="text-xs sm:text-sm font-semibold text-slate-700">
-                দক্ষিণবঙ্গ পলিটেকনিক ইনস্টিটিউট, ভোলা • মেকানিক্যাল টেকনোলজি
-              </p>
-
-              {/* Description in readable neutral text */}
-              <p className="text-xs sm:text-sm text-slate-600 leading-relaxed font-medium max-w-2xl">
-                দক্ষিণবঙ্গ পলিটেকনিক ইনস্টিটিউটের শিক্ষার্থীদের দ্রুত ও নির্ভুল পরীক্ষার ফলাফল অনুসন্ধান, ডিজিটাল গ্রেডশিট যাচাই এবং একাডেমিক সেবা সহজ করতে <DpibBrandTitle className="text-xs inline-block" /> প্ল্যাটফর্মটি ডিজাইন ও ডেভেলপ করেছেন মোঃ জিহাদ।
-              </p>
-
-              <div className="pt-2 flex flex-wrap items-center justify-center md:justify-start gap-3">
-                <button
-                  type="button"
-                  onClick={() => onNavigateTab('about')}
-                  className="px-5 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold shadow-sm transition-all flex items-center gap-1.5 cursor-pointer active:scale-98"
-                >
-                  <Sparkles className="w-4 h-4" />
-                  <span>আমাদের সম্পর্কে বিস্তারিত জানুন</span>
-                </button>
-                <a
-                  href="mailto:techjihad6825@gmail.com"
-                  className="px-4 py-2.5 rounded-xl bg-violet-50/80 hover:bg-violet-100 text-violet-900 border border-violet-200/80 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Mail className="w-4 h-4 text-violet-600" />
-                  <span>ইমেইল: techjihad6825@gmail.com</span>
-                </a>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Developer Profile Modal */}
-      <DeveloperProfileModal
-        isOpen={isDevModalOpen}
-        onClose={() => setIsDevModalOpen(false)}
-      />
 
       {/* Notice Details Bottom Sheet */}
       <BottomSheet

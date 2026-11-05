@@ -106,6 +106,7 @@
         "departments": { "type": "array", "description": "List of active engineering departments" },
         "examTypes": { "type": "array", "description": "List of exam type categories" },
         "shifts": { "type": "array", "description": "List of dynamic shift configurations with start and end times" },
+        "donationConfig": { "type": "object", "description": "bKash, Nagad, and SMS auto-verification webhook configuration" },
         "updatedAt": { "type": "number", "description": "Update timestamp in milliseconds" }
       },
       "required": ["instituteName", "portalTitle"]
@@ -350,9 +351,85 @@
         "updatedAt": { "type": "number", "description": "Update timestamp in milliseconds" }
       },
       "required": ["technology", "semesterId", "subjectCode", "subjectName", "status"]
+    },
+    "Donation": {
+      "title": "Donation",
+      "description": "Voluntary support and charity donation record via bKash or Nagad with TrxID and SMS auto-verification support",
+      "type": "object",
+      "properties": {
+        "referenceCode": { "type": "string", "description": "Unique short reference code (e.g. DPIB-4829)", "maxLength": 30 },
+        "paymentMethod": { "type": "string", "description": "Mobile banking provider", "enum": ["BKASH", "NAGAD"] },
+        "amount": { "type": "number", "description": "Donation amount in BDT (minimum 10)" },
+        "senderPhone": { "type": "string", "description": "Sender mobile number (11 digits)", "maxLength": 20 },
+        "transactionId": { "type": "string", "description": "bKash/Nagad Transaction ID (TrxID)", "maxLength": 50 },
+        "transactionIdUpper": { "type": "string", "description": "Uppercase normalized TrxID for fast lookup", "maxLength": 50 },
+        "donorName": { "type": "string", "description": "Optional donor name", "maxLength": 150 },
+        "purpose": { "type": "string", "description": "Selected donation purpose", "maxLength": 60 },
+        "note": { "type": "string", "description": "Optional donor message", "maxLength": 500 },
+        "status": { "type": "string", "description": "Verification status", "enum": ["PENDING", "VERIFIED", "REJECTED"] },
+        "verificationSource": { "type": "string", "description": "How donation was verified", "enum": ["AUTO_SMS_APP", "MANUAL_ADMIN"] },
+        "matchedSmsId": { "type": "string", "description": "Linked SMS log document ID", "maxLength": 128 },
+        "matchedSmsText": { "type": "string", "description": "Matched SMS snippet", "maxLength": 600 },
+        "verifiedAt": { "type": "number", "description": "Verification timestamp in milliseconds" },
+        "createdAt": { "type": "number", "description": "Creation timestamp in milliseconds" },
+        "updatedAt": { "type": "number", "description": "Update timestamp in milliseconds" }
+      },
+      "required": ["referenceCode", "paymentMethod", "amount", "senderPhone", "transactionId", "status", "createdAt"]
+    },
+    "DonationSmsLog": {
+      "title": "DonationSmsLog",
+      "description": "Incoming payment confirmation SMS log forwarded by Android SMS reading app for automatic verification",
+      "type": "object",
+      "properties": {
+        "provider": { "type": "string", "description": "Detected mobile banking provider", "enum": ["BKASH", "NAGAD"] },
+        "senderAddress": { "type": "string", "description": "SMS sender header (e.g. bKash, NAGAD)", "maxLength": 50 },
+        "rawMessage": { "type": "string", "description": "Full SMS text body", "maxLength": 1000 },
+        "parsedAmount": { "type": "number", "description": "Extracted BDT amount" },
+        "parsedTrxId": { "type": "string", "description": "Extracted uppercase TrxID", "maxLength": 50 },
+        "parsedSenderPhone": { "type": "string", "description": "Extracted sender phone number", "maxLength": 20 },
+        "parsedReference": { "type": "string", "description": "Extracted reference code if present", "maxLength": 30 },
+        "matchedDonationId": { "type": "string", "description": "Matched donation document ID", "maxLength": 128 },
+        "matchedReferenceCode": { "type": "string", "description": "Matched donation reference code", "maxLength": 30 },
+        "matchStatus": { "type": "string", "description": "Matching outcome", "enum": ["MATCHED", "UNMATCHED", "DUPLICATE"] },
+        "receivedAt": { "type": "number", "description": "Timestamp when SMS was received in milliseconds" }
+      },
+      "required": ["provider", "senderAddress", "rawMessage", "matchStatus", "receivedAt"]
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "Automatically generated transaction record created whenever a donation/payment is confirmed or completed",
+      "type": "object",
+      "properties": {
+        "transactionNumber": { "type": "string", "description": "Unique human-readable transaction ID (e.g. TXN-261105-4829)", "maxLength": 40 },
+        "donationId": { "type": "string", "description": "Linked donation document ID", "maxLength": 128 },
+        "referenceCode": { "type": "string", "description": "Donation reference code (e.g. DPIB-4829)", "maxLength": 30 },
+        "paymentMethod": { "type": "string", "description": "Payment gateway provider", "enum": ["BKASH", "NAGAD"] },
+        "amount": { "type": "number", "description": "Completed transaction amount in BDT" },
+        "senderPhone": { "type": "string", "description": "Sender mobile phone number", "maxLength": 20 },
+        "gatewayTrxId": { "type": "string", "description": "bKash TrxID or Nagad TxnId", "maxLength": 50 },
+        "donorName": { "type": "string", "description": "Donor name", "maxLength": 150 },
+        "purpose": { "type": "string", "description": "Transaction purpose category", "maxLength": 60 },
+        "verificationSource": { "type": "string", "description": "How payment was verified", "enum": ["AUTO_SMS_APP", "MANUAL_ADMIN"] },
+        "status": { "type": "string", "description": "Transaction completion status", "enum": ["COMPLETED"] },
+        "completedAt": { "type": "number", "description": "Timestamp when payment was confirmed in milliseconds" },
+        "createdAt": { "type": "number", "description": "Timestamp when transaction record was created in milliseconds" }
+      },
+      "required": ["transactionNumber", "donationId", "referenceCode", "paymentMethod", "amount", "senderPhone", "gatewayTrxId", "status", "completedAt", "createdAt"]
     }
   },
   "firestore": {
+    "/transactions/{transactionId}": {
+      "schema": { "$ref": "Transaction" },
+      "description": "Auto-generated ledger of confirmed and completed payment transactions"
+    },
+    "/donations/{donationId}": {
+      "schema": { "$ref": "Donation" },
+      "description": "Voluntary donations submitted by users via bKash/Nagad with live SMS auto-verification status"
+    },
+    "/donation_sms_logs/{logId}": {
+      "schema": { "$ref": "DonationSmsLog" },
+      "description": "Incoming payment SMS webhook logs for automatic TrxID/Reference matching"
+    },
     "/books/{bookId}": {
       "schema": { "$ref": "AcademicBook" },
       "description": "Semester and technology textbooks list with optional market prices and credit information"
