@@ -12,8 +12,10 @@ import {
   TrendingUp,
   Award,
   GraduationCap,
+  HeartHandshake,
 } from 'lucide-react';
 import { getDashboardStats, DashboardStats } from '../../services/db';
+import { subscribeAllDonations } from '../../services/donationService';
 import { Exam, StudentResult } from '../../types';
 import { toBanglaDigits, formatBanglaDate, SEMESTER_MAP } from '../../utils/bangla';
 import { LoadingSpinner } from '../common/LoadingSpinner';
@@ -26,6 +28,11 @@ interface AdminDashboardProps {
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, exams }) => {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [donationSummary, setDonationSummary] = useState<{
+    totalCount: number;
+    pendingCount: number;
+    verifiedAmount: number;
+  }>({ totalCount: 0, pendingCount: 0, verifiedAmount: 0 });
 
   const fetchStats = async () => {
     setLoading(true);
@@ -41,6 +48,28 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, exam
 
   useEffect(() => {
     fetchStats();
+  }, []);
+
+  useEffect(() => {
+    try {
+      const unsub = subscribeAllDonations(
+        (items) => {
+          const pendingCount = items.filter((d) => d.status === 'PENDING').length;
+          const verifiedAmount = items
+            .filter((d) => d.status === 'VERIFIED')
+            .reduce((sum, d) => sum + Number(d.amount || 0), 0);
+          setDonationSummary({
+            totalCount: items.length,
+            pendingCount,
+            verifiedAmount,
+          });
+        },
+        (err) => console.warn('Dashboard donation summary error:', err)
+      );
+      return () => unsub();
+    } catch (e) {
+      console.warn('Dashboard donation subscription warning:', e);
+    }
   }, []);
 
   const statCards = [
@@ -123,6 +152,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, exam
             )}
           </button>
           <button
+            id="btn-quick-donations"
+            onClick={() => onNavigate('donations')}
+            className="flex items-center space-x-1.5 px-3.5 py-2 min-h-[40px] bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs sm:text-sm font-bold transition-all shadow-xs active:scale-95 cursor-pointer shrink-0"
+          >
+            <HeartHandshake className="w-4 h-4" />
+            <span>অনুদান ও পেমেন্ট</span>
+            {donationSummary.pendingCount > 0 && (
+              <span className="bg-white text-rose-700 text-[10px] px-1.5 py-0.5 rounded-full font-outfit font-bold">
+                {toBanglaDigits(donationSummary.pendingCount)}
+              </span>
+            )}
+          </button>
+          <button
             id="btn-quick-student-database"
             onClick={() => onNavigate('students')}
             className="flex items-center space-x-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs sm:text-sm font-bold transition-all shadow-xs active:scale-95 cursor-pointer shrink-0"
@@ -181,6 +223,52 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate, exam
           })}
         </div>
       )}
+
+      {/* Featured Donations & Auto SMS Verification Hub Banner */}
+      <div
+        id="btn-card-donations"
+        onClick={() => onNavigate('donations')}
+        className="bg-gradient-to-r from-rose-700 via-rose-600 to-teal-800 text-white p-5 sm:p-6 rounded-3xl shadow-md cursor-pointer hover:shadow-lg transition-all group flex flex-col md:flex-row md:items-center justify-between gap-4 border border-white/15"
+      >
+        <div className="flex items-start sm:items-center gap-4 min-w-0">
+          <div className="w-12 h-12 rounded-2xl bg-white/15 border border-white/25 flex items-center justify-center shrink-0">
+            <HeartHandshake className="w-6 h-6 text-white" />
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center flex-wrap gap-2 mb-1">
+              <span className="text-[10px] font-black uppercase tracking-wider font-outfit bg-white/20 text-white px-2 py-0.5 rounded-md">
+                BKASH • NAGAD • SMS WEBHOOK
+              </span>
+              {donationSummary.pendingCount > 0 && (
+                <span className="text-[11px] font-bold bg-amber-300 text-slate-900 px-2 py-0.5 rounded-md">
+                  অপেক্ষমাণ: {toBanglaDigits(donationSummary.pendingCount)}টি
+                </span>
+              )}
+            </div>
+            <h3 className="font-black text-lg sm:text-xl leading-snug">
+              অনুদান ও অটোমেটিক পেমেন্ট হাব
+            </h3>
+            <p className="text-xs sm:text-sm text-rose-50/90 mt-0.5 leading-relaxed">
+              অনুদান তালিকা, স্বয়ংক্রিয় লেনদেন হিস্ট্রি, বিকাশ/নগদ নম্বর, ওয়েবহুক সিক্রেট কী এবং SMS লগ পরিচালনা করুন
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between md:justify-end gap-4 shrink-0 border-t md:border-t-0 border-white/15 pt-3 md:pt-0">
+          <div className="text-left md:text-right">
+            <span className="text-[11px] text-rose-100/90 block font-semibold">
+              মোট যাচাইকৃত অনুদান ({toBanglaDigits(donationSummary.totalCount)}টি)
+            </span>
+            <span className="text-xl sm:text-2xl font-black font-outfit tracking-tight">
+              ৳ {toBanglaDigits(donationSummary.verifiedAmount)}
+            </span>
+          </div>
+          <span className="inline-flex items-center gap-1.5 px-4 py-2.5 min-h-[44px] rounded-2xl bg-white text-rose-700 font-bold text-xs sm:text-sm shadow-xs group-hover:translate-x-0.5 transition-transform shrink-0">
+            <span>হাব খুলুন</span>
+            <ArrowRight className="w-4 h-4" />
+          </span>
+        </div>
+      </div>
 
       {/* Quick Launchpad Action Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

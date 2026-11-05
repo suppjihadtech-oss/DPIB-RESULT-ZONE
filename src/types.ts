@@ -409,7 +409,7 @@ export interface PushNotificationPayload {
   body: string;
   icon?: string;
   url?: string;
-  type?: 'RESULT' | 'NOTICE' | 'EVENT' | 'EXAM' | 'GENERAL';
+  type?: 'RESULT' | 'NOTICE' | 'EVENT' | 'EXAM' | 'PAYMENT' | 'GENERAL';
   id?: string;
 }
 

@@ -6,6 +6,7 @@ import {
   unsubscribeNotifications,
   subscribeToForegroundNotifications,
   showLocalNotification,
+  isNotificationSystemActive,
 } from '../services/notification';
 import { PushNotificationPayload } from '../types';
 
@@ -33,18 +34,18 @@ export function usePushNotification() {
 
       const perm = getNotificationPermissionStatus();
       setPermission(perm);
-
-      const savedToken = localStorage.getItem('dpib_fcm_token');
-      const isEnabled = localStorage.getItem('dpib_notifications_enabled') === 'true';
-
-      if (perm === 'granted' && savedToken && isEnabled) {
-        setIsSubscribed(true);
-      } else {
-        setIsSubscribed(false);
-      }
+      setIsSubscribed(isNotificationSystemActive());
     }
 
     checkStatus();
+
+    const handleLocalNotification = (event: Event) => {
+      const customEvent = event as CustomEvent<PushNotificationPayload>;
+      if (mounted && customEvent.detail) {
+        setIncomingNotification(customEvent.detail);
+      }
+    };
+    window.addEventListener('dpib:local-notification', handleLocalNotification);
 
     // Listen to foreground messages
     let unsubscribeForeground: (() => void) | null = null;
@@ -60,6 +61,7 @@ export function usePushNotification() {
 
     return () => {
       mounted = false;
+      window.removeEventListener('dpib:local-notification', handleLocalNotification);
       if (unsubscribeForeground) unsubscribeForeground();
     };
   }, []);
@@ -68,13 +70,7 @@ export function usePushNotification() {
   const checkPermission = useCallback(() => {
     const perm = getNotificationPermissionStatus();
     setPermission(perm);
-    const savedToken = localStorage.getItem('dpib_fcm_token');
-    const isEnabled = localStorage.getItem('dpib_notifications_enabled') === 'true';
-    if (perm === 'granted' && savedToken && isEnabled) {
-      setIsSubscribed(true);
-    } else if (perm === 'denied') {
-      setIsSubscribed(false);
-    }
+    setIsSubscribed(isNotificationSystemActive());
     return perm;
   }, []);
 

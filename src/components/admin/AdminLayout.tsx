@@ -23,6 +23,7 @@ import { User } from 'firebase/auth';
 import { getFirebaseStatus } from '../../services/firebase';
 import { toBanglaDigits } from '../../utils/bangla';
 import { subscribeAllAdmissionApplications } from '../../services/admissionService';
+import { subscribeAllDonations } from '../../services/donationService';
 import { DpibBrandTitle } from '../common/DpibBrandTitle';
 
 interface AdminLayoutProps {
@@ -45,6 +46,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
   const fbStatus = getFirebaseStatus();
   const [totalAdmissionCount, setTotalAdmissionCount] = useState<number>(0);
   const [pendingAdmissionCount, setPendingAdmissionCount] = useState<number>(0);
+  const [pendingDonationCount, setPendingDonationCount] = useState<number>(0);
 
   useEffect(() => {
     try {
@@ -64,9 +66,25 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
     }
   }, []);
 
+  useEffect(() => {
+    try {
+      const unsub = subscribeAllDonations(
+        (items) => {
+          const pending = items.filter((d) => d.status === 'PENDING').length;
+          setPendingDonationCount(pending);
+        },
+        (err) => console.warn('Admin layout donation sub error:', err)
+      );
+      return () => unsub();
+    } catch (e) {
+      console.warn('Failed to subscribe to donations:', e);
+    }
+  }, []);
+
   const primaryNavItems = [
     { id: 'dashboard', label: 'ড্যাশবোর্ড', enLabel: 'DASHBOARD', icon: Home },
     { id: 'admissions', label: 'ভর্তি আবেদন', enLabel: 'ADMISSIONS', icon: GraduationCap },
+    { id: 'donations', label: 'অনুদান ও পেমেন্ট', enLabel: 'DONATIONS & SMS', icon: HeartHandshake },
     { id: 'teachers', label: 'শিক্ষক ব্যবস্থাপনা', enLabel: 'TEACHERS', icon: UserCheck },
     { id: 'students', label: 'শিক্ষার্থী ব্যবস্থাপনা', enLabel: 'STUDENTS', icon: Users },
     { id: 'exams', label: 'পরীক্ষা ব্যবস্থাপনা', enLabel: 'EXAMS', icon: BookOpen },
@@ -76,7 +94,6 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
     { id: 'books', label: 'বুক লিস্ট ব্যবস্থাপনা', enLabel: 'BOOK LIST', icon: BookOpen },
     { id: 'documents', label: 'একাডেমিক ডকুমেন্ট হাব', enLabel: 'DOCUMENTS', icon: Layers },
     { id: 'shifts', label: 'শিফট ও সময়সূচী', enLabel: 'SHIFTS', icon: Clock },
-    { id: 'donations', label: 'অনুদান ও পেমেন্ট', enLabel: 'DONATIONS', icon: HeartHandshake },
     { id: 'security', label: 'নিরাপত্তা ও অ্যাক্সেস', enLabel: 'SECURITY', icon: ShieldCheck },
     { id: 'settings', label: 'সিস্টেম সেটিংস', enLabel: 'SETTINGS', icon: Settings },
     { id: 'menu', label: 'মেনু পেজ', enLabel: 'MENU HUB', icon: MenuIcon },
@@ -155,6 +172,15 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
                     }`}
                   >
                     {toBanglaDigits(pendingAdmissionCount > 0 ? pendingAdmissionCount : totalAdmissionCount)}
+                  </span>
+                )}
+                {item.id === 'donations' && pendingDonationCount > 0 && (
+                  <span
+                    className={`px-1.5 py-0.5 text-[10px] font-bold rounded-full font-outfit shrink-0 ${
+                      isActive ? 'bg-white text-teal-800' : 'bg-rose-600 text-white'
+                    }`}
+                  >
+                    {toBanglaDigits(pendingDonationCount)}
                   </span>
                 )}
               </button>
@@ -267,6 +293,23 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
               ) : null}
             </button>
             <button
+              id="admin-top-nav-donations"
+              onClick={() => onSectionChange('donations')}
+              className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center space-x-1.5 ${
+                currentSection === 'donations'
+                  ? 'bg-rose-600 text-white shadow-xs'
+                  : 'text-rose-700 hover:bg-rose-50/90'
+              }`}
+            >
+              <HeartHandshake className="w-3.5 h-3.5" />
+              <span>অনুদান ও পেমেন্ট</span>
+              {pendingDonationCount > 0 && (
+                <span className="px-1.5 py-0.5 bg-rose-500 text-white text-[10px] rounded-full font-outfit">
+                  {toBanglaDigits(pendingDonationCount)}
+                </span>
+              )}
+            </button>
+            <button
               onClick={() => onSectionChange('results')}
               className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center space-x-1.5 ${
                 currentSection === 'results'
@@ -301,11 +344,30 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
             </button>
           </div>
 
-          <div className="flex items-center space-x-1.5 sm:space-x-3 shrink-0">
-            {/* Quick "ভর্তি আবেদন" Button on Mobile: visible on sm+ screens; on phone screens bottom navigation handles it */}
+          <div className="flex items-center space-x-1.5 sm:space-x-2.5 shrink-0">
+            {/* Quick "অনুদান" Button on Mobile/Tablet for 1-tap access */}
+            <button
+              id="admin-mobile-header-donations"
+              onClick={() => onSectionChange('donations')}
+              className={`flex md:hidden items-center space-x-1 px-2.5 py-1.5 min-h-[36px] rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                currentSection === 'donations'
+                  ? 'bg-rose-600 text-white shadow-xs'
+                  : 'bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200/80'
+              }`}
+            >
+              <HeartHandshake className="w-3.5 h-3.5 shrink-0" />
+              <span className="text-[11px]">অনুদান</span>
+              {pendingDonationCount > 0 && (
+                <span className="px-1 py-0.2 bg-rose-600 text-white text-[9px] rounded-full font-outfit">
+                  {toBanglaDigits(pendingDonationCount)}
+                </span>
+              )}
+            </button>
+
+            {/* Quick "ভর্তি আবেদন" Button on Tablet */}
             <button
               onClick={() => onSectionChange('admissions')}
-              className={`hidden sm:flex md:hidden items-center space-x-1 px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              className={`hidden sm:flex md:hidden items-center space-x-1 px-2.5 py-1.5 min-h-[36px] rounded-xl text-xs font-bold transition-all cursor-pointer ${
                 currentSection === 'admissions'
                   ? 'bg-teal-700 text-white shadow-xs'
                   : 'bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200/70'

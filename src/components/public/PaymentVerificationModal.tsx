@@ -13,6 +13,7 @@ import {
   Check,
   Loader2,
   X,
+  BellRing,
 } from 'lucide-react';
 import {
   DonationPaymentMethod,
@@ -27,6 +28,12 @@ import {
 } from '../../services/donationService';
 import { toBanglaDigits } from '../../utils/bangla';
 import { playFailSound, playPassSound } from '../../utils/resultAudio';
+import {
+  getNotificationPermissionStatus,
+  isNotificationSystemActive,
+  notifyPaymentCompleted,
+  requestNotificationPermissionAndToken,
+} from '../../services/notification';
 import { PaymentMethodLogo } from '../common/PaymentMethodLogo';
 
 interface PaymentVerificationModalProps {
@@ -470,6 +477,8 @@ export const PaymentVerificationModal: React.FC<PaymentVerificationModalProps> =
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [verifiedRecord, setVerifiedRecord] = useState<DonationRecord | null>(null);
   const [finalizing, setFinalizing] = useState<boolean>(false);
+  const [notifEnabled, setNotifEnabled] = useState<boolean>(() => isNotificationSystemActive());
+  const [notifEnabling, setNotifEnabling] = useState<boolean>(false);
 
   // Refs to hold latest DB check outcome and callback across the 30-second verification window
   const matchedSmsRef = useRef<DonationSmsLog | null>(null);
@@ -480,6 +489,12 @@ export const PaymentVerificationModal: React.FC<PaymentVerificationModalProps> =
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  useEffect(() => {
+    if (isOpen) {
+      setNotifEnabled(isNotificationSystemActive());
+    }
+  }, [isOpen]);
 
   useEffect(() => {
     onSuccessRef.current = onSuccess;
@@ -587,9 +602,21 @@ export const PaymentVerificationModal: React.FC<PaymentVerificationModalProps> =
               matchedSmsRef.current
             );
             if (cancelled) return;
+            const completedTxnNumber = generateTransactionNumber(
+              finalized.referenceCode,
+              finalized.verifiedAt || finalized.updatedAt || Date.now()
+            );
             setVerifiedRecord(finalized);
             setPhase('SUCCESS');
             playPassSound();
+            notifyPaymentCompleted({
+              donationId: finalized.id,
+              transactionNumber: completedTxnNumber,
+              paymentMethod: finalized.paymentMethod,
+              amount: finalized.amount,
+              transactionId: finalized.transactionId,
+              donorName: finalized.donorName,
+            });
           } catch (err: any) {
             if (cancelled) return;
             const rawErr = String(err?.message || '');
@@ -913,6 +940,41 @@ export const PaymentVerificationModal: React.FC<PaymentVerificationModalProps> =
                         );
                       })}
                     </div>
+
+                    {/* Notification System Status / Quick Enable Notice */}
+                    {notifEnabled ? (
+                      <div className="flex items-center justify-center gap-2 px-3.5 py-2 rounded-2xl bg-emerald-50/90 border border-emerald-200/80 text-[11px] font-bold text-emerald-800">
+                        <BellRing className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        <span>
+                          নোটিফিকেশন সিস্টেম চালু আছে — ৩০ সেকেন্ড পর পেমেন্ট সম্পন্ন হলেই নোটিফিকেশন পাবেন
+                        </span>
+                      </div>
+                    ) : (
+                      getNotificationPermissionStatus() === 'default' && (
+                        <button
+                          type="button"
+                          id="btn-enable-notif-during-verify"
+                          disabled={notifEnabling}
+                          onClick={async () => {
+                            setNotifEnabling(true);
+                            try {
+                              await requestNotificationPermissionAndToken();
+                              setNotifEnabled(isNotificationSystemActive());
+                            } finally {
+                              setNotifEnabling(false);
+                            }
+                          }}
+                          className="w-full min-h-[40px] px-3.5 py-2 rounded-2xl bg-teal-50 hover:bg-teal-100 border border-teal-200 text-[11px] font-bold text-teal-800 flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                        >
+                          <BellRing className="w-3.5 h-3.5 text-teal-700 shrink-0" />
+                          <span>
+                            {notifEnabling
+                              ? 'নোটিফিকেশন চালু করা হচ্ছে...'
+                              : '৩০ সেকেন্ড পর পেমেন্ট সম্পন্ন হলে অ্যালার্ট পেতে নোটিফিকেশন চালু করুন'}
+                          </span>
+                        </button>
+                      )
+                    )}
 
                     {/* Bottom Cancel / Edit Action */}
                     <div className="pt-1">

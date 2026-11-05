@@ -17,6 +17,8 @@ import {
   getCurrentApplicantSession,
   onApplicantAuthStateChanged,
 } from './services/admissionService';
+import { subscribeTransactions } from './services/donationService';
+import { isNotificationSystemActive, notifyPaymentCompleted } from './services/notification';
 
 // Common Components
 import { Header } from './components/common/Header';
@@ -148,31 +150,76 @@ export function App() {
     checkPermission,
   } = usePushNotification();
 
-  const handleNotificationClick = (payload: any) => {
-    if (payload.url) {
+  const handleNotificationClick = useCallback(
+    (payload: any) => {
+      if (payload?.type === 'PAYMENT') {
+        if (isAdminMode) {
+          setAdminSection('donations');
+        } else {
+          setPublicTab('transactions');
+        }
+        return;
+      }
+      if (payload?.url) {
       try {
         const parsed = new URL(payload.url, window.location.origin);
         const tab = parsed.searchParams.get('tab');
-        if (tab && ['home', 'search', 'merit', 'exams', 'notices', 'verify', 'gpa-calculator', 'smart-calendar'].includes(tab)) {
+        if (
+          tab &&
+          [
+            'home',
+            'search',
+            'merit',
+            'exams',
+            'notices',
+            'verify',
+            'gpa-calculator',
+            'smart-calendar',
+            'books',
+            'about',
+            'analysis',
+            'donate',
+            'transactions',
+            'admission',
+          ].includes(tab)
+        ) {
+          setIsAdminMode(false);
           setPublicTab(tab as any);
         }
         const verify = parsed.searchParams.get('verify');
         if (verify) {
           setVerificationCodeParam(verify);
+          setIsAdminMode(false);
           setPublicTab('verify');
         }
       } catch {
         // Fallback simple string matching
-        if (payload.url.includes('notices')) setPublicTab('notices');
+        if (payload.url.includes('transactions')) {
+          setIsAdminMode(false);
+          setPublicTab('transactions');
+        } else if (payload.url.includes('notices')) setPublicTab('notices');
         else if (payload.url.includes('search')) setPublicTab('search');
         else if (payload.url.includes('exams')) setPublicTab('exams');
       }
-    } else if (payload.type === 'NOTICE') {
+    } else if (payload?.type === 'NOTICE') {
       setPublicTab('notices');
-    } else if (payload.type === 'RESULT') {
+    } else if (payload?.type === 'RESULT') {
       setPublicTab('search');
     }
-  };
+  }, [isAdminMode]);
+
+  useEffect(() => {
+    const onNotificationNavigate = (event: Event) => {
+      const customEvent = event as CustomEvent;
+      if (customEvent.detail) {
+        handleNotificationClick(customEvent.detail);
+      }
+    };
+    window.addEventListener('dpib:notification-navigate', onNotificationNavigate);
+    return () => {
+      window.removeEventListener('dpib:notification-navigate', onNotificationNavigate);
+    };
+  }, [handleNotificationClick]);
 
   // Listen to Auth State
   useEffect(() => {
@@ -315,6 +362,48 @@ export function App() {
       unsubscribeEvents();
     };
   }, [loadPortalData]);
+
+  // Watch newly completed transactions in real time so any active device with notifications enabled is alerted immediately
+  useEffect(() => {
+    const sessionStartedAt = Date.now();
+    let knownTxnIds: Set<string> | null = null;
+
+    const unsubTxns = subscribeTransactions(
+      (items) => {
+        if (knownTxnIds === null) {
+          knownTxnIds = new Set(items.map((t) => t.id));
+          return;
+        }
+
+        for (const txn of items) {
+          if (!knownTxnIds.has(txn.id)) {
+            knownTxnIds.add(txn.id);
+            if (
+              txn.status === 'COMPLETED' &&
+              txn.completedAt >= sessionStartedAt - 5000 &&
+              isNotificationSystemActive()
+            ) {
+              notifyPaymentCompleted({
+                donationId: txn.donationId,
+                transactionNumber: txn.transactionNumber,
+                paymentMethod: txn.paymentMethod,
+                amount: txn.amount,
+                transactionId: txn.gatewayTrxId,
+                donorName: txn.donorName,
+              });
+            }
+          }
+        }
+      },
+      (err) => {
+        console.warn('Transaction notification watcher warning:', err.message);
+      }
+    );
+
+    return () => {
+      unsubTxns();
+    };
+  }, []);
 
   // Handle Search Result Flow
   const handlePerformSearch = async (params: {
@@ -474,6 +563,7 @@ export function App() {
     };
 
     return (
+      <>
       <AdminLayout
         currentSection={adminSection}
         onSectionChange={handleAdminSectionChange}
@@ -592,6 +682,12 @@ export function App() {
           )}
         </AnimatePresence>
       </AdminLayout>
+      <NotificationToast
+        notification={incomingNotification}
+        onClose={clearIncomingNotification}
+        onClick={handleNotificationClick}
+      />
+      </>
     );
   }
 

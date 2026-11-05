@@ -1,7 +1,8 @@
 import { getMessaging, getToken, onMessage, isSupported, Messaging } from 'firebase/messaging';
 import { collection, doc, setDoc, getDocs, query, where, deleteDoc } from 'firebase/firestore';
 import { app, db } from './firebase';
-import { NotificationSubscription, PushNotificationPayload } from '../types';
+import { DonationPaymentMethod, NotificationSubscription, PushNotificationPayload } from '../types';
+import { toBanglaDigits } from '../utils/bangla';
 
 let messagingInstance: Messaging | null = null;
 
@@ -18,6 +19,21 @@ export function getNotificationPermissionStatus(): 'granted' | 'denied' | 'defau
     return 'unsupported';
   }
   return Notification.permission;
+}
+
+// Check whether the user's notification system is currently active and enabled
+export function isNotificationSystemActive(): boolean {
+  if (typeof window === 'undefined') return false;
+  const explicitPref = localStorage.getItem('dpib_notifications_enabled');
+  if (explicitPref === 'false') return false;
+  if ('Notification' in window && Notification.permission === 'denied') return false;
+
+  const hasGrantedBrowserPermission =
+    'Notification' in window && Notification.permission === 'granted';
+  const hasActiveAppSubscription =
+    explicitPref === 'true' && Boolean(localStorage.getItem('dpib_fcm_token'));
+
+  return hasGrantedBrowserPermission || hasActiveAppSubscription;
 }
 
 // Helper to detect device and browser
@@ -254,28 +270,106 @@ export async function subscribeToForegroundNotifications(
   }
 }
 
-// Show a browser test notification
+// Show a browser & in-app notification when the notification system is enabled
 export function showLocalNotification(payload: PushNotificationPayload): void {
-  if (typeof window === 'undefined' || !('Notification' in window)) return;
-  if (Notification.permission !== 'granted') return;
+  if (typeof window === 'undefined') return;
+  if (!isNotificationSystemActive()) return;
+
+  // Broadcast to foreground in-app toast listener
+  try {
+    window.dispatchEvent(new CustomEvent('dpib:local-notification', { detail: payload }));
+  } catch {
+    // Ignore custom event dispatch errors
+  }
+
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+
+  const iconUrl = payload.icon || 'https://i.postimg.cc/mgyW32Y2/Firefly-Remove-Background.png';
+  const targetUrl = payload.url || '/';
+
+  const showWindowNotification = () => {
+    try {
+      const n = new Notification(payload.title, {
+        body: payload.body,
+        icon: iconUrl,
+        tag: payload.id ? `dpib-${payload.id}` : undefined,
+      });
+      n.onclick = () => {
+        try {
+          window.focus();
+          window.dispatchEvent(new CustomEvent('dpib:notification-navigate', { detail: payload }));
+        } catch {
+          // Ignore focus errors
+        }
+        n.close();
+      };
+    } catch (err) {
+      console.error('Window notification error:', err);
+    }
+  };
 
   try {
     if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-      navigator.serviceWorker.ready.then((reg) => {
-        reg.showNotification(payload.title, {
-          body: payload.body,
-          icon: payload.icon || 'https://i.postimg.cc/mgyW32Y2/Firefly-Remove-Background.png',
-          badge: 'https://i.postimg.cc/mgyW32Y2/Firefly-Remove-Background.png',
-          data: { url: payload.url || '/' },
+      navigator.serviceWorker.ready
+        .then((reg) =>
+          reg.showNotification(payload.title, {
+            body: payload.body,
+            icon: iconUrl,
+            badge: iconUrl,
+            tag: payload.id ? `dpib-${payload.id}` : undefined,
+            vibrate: [120, 60, 120],
+            data: { url: targetUrl },
+          } as NotificationOptions)
+        )
+        .catch(() => {
+          showWindowNotification();
         });
-      });
     } else {
-      new Notification(payload.title, {
-        body: payload.body,
-        icon: payload.icon || 'https://i.postimg.cc/mgyW32Y2/Firefly-Remove-Background.png',
-      });
+      showWindowNotification();
     }
   } catch (e) {
     console.error('Local notification error:', e);
+    showWindowNotification();
   }
+}
+
+const notifiedPaymentIds = new Set<string>();
+
+/**
+ * Sends an instant notification when the 30-second verification completes and payment is verified,
+ * provided the user's notification system is active.
+ */
+export function notifyPaymentCompleted(params: {
+  donationId: string;
+  transactionNumber: string;
+  paymentMethod: DonationPaymentMethod;
+  amount: number;
+  transactionId: string;
+  donorName?: string;
+}): boolean {
+  if (!isNotificationSystemActive()) {
+    return false;
+  }
+
+  const dedupeKey = params.donationId || params.transactionId;
+  if (notifiedPaymentIds.has(dedupeKey)) {
+    return false;
+  }
+  notifiedPaymentIds.add(dedupeKey);
+
+  const methodLabel = params.paymentMethod === 'BKASH' ? 'বিকাশ (BKASH)' : 'নগদ (NAGAD)';
+  const payload: PushNotificationPayload = {
+    id: dedupeKey,
+    type: 'PAYMENT',
+    title: 'পেমেন্ট সফলভাবে সম্পন্ন হয়েছে!',
+    body: `${methodLabel} মাধ্যমে ৳ ${toBanglaDigits(
+      params.amount
+    )} টাকা অনুদান নিশ্চিত হয়েছে। লেনদেন নম্বর: ${params.transactionNumber} (TRXID: ${
+      params.transactionId
+    })।`,
+    url: '/?tab=transactions',
+  };
+
+  showLocalNotification(payload);
+  return true;
 }

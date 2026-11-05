@@ -37,7 +37,35 @@ const app = express();
 const port = resolveServerPort();
 const host = resolveServerHost();
 
-app.use(express.json({ limit: '10mb' }));
+app.use(
+  express.json({
+    limit: '10mb',
+    verify: (req: any, _res, buf) => {
+      req.rawBodyText = buf.toString('utf8');
+    },
+  })
+);
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Recover cleanly if Android SMS Forwarder sends unescaped newlines/tabs inside JSON string templates
+app.use((err: any, req: express.Request, _res: express.Response, next: express.NextFunction) => {
+  if (
+    err instanceof SyntaxError &&
+    'body' in err &&
+    req.path === '/api/donations/sms-webhook' &&
+    typeof (req as any).rawBodyText === 'string'
+  ) {
+    try {
+      const sanitized = (req as any).rawBodyText.replace(/[\r\n\t]+/g, ' ');
+      req.body = JSON.parse(sanitized);
+      next();
+      return;
+    } catch {
+      // Fall through if genuinely malformed
+    }
+  }
+  next(err);
+});
 
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', uptime: Math.round(process.uptime()) });
@@ -549,16 +577,46 @@ app.get('/api/donations/webhook-info', (req, res) => {
 app.post('/api/donations/sms-webhook', async (req, res) => {
   try {
     const body = req.body || {};
+    const q = req.query || {};
     const rawMessage = String(
-      body.message || body.text || body.body || body.sms || body.smsBody || ''
+      body.message ||
+        body.text ||
+        body.body ||
+        body.msg ||
+        body.content ||
+        body.sms ||
+        body.smsBody ||
+        body.Message ||
+        body.Text ||
+        body.Body ||
+        body.Msg ||
+        body.Content ||
+        q.message ||
+        q.text ||
+        q.msg ||
+        ''
     ).trim();
     const senderAddress = String(
-      body.sender || body.from || body.address || body.senderNumber || 'bKash'
+      body.sender ||
+        body.from ||
+        body.address ||
+        body.senderNumber ||
+        body.number ||
+        body.phone ||
+        body.Sender ||
+        body.From ||
+        body.Address ||
+        body.Number ||
+        body.Phone ||
+        q.sender ||
+        q.from ||
+        'bKash'
     ).trim();
     const providedSecret = String(
       body.secret ||
         body.apiKey ||
         body.webhookSecret ||
+        q.secret ||
         req.headers['x-webhook-secret'] ||
         (typeof req.headers.authorization === 'string' &&
         req.headers.authorization.startsWith('Bearer ')
@@ -570,7 +628,7 @@ app.post('/api/donations/sms-webhook', async (req, res) => {
     if (!rawMessage) {
       res.status(400).json({
         success: false,
-        error: 'SMS message body is required (fields: message, text, or body).',
+        error: 'SMS message body is required (fields: message, text, body, or msg).',
       });
       return;
     }
@@ -803,7 +861,7 @@ app.post('/api/donations/sms-webhook', async (req, res) => {
       if (matchedDonationId) smsLogRecord.matchedDonationId = matchedDonationId;
       if (matchedReferenceCode) smsLogRecord.matchedReferenceCode = matchedReferenceCode;
 
-      await fetch(
+      const smsSaveResp = await fetch(
         `${baseUrl}/donation_sms_logs?documentId=${encodeURIComponent(smsLogId)}&${apiKeyParam}`,
         {
           method: 'POST',
@@ -813,6 +871,10 @@ app.post('/api/donations/sms-webhook', async (req, res) => {
           }),
         }
       );
+      if (!smsSaveResp.ok) {
+        const errBody = await smsSaveResp.text().catch(() => '');
+        console.warn('[SMS Webhook] Failed to save SMS log to Firestore:', smsSaveResp.status, errBody);
+      }
     }
 
     res.json({

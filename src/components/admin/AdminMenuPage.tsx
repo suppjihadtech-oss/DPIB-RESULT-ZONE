@@ -123,6 +123,15 @@ export const AdminMenuPage: React.FC<AdminMenuPageProps> = ({ onNavigate }) => {
       borderHover: 'hover:border-teal-500/80 hover:bg-teal-50/30',
     },
     {
+      id: 'donations',
+      title: 'অনুদান ও পেমেন্ট হাব',
+      en: 'DONATIONS & SMS VERIFY',
+      badge: 'BKASH / NAGAD',
+      icon: HeartHandshake,
+      iconBg: 'bg-rose-50 text-rose-600 group-hover:bg-rose-600 group-hover:text-white',
+      borderHover: 'hover:border-rose-500/80 hover:bg-rose-50/30',
+    },
+    {
       id: 'teachers',
       title: 'শিক্ষক ব্যবস্থাপনা',
       en: 'TEACHER MANAGEMENT',
@@ -204,15 +213,6 @@ export const AdminMenuPage: React.FC<AdminMenuPageProps> = ({ onNavigate }) => {
       borderHover: 'hover:border-teal-500/80 hover:bg-teal-50/30',
     },
     {
-      id: 'donations',
-      title: 'অনুদান ও পেমেন্ট হাব',
-      en: 'DONATIONS & SMS VERIFY',
-      badge: 'বিকাশ/নগদ',
-      icon: HeartHandshake,
-      iconBg: 'bg-rose-50 text-rose-600 group-hover:bg-rose-600 group-hover:text-white',
-      borderHover: 'hover:border-rose-500/80 hover:bg-rose-50/30',
-    },
-    {
       id: 'settings',
       title: 'সিস্টেম সেটিংস',
       en: 'SYSTEM SETTINGS',
@@ -245,11 +245,20 @@ export const AdminMenuPage: React.FC<AdminMenuPageProps> = ({ onNavigate }) => {
           </p>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          <button
+            type="button"
+            id="btn-menu-header-donations"
+            onClick={() => onNavigate('donations')}
+            className="px-3.5 py-2 min-h-[40px] rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold transition-all border border-rose-200 flex items-center gap-1.5 cursor-pointer"
+          >
+            <HeartHandshake className="w-3.5 h-3.5 text-rose-600" />
+            <span>অনুদান ও SMS হাব</span>
+          </button>
           <button
             type="button"
             onClick={() => onNavigate('admissions')}
-            className="px-4 py-2 rounded-xl bg-teal-50 hover:bg-teal-100 text-teal-800 text-xs font-bold transition-all border border-teal-200 flex items-center gap-1.5 cursor-pointer"
+            className="px-3.5 py-2 min-h-[40px] rounded-xl bg-teal-50 hover:bg-teal-100 text-teal-800 text-xs font-bold transition-all border border-teal-200 flex items-center gap-1.5 cursor-pointer"
           >
             <GraduationCap className="w-3.5 h-3.5 text-teal-700" />
             <span>ভর্তি আবেদন</span>
@@ -257,7 +266,7 @@ export const AdminMenuPage: React.FC<AdminMenuPageProps> = ({ onNavigate }) => {
           <button
             type="button"
             onClick={() => onNavigate('documents', 'result-generator')}
-            className="px-4 py-2 rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+            className="px-3.5 py-2 min-h-[40px] rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
           >
             <FileSpreadsheet className="w-3.5 h-3.5" />
             <span>ডকুমেন্ট হাব</span>
