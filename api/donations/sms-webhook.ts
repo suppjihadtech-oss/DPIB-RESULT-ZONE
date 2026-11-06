@@ -1,6 +1,5 @@
-import fs from 'fs';
-import path from 'path';
-import firebaseConfigJson from '../../firebase-applet-config.json';
+import fs from 'node:fs';
+import path from 'node:path';
 
 interface FirebaseAppletConfig {
   projectId: string;
@@ -8,36 +7,52 @@ interface FirebaseAppletConfig {
   firestoreDatabaseId?: string;
 }
 
-function resolveFirebaseConfig(): FirebaseAppletConfig | null {
-  const fromImport = firebaseConfigJson as Partial<FirebaseAppletConfig> | undefined;
-  let fromFs: Partial<FirebaseAppletConfig> | undefined;
+function readJsonFileSafe(filePathOrUrl: string | URL): Partial<FirebaseAppletConfig> | undefined {
   try {
-    const cfgPath = path.resolve(process.cwd(), 'firebase-applet-config.json');
-    if (fs.existsSync(cfgPath)) {
-      fromFs = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
+    if (fs.existsSync(filePathOrUrl)) {
+      const raw = fs.readFileSync(filePathOrUrl, 'utf-8');
+      return JSON.parse(raw) as Partial<FirebaseAppletConfig>;
     }
   } catch {
-    // Ignore fs read errors in read-only bundles
+    // Ignore file read/parse errors
+  }
+  return undefined;
+}
+
+function resolveFirebaseConfig(): FirebaseAppletConfig | null {
+  let metaUrlConfig: Partial<FirebaseAppletConfig> | undefined;
+  try {
+    metaUrlConfig = readJsonFileSafe(new URL('../../firebase-applet-config.json', import.meta.url));
+  } catch {
+    // Ignore URL resolution error
   }
 
-  const projectId =
+  const cwdConfig =
+    readJsonFileSafe(path.resolve(process.cwd(), 'firebase-applet-config.json')) ||
+    readJsonFileSafe(path.resolve('/var/task', 'firebase-applet-config.json'));
+
+  const fileCfg = metaUrlConfig || cwdConfig;
+
+  const projectId = String(
     process.env.FIREBASE_PROJECT_ID ||
-    process.env.VITE_FIREBASE_PROJECT_ID ||
-    fromImport?.projectId ||
-    fromFs?.projectId ||
-    '';
-  const apiKey =
+      process.env.VITE_FIREBASE_PROJECT_ID ||
+      fileCfg?.projectId ||
+      ''
+  ).trim();
+
+  const apiKey = String(
     process.env.FIREBASE_API_KEY ||
-    process.env.VITE_FIREBASE_API_KEY ||
-    fromImport?.apiKey ||
-    fromFs?.apiKey ||
-    '';
-  const firestoreDatabaseId =
+      process.env.VITE_FIREBASE_API_KEY ||
+      fileCfg?.apiKey ||
+      ''
+  ).trim();
+
+  const firestoreDatabaseId = String(
     process.env.FIRESTORE_DATABASE_ID ||
-    process.env.VITE_FIRESTORE_DATABASE_ID ||
-    fromImport?.firestoreDatabaseId ||
-    fromFs?.firestoreDatabaseId ||
-    '(default)';
+      process.env.VITE_FIRESTORE_DATABASE_ID ||
+      fileCfg?.firestoreDatabaseId ||
+      '(default)'
+  ).trim();
 
   if (!projectId || !apiKey) return null;
   return { projectId, apiKey, firestoreDatabaseId };
@@ -217,13 +232,12 @@ function parseSafeJsonString(rawText: string): Record<string, any> {
     const parsed = JSON.parse(trimmed);
     return typeof parsed === 'object' && parsed !== null ? parsed : { message: String(parsed) };
   } catch {
-    // Recover if Android SMS Forwarder injected literal newlines/tabs inside JSON values
+    // Recover if Android SMS Forwarder injected literal newlines/tabs inside JSON string values
     try {
       const sanitized = trimmed.replace(/[\r\n\t]+/g, ' ');
       const parsed = JSON.parse(sanitized);
       return typeof parsed === 'object' && parsed !== null ? parsed : { message: String(parsed) };
     } catch {
-      // Fallback: URL-encoded form body (sender=...&message=...&secret=...)
       if (trimmed.includes('=') && !trimmed.startsWith('{')) {
         const params = new URLSearchParams(trimmed);
         const obj: Record<string, any> = {};
@@ -244,7 +258,7 @@ async function extractRequestBody(req: any): Promise<Record<string, any>> {
       if (typeof existing === 'string') {
         return parseSafeJsonString(existing);
       }
-      if (Buffer.isBuffer(existing)) {
+      if (typeof Buffer !== 'undefined' && Buffer.isBuffer(existing)) {
         return parseSafeJsonString(existing.toString('utf8'));
       }
       if (typeof existing === 'object') {
@@ -252,27 +266,28 @@ async function extractRequestBody(req: any): Promise<Record<string, any>> {
       }
     }
   } catch {
-    // Fallback to raw stream below if built-in parser failed on unescaped newlines
+    // Fallback to raw stream below if Vercel body getter threw on multi-line JSON
   }
 
   try {
-    if (req && typeof req[Symbol.asyncIterator] === 'function') {
+    if (req && !req.readableEnded && typeof req[Symbol.asyncIterator] === 'function') {
       const chunks: Buffer[] = [];
       for await (const chunk of req) {
         chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)));
       }
       const raw = Buffer.concat(chunks).toString('utf8');
-      return parseSafeJsonString(raw);
+      if (raw.trim()) {
+        return parseSafeJsonString(raw);
+      }
     }
   } catch {
-    // Ignore stream error
+    // Ignore stream read errors
   }
 
   return {};
 }
 
 export default async function handler(req: any, res: any) {
-  // CORS Headers for external Android SMS Forwarder & Web Clients
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader(
@@ -287,7 +302,6 @@ export default async function handler(req: any, res: any) {
 
   const fbConfig = resolveFirebaseConfig();
 
-  // Allow GET ping so browser/diagnostic checks confirm the webhook endpoint is active
   if (req.method === 'GET') {
     res.status(200).json({
       success: true,
@@ -560,7 +574,7 @@ export default async function handler(req: any, res: any) {
         }
       }
 
-      // Check if this TrxID was ALREADY verified earlier (duplicate webhook delivery)
+      // Check duplicate already-verified TrxID
       if (!matchedDocId && parsed.parsedTrxId) {
         const cleanTrxUpper = parsed.parsedTrxId.toUpperCase();
         const dupQueryResp = await fetch(`${baseUrl}:runQuery?${apiKeyParam}`, {

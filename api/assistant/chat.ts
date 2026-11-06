@@ -1,5 +1,3 @@
-import { GoogleGenAI } from '@google/genai';
-
 function generateFallbackReply(
   prompt: string,
   studentResultContext?: any,
@@ -89,6 +87,7 @@ export default async function handler(req: any, res: any) {
       return;
     }
 
+    const { GoogleGenAI } = await import('@google/genai');
     const ai = new GoogleGenAI({ apiKey });
     const contents: any[] = [];
     if (Array.isArray(conversationHistory)) {
