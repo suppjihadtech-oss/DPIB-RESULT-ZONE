@@ -260,7 +260,7 @@ export const DonationPage: React.FC<DonationPageProps> = ({
       return;
     }
 
-    // Open the 30-second animated database & SMS Reader verification modal instead of succeeding immediately
+    // Open the 15-second animated database & SMS Reader verification modal instead of succeeding immediately
     setPendingVerificationPayload({
       paymentMethod,
       amount,
@@ -1423,7 +1423,7 @@ export const DonationPage: React.FC<DonationPageProps> = ({
                 <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 flex items-center gap-2.5 text-xs text-slate-600 leading-relaxed">
                   <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
                   <span>
-                    নিশ্চিত বাটনে ক্লিক করার পর নিচের থেকে স্লাইড-আপ শীটে <strong>৩০ সেকেন্ড</strong> ডেটাবেজ ও SMS রিডার থেকে ট্রানজেকশন নম্বর (TRXID) ও টাকার অ্যামাউন্ট যাচাই করা হবে।
+                    নিশ্চিত বাটনে ক্লিক করার পর নিচের থেকে স্লাইড-আপ শীটে <strong>১৫ সেকেন্ড</strong> ডেটাবেজ ও SMS রিডার থেকে ট্রানজেকশন নম্বর (TRXID) ও টাকার অ্যামাউন্ট যাচাই করা হবে।
                   </span>
                 </div>
 
@@ -1691,7 +1691,7 @@ export const DonationPage: React.FC<DonationPageProps> = ({
         </div>
       )}
 
-      {/* 30-Second Animated Database & SMS Reader Verification Modal */}
+      {/* 15-Second Animated Database & SMS Reader Verification Modal */}
       <PaymentVerificationModal
         isOpen={verificationModalOpen}
         paymentData={pendingVerificationPayload}

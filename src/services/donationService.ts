@@ -134,11 +134,82 @@ export function isValidBdPhone(rawPhone: string): boolean {
   return /^01[3-9]\d{8}$/.test(normalized);
 }
 
+export function stripInvisibleUnicode(input: string): string {
+  return String(input || '')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .replace(/\u00A0/g, ' ');
+}
+
 export function normalizeTrxId(rawTrxId: string): string {
-  return toEnglishDigits(rawTrxId || '')
+  return toEnglishDigits(stripInvisibleUnicode(rawTrxId || ''))
     .trim()
-    .replace(/\s+/g, '')
+    .replace(/[^A-Z0-9]/gi, '')
     .toUpperCase();
+}
+
+export function isUnexpandedSmsPlaceholder(rawText?: string): boolean {
+  const cleaned = stripInvisibleUnicode(rawText || '').trim();
+  if (!cleaned) return true;
+  if (
+    /^(?:\$\{?\s*[a-z0-9_.\s-]+\s*\}?|\{\s*[a-z0-9_.\s-]+\s*\}|%\s*[a-z0-9_.\s-]+\s*%?)$/i.test(
+      cleaned
+    )
+  ) {
+    return true;
+  }
+  const lower = cleaned.toLowerCase();
+  const knownTemplates = [
+    '${message}',
+    '${msg}',
+    '${text}',
+    '${body}',
+    '{message}',
+    '{msg}',
+    '{text}',
+    '{body}',
+    '%sms_body%',
+    '%msg%',
+    '%message%',
+    '%m',
+    '%text%',
+  ];
+  return knownTemplates.includes(lower);
+}
+
+export function phonesCompatible(smsPhone?: string, userPhone?: string): boolean {
+  if (!smsPhone || !userPhone) return false;
+  const cleanUser = normalizeBdPhone(stripInvisibleUnicode(userPhone));
+  const rawSms = toEnglishDigits(stripInvisibleUnicode(smsPhone))
+    .replace(/[\s\-()]/g, '')
+    .replace(/^\+?880/, '0');
+
+  if (!cleanUser || !rawSms) return false;
+  if (rawSms === cleanUser) return true;
+
+  // Support masked bKash/Nagad phone formats such as 013****5230 or 01712***678
+  if (rawSms.includes('*') && cleanUser.length === 11) {
+    const escaped = rawSms
+      .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
+      .replace(/\*+/g, '\\d*');
+    try {
+      const rx = new RegExp(`^${escaped}$`);
+      if (rx.test(cleanUser)) return true;
+    } catch {
+      // Ignore regex errors
+    }
+    const prefix = rawSms.split('*')[0];
+    const parts = rawSms.split('*');
+    const suffix = parts[parts.length - 1] || '';
+    if (
+      prefix.length >= 3 &&
+      cleanUser.startsWith(prefix) &&
+      (!suffix || cleanUser.endsWith(suffix))
+    ) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 export function generateDonationReference(): string {
@@ -224,8 +295,12 @@ export function parseMobileBankingSms(
   rawMessage: string,
   senderAddress?: string
 ): ParsedMobileBankingSms {
-  const cleanText = toEnglishDigits(rawMessage || '').trim();
-  const senderLower = (senderAddress || '').toLowerCase();
+  const cleanText = toEnglishDigits(stripInvisibleUnicode(rawMessage || ''))
+    .replace(/[\r\n\t]+/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+  const cleanSender = stripInvisibleUnicode(senderAddress || '').trim();
+  const senderLower = cleanSender.toLowerCase();
   const bodyLower = cleanText.toLowerCase();
 
   // 1. Detect Provider (bKash vs Nagad)
@@ -234,7 +309,8 @@ export function parseMobileBankingSms(
     senderLower.includes('nagad') ||
     senderLower === '16167' ||
     bodyLower.includes('nagad') ||
-    (/\btxnid\b/i.test(cleanText) && !/\btrxid\b/i.test(cleanText))
+    bodyLower.includes('নগদ') ||
+    (/\btxn\s*id\b/i.test(cleanText) && !/\btrx\s*id\b/i.test(cleanText))
   ) {
     provider = 'NAGAD';
   }
@@ -242,21 +318,50 @@ export function parseMobileBankingSms(
   // 2. Extract Transaction ID (TrxID for bKash, TxnId for Nagad)
   let parsedTrxId: string | undefined;
   const trxMatch = cleanText.match(
-    /(?:TrxID|TxnId|TxnID|Transaction\s*ID|Trans\s*ID)\s*[:#-]?\s*([A-Z0-9]{6,22})/i
+    /(?:Trx\s*ID|Txn\s*Id|Txn\s*ID|Transaction\s*ID|Trans\s*ID|TRX\s*NO|TXN\s*NO|ট্রানজেকশন\s*আইডি)\s*[:.#=\-]?\s*([A-Z0-9][A-Z0-9_-]{4,25})/i
   );
   if (trxMatch && trxMatch[1]) {
-    parsedTrxId = trxMatch[1].toUpperCase();
+    parsedTrxId = normalizeTrxId(trxMatch[1]);
   }
 
   // 3. Extract Received Amount (prioritize received/payment amount over Fee/Balance)
   let parsedAmount: number | undefined;
   const primaryAmountMatch = cleanText.match(
-    /(?:received|cash\s*in|payment|amount|send\s*money)[^0-9]{0,25}(?:Tk|BDT|৳)\s*\.?\s*([0-9,]+(?:\.[0-9]{1,2})?)/i
+    /(?:received|cash\s*in|payment|amount|send\s*money|পেয়েছেন|পাঠিয়েছেন)\s*(?:of\s*)?(?:Tk|BDT|৳)\s*\.?\s*([0-9,]+(?:\.[0-9]{1,2})?)/i
   );
-  const fallbackAmountMatch = cleanText.match(
-    /(?:Tk|BDT|৳)\s*\.?\s*([0-9,]+(?:\.[0-9]{1,2})?)/i
+
+  // Check all currency tokens and pick the first one NOT preceded by Fee / Balance / Charge
+  let nonFeeCurrencyAmount: string | undefined;
+  const currencyRegex =
+    /(?:(fee|charge|balance|comm|vat|ফি|চার্জ|ব্যালেন্স)\s*(?:is|:)?\s*)?(?:Tk|BDT|৳)\s*\.?\s*([0-9,]+(?:\.[0-9]{1,2})?)/gi;
+  let m: RegExpExecArray | null;
+  while ((m = currencyRegex.exec(cleanText)) !== null) {
+    if (!m[1] && m[2]) {
+      nonFeeCurrencyAmount = m[2];
+      break;
+    }
+  }
+
+  // Bengali amount before "টাকা" (e.g. "আপনি 01340975230 থেকে 10.00 টাকা পেয়েছেন")
+  const bengaliTakaMatch = cleanText.match(
+    /(?:থেকে|মোট|পরিমাণ)\s*(?:Tk|BDT|৳)?\s*([0-9,]+(?:\.[0-9]{1,2})?)\s*টাকা/i
   );
-  const amountRaw = primaryAmountMatch?.[1] || fallbackAmountMatch?.[1];
+  let genericBengaliTaka: string | undefined;
+  const bnRegex =
+    /(?:(ফি|চার্জ|ব্যালেন্স|fee|balance)\s*)?([0-9,]+(?:\.[0-9]{1,2})?)\s*টাকা/gi;
+  let bMatch: RegExpExecArray | null;
+  while ((bMatch = bnRegex.exec(cleanText)) !== null) {
+    if (!bMatch[1] && bMatch[2]) {
+      genericBengaliTaka = bMatch[2];
+      break;
+    }
+  }
+
+  const amountRaw =
+    primaryAmountMatch?.[1] ||
+    nonFeeCurrencyAmount ||
+    bengaliTakaMatch?.[1] ||
+    genericBengaliTaka;
   if (amountRaw) {
     const num = parseFloat(amountRaw.replace(/,/g, ''));
     if (!isNaN(num) && num > 0) {
@@ -264,15 +369,19 @@ export function parseMobileBankingSms(
     }
   }
 
-  // 4. Extract Sender Phone Number
+  // 4. Extract Sender Phone Number (supports full 11-digit and masked 013****5230 formats)
   let parsedSenderPhone: string | undefined;
   const labeledPhoneMatch = cleanText.match(
-    /(?:from|sender|customer|account|a\/c|no)\s*[:#-]?\s*((?:\+?88)?01[3-9]\d{8})/i
+    /(?:from|sender|customer|account|a\/c|no|number|থেকে)\s*[:.#=\-]?\s*((?:\+?88)?01[3-9][\d*]{8})/i
   );
-  const anyPhoneMatch = cleanText.match(/((?:\+?88)?01[3-9]\d{8})/);
-  const phoneRaw = labeledPhoneMatch?.[1] || anyPhoneMatch?.[1];
+  const anyUnmaskedPhoneMatch = cleanText.match(/((?:\+?88)?01[3-9]\d{8})/);
+  const anyMaskedPhoneMatch = cleanText.match(/(01[3-9]\d*\*+\d*)/);
+  const phoneRaw =
+    labeledPhoneMatch?.[1] || anyUnmaskedPhoneMatch?.[1] || anyMaskedPhoneMatch?.[1];
   if (phoneRaw) {
-    parsedSenderPhone = normalizeBdPhone(phoneRaw);
+    parsedSenderPhone = phoneRaw.includes('*')
+      ? phoneRaw.replace(/\s+/g, '')
+      : normalizeBdPhone(phoneRaw);
   }
 
   // 5. Extract Reference Code (e.g., Ref DPIB-4829 or Ref: DPIB4829)
@@ -285,11 +394,11 @@ export function parseMobileBankingSms(
     }
   } else {
     const genericRefMatch = cleanText.match(
-      /\b(?:Ref|Reference)\s*[:#-]?\s*([A-Z0-9][A-Z0-9-]{2,18})\b/i
+      /\b(?:Ref|Reference|রেফারেন্স)\s*[:.#=\-]?\s*([A-Z0-9][A-Z0-9_-]{2,20})\b/i
     );
     if (genericRefMatch && genericRefMatch[1]) {
       const candidate = genericRefMatch[1].toUpperCase();
-      if (!['FEE', 'BALANCE', 'TRXID', 'TXNID', 'TK', 'BDT'].includes(candidate)) {
+      if (!['FEE', 'BALANCE', 'TRXID', 'TXNID', 'TK', 'BDT', 'AT'].includes(candidate)) {
         parsedReference = candidate;
       }
     }
@@ -364,25 +473,37 @@ export async function submitDonation(input: SubmitDonationInput): Promise<Donati
     const unmatchedSmsQ = query(
       collection(db, DONATION_SMS_LOGS_COLLECTION),
       where('matchStatus', '==', 'UNMATCHED'),
-      limit(40)
+      limit(60)
     );
     const unmatchedSmsSnap = await getDocs(unmatchedSmsQ);
 
     for (const smsDoc of unmatchedSmsSnap.docs) {
       const sms = smsDoc.data() as DonationSmsLog;
-      const trxMatches = sms.parsedTrxId && sms.parsedTrxId.toUpperCase() === cleanTrxId;
+      if (isUnexpandedSmsPlaceholder(sms.rawMessage)) continue;
+
+      const reparsed = parseMobileBankingSms(sms.rawMessage, sms.senderAddress);
+      const effectiveTrx = normalizeTrxId(sms.parsedTrxId || reparsed.parsedTrxId || '');
+      const effectiveRef = (sms.parsedReference || reparsed.parsedReference || '').toUpperCase();
+      const effectiveAmount =
+        typeof sms.parsedAmount === 'number' ? sms.parsedAmount : reparsed.parsedAmount;
+      const effectiveProvider = reparsed.provider || sms.provider;
+      const rawNormalized = normalizeTrxId(sms.rawMessage);
+
+      const trxMatches =
+        (Boolean(effectiveTrx) && effectiveTrx === cleanTrxId) ||
+        (cleanTrxId.length >= 6 && rawNormalized.includes(cleanTrxId));
       const refMatches =
-        sms.parsedReference &&
-        sms.parsedReference.toUpperCase() === referenceCode &&
-        sms.provider === input.paymentMethod;
+        Boolean(effectiveRef) &&
+        effectiveRef === referenceCode &&
+        effectiveProvider === input.paymentMethod;
       const amountValid =
-        typeof sms.parsedAmount === 'number' ? sms.parsedAmount >= cleanAmount : true;
+        typeof effectiveAmount === 'number' ? effectiveAmount >= cleanAmount : true;
 
       if ((trxMatches || refMatches) && amountValid) {
         status = 'VERIFIED';
         verificationSource = 'AUTO_SMS_APP';
         matchedSmsId = smsDoc.id;
-        matchedSmsText = sms.rawMessage;
+        matchedSmsText = String(sms.rawMessage || '').slice(0, 600);
         verifiedAt = now;
 
         // Update that SMS log as MATCHED
@@ -444,16 +565,18 @@ export interface SmsVerificationCheckResult {
 
 /**
  * Checks Firestore (donations + donation_sms_logs) to verify whether an incoming SMS
- * from the Android SMS Reader matches the user's Transaction ID, Payment Method, and Amount.
+ * from the Android SMS Reader matches the user's Transaction ID, Sender Phone, Payment Method, and Amount.
  */
 export async function checkSmsDatabaseMatch(params: {
   paymentMethod: DonationPaymentMethod;
   amount: number;
   transactionId: string;
+  senderPhone?: string;
   referenceCode?: string;
 }): Promise<SmsVerificationCheckResult> {
   const cleanTrxId = normalizeTrxId(params.transactionId);
   const cleanAmount = Number(toEnglishDigits(String(params.amount)));
+  const cleanPhone = params.senderPhone ? normalizeBdPhone(params.senderPhone) : '';
   const cleanRef = (params.referenceCode || '').trim().toUpperCase();
 
   try {
@@ -472,83 +595,177 @@ export async function checkSmsDatabaseMatch(params: {
       };
     }
 
-    // 2. Scan incoming SMS logs from Android SMS Reader
-    const smsQ = query(
-      collection(db, DONATION_SMS_LOGS_COLLECTION),
-      orderBy('receivedAt', 'desc'),
-      limit(60)
-    );
-    const smsSnap = await getDocs(smsQ);
+    // 2. Scan incoming SMS logs from Android SMS Reader (with unordered fallback if index unavailable)
+    let rawDocs: DonationSmsLog[] = [];
+    try {
+      const smsQ = query(
+        collection(db, DONATION_SMS_LOGS_COLLECTION),
+        orderBy('receivedAt', 'desc'),
+        limit(80)
+      );
+      const smsSnap = await getDocs(smsQ);
+      rawDocs = smsSnap.docs.map((d) => ({
+        id: d.id,
+        ...(d.data() as Omit<DonationSmsLog, 'id'>),
+      }));
+    } catch {
+      const fallbackSnap = await getDocs(
+        query(collection(db, DONATION_SMS_LOGS_COLLECTION), limit(100))
+      );
+      rawDocs = fallbackSnap.docs
+        .map((d) => ({
+          id: d.id,
+          ...(d.data() as Omit<DonationSmsLog, 'id'>),
+        }))
+        .sort((a, b) => Number(b.receivedAt || 0) - Number(a.receivedAt || 0));
+    }
 
-    for (const smsDoc of smsSnap.docs) {
-      const sms = {
-        id: smsDoc.id,
-        ...(smsDoc.data() as Omit<DonationSmsLog, 'id'>),
-      };
+    let recentUnexpandedPlaceholder: string | null = null;
+    const thirtyMinutesAgo = Date.now() - 30 * 60 * 1000;
 
-      // Check exact Transaction ID match
-      if (sms.parsedTrxId && sms.parsedTrxId.toUpperCase() === cleanTrxId) {
+    // 2A. Primary Check: Exact Normalized TrxID OR Direct Raw-Message TrxID Token Match
+    for (const sms of rawDocs) {
+      if (isUnexpandedSmsPlaceholder(sms.rawMessage)) {
+        if (Number(sms.receivedAt || 0) >= thirtyMinutesAgo && !recentUnexpandedPlaceholder) {
+          recentUnexpandedPlaceholder = String(sms.rawMessage || '').trim();
+        }
+        continue;
+      }
+
+      const reparsed = parseMobileBankingSms(sms.rawMessage, sms.senderAddress);
+      const effectiveTrx = normalizeTrxId(sms.parsedTrxId || reparsed.parsedTrxId || '');
+      const effectiveAmount =
+        typeof sms.parsedAmount === 'number' ? sms.parsedAmount : reparsed.parsedAmount;
+      const effectiveProvider = reparsed.provider || sms.provider;
+      const rawAlphanumeric = normalizeTrxId(sms.rawMessage);
+
+      const trxMatches =
+        (Boolean(effectiveTrx) && effectiveTrx === cleanTrxId) ||
+        (cleanTrxId.length >= 6 && rawAlphanumeric.includes(cleanTrxId));
+
+      if (trxMatches) {
         if (sms.matchStatus === 'MATCHED') {
           return {
             status: 'DUPLICATE',
-            errorMessage: 'এই ট্রানজেকশন আইডি ইতিমধ্যেই অন্য একটি লেনদেনে যাচাই সম্পন্ন হয়েছে।',
+            errorMessage: 'এই ট্রানজেকশন আইডি (TRXID) ইতিমধ্যেই অন্য একটি লেনদেনে যাচাই সম্পন্ন হয়েছে।',
           };
         }
 
-        if (sms.provider !== params.paymentMethod) {
+        if (effectiveProvider !== params.paymentMethod) {
           return {
             status: 'MISMATCH',
             errorMessage: `পেমেন্ট মাধ্যম মেলেনি! এসএমএস রিডার থেকে ${
-              sms.provider === 'BKASH' ? 'বিকাশ' : 'নগদ'
+              effectiveProvider === 'BKASH' ? 'বিকাশ (BKASH)' : 'নগদ (NAGAD)'
             }-এর এসএমএস পাওয়া গেছে, কিন্তু আপনি ${
-              params.paymentMethod === 'BKASH' ? 'বিকাশ' : 'নগদ'
+              params.paymentMethod === 'BKASH' ? 'বিকাশ (BKASH)' : 'নগদ (NAGAD)'
             } নির্বাচন করেছেন।`,
           };
         }
 
         if (
-          typeof sms.parsedAmount !== 'number' ||
-          Math.abs(sms.parsedAmount - cleanAmount) >= 0.01
+          typeof effectiveAmount === 'number' &&
+          Math.abs(effectiveAmount - cleanAmount) >= 0.01
         ) {
-          const foundAmtText =
-            typeof sms.parsedAmount === 'number'
-              ? `৳ ${toBanglaDigits(sms.parsedAmount)} টাকা`
-              : 'অনির্ধারিত';
           return {
             status: 'MISMATCH',
             errorMessage: `টাকার অ্যামাউন্ট মেলেনি! আপনি ৳ ${toBanglaDigits(
               cleanAmount
-            )} টাকা দিয়েছেন, কিন্তু এসএমএস রিডারে প্রাপ্ত পরিমাণ ${foundAmtText}।`,
+            )} টাকা দিয়েছেন, কিন্তু এসএমএস রিডারে প্রাপ্ত পরিমাণ ৳ ${toBanglaDigits(
+              effectiveAmount
+            )} টাকা।`,
           };
         }
 
         return {
           status: 'MATCHED',
-          matchedSms: sms,
+          matchedSms: {
+            ...sms,
+            provider: effectiveProvider,
+            parsedTrxId: effectiveTrx || cleanTrxId,
+            ...(typeof effectiveAmount === 'number' ? { parsedAmount: effectiveAmount } : {}),
+          },
         };
       }
     }
 
-    // 3. Check if an UNMATCHED SMS arrived with this session's exact Reference Code but a different TrxID
-    if (cleanRef) {
-      for (const smsDoc of smsSnap.docs) {
-        const sms = {
-          id: smsDoc.id,
-          ...(smsDoc.data() as Omit<DonationSmsLog, 'id'>),
-        };
-        if (
-          sms.matchStatus === 'UNMATCHED' &&
-          sms.parsedReference &&
-          sms.parsedReference.toUpperCase() === cleanRef &&
-          sms.parsedTrxId &&
-          sms.parsedTrxId.toUpperCase() !== cleanTrxId
-        ) {
+    // 2B. Fallback Check: Match by Sender Phone Number + Exact Amount + Provider (or Reference)
+    const twelveHoursAgo = Date.now() - 12 * 60 * 60 * 1000;
+    for (const sms of rawDocs) {
+      if (sms.matchStatus !== 'UNMATCHED') continue;
+      if (isUnexpandedSmsPlaceholder(sms.rawMessage)) continue;
+
+      const reparsed = parseMobileBankingSms(sms.rawMessage, sms.senderAddress);
+      const effectiveTrx = normalizeTrxId(sms.parsedTrxId || reparsed.parsedTrxId || '');
+      const effectiveAmount =
+        typeof sms.parsedAmount === 'number' ? sms.parsedAmount : reparsed.parsedAmount;
+      const effectivePhone = sms.parsedSenderPhone || reparsed.parsedSenderPhone;
+      const effectiveRef = (sms.parsedReference || reparsed.parsedReference || '').toUpperCase();
+      const effectiveProvider = reparsed.provider || sms.provider;
+
+      // Exact Reference Code match
+      if (cleanRef && effectiveRef && effectiveRef === cleanRef) {
+        if (!effectiveTrx) {
+          if (
+            effectiveProvider === params.paymentMethod &&
+            (typeof effectiveAmount !== 'number' || Math.abs(effectiveAmount - cleanAmount) < 0.01)
+          ) {
+            return {
+              status: 'MATCHED',
+              matchedSms: {
+                ...sms,
+                provider: effectiveProvider,
+                parsedTrxId: cleanTrxId,
+                ...(typeof effectiveAmount === 'number' ? { parsedAmount: effectiveAmount } : {}),
+              },
+            };
+          }
+        } else if (effectiveTrx !== cleanTrxId) {
           return {
             status: 'MISMATCH',
-            errorMessage: `ট্রানজেকশন নম্বর মেলেনি! এসএমএস রিডারে প্রাপ্ত ট্রানজেকশন আইডি হলো ${sms.parsedTrxId}, কিন্তু আপনি ${cleanTrxId} লিখেছেন।`,
+            errorMessage: `ট্রানজেকশন নম্বর মেলেনি! এসএমএস রিডারে প্রাপ্ত ট্রানজেকশন আইডি হলো ${effectiveTrx}, কিন্তু আপনি ${cleanTrxId} লিখেছেন।`,
           };
         }
       }
+
+      // Sender Phone + Exact Amount + Same Provider within 12 hours
+      if (
+        cleanPhone &&
+        effectivePhone &&
+        phonesCompatible(effectivePhone, cleanPhone) &&
+        effectiveProvider === params.paymentMethod &&
+        typeof effectiveAmount === 'number' &&
+        Math.abs(effectiveAmount - cleanAmount) < 0.01 &&
+        Number(sms.receivedAt || 0) >= twelveHoursAgo
+      ) {
+        if (!effectiveTrx) {
+          return {
+            status: 'MATCHED',
+            matchedSms: {
+              ...sms,
+              provider: effectiveProvider,
+              parsedTrxId: cleanTrxId,
+              parsedAmount: effectiveAmount,
+              parsedSenderPhone: cleanPhone,
+            },
+          };
+        } else if (effectiveTrx !== cleanTrxId) {
+          return {
+            status: 'MISMATCH',
+            errorMessage: `আপনার প্রদত্ত নম্বর (${toBanglaDigits(
+              cleanPhone
+            )}) ও ৳ ${toBanglaDigits(
+              cleanAmount
+            )} টাকার SMS পাওয়া গেছে, কিন্তু SMS-এ থাকা ট্রানজেকশন আইডি হলো ${effectiveTrx} (আপনি লিখেছেন ${cleanTrxId})।`,
+          };
+        }
+      }
+    }
+
+    if (recentUnexpandedPlaceholder) {
+      return {
+        status: 'NOT_FOUND',
+        errorMessage: `অ্যান্ড্রয়েড SMS FORWARDER অ্যাপ থেকে মূল পেমেন্ট মেসেজের পরিবর্তে টেমপ্লেট টেক্সট (${recentUnexpandedPlaceholder}) এসেছে। অ্যাপের JSON BODY-তে মেসেজের জায়গায় "{msg}" ও প্রেরকের জায়গায় "{sender}" ব্যবহার করে পুনরায় চেষ্টা করুন।`,
+      };
     }
 
     return { status: 'NOT_FOUND' };
@@ -558,7 +775,7 @@ export async function checkSmsDatabaseMatch(params: {
 }
 
 /**
- * Real-time listener on incoming SMS logs during the 30-second verification window.
+ * Real-time listener on incoming SMS logs during the 15-second verification window.
  */
 export function subscribeSmsLogsForVerification(onChanged: () => void): Unsubscribe {
   const q = query(
@@ -571,14 +788,23 @@ export function subscribeSmsLogsForVerification(onChanged: () => void): Unsubscr
     () => {
       onChanged();
     },
-    (err) => {
-      console.warn('Live SMS verification listener warning:', err.message);
+    () => {
+      // Fallback without orderBy in case composite index is still warming up
+      onSnapshot(
+        query(collection(db, DONATION_SMS_LOGS_COLLECTION), limit(25)),
+        () => {
+          onChanged();
+        },
+        (fallbackErr) => {
+          console.warn('Live SMS verification listener warning:', fallbackErr.message);
+        }
+      );
     }
   );
 }
 
 /**
- * Finalizes a verified donation after the 30-second check succeeds,
+ * Finalizes a verified donation after the 15-second check succeeds,
  * marking the SMS log as MATCHED and creating both the verified donation and completed transaction.
  */
 export async function finalizeVerifiedDonationFromSms(
@@ -627,7 +853,7 @@ export async function finalizeVerifiedDonationFromSms(
       status: 'VERIFIED',
       verificationSource: 'AUTO_SMS_APP',
       matchedSmsId: matchedSms.id,
-      matchedSmsText: matchedSms.rawMessage,
+      matchedSmsText: String(matchedSms.rawMessage || '').slice(0, 600),
       verifiedAt: now,
       createdAt: now,
       updatedAt: now,

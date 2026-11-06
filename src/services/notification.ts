@@ -336,7 +336,7 @@ export function showLocalNotification(payload: PushNotificationPayload): void {
 const notifiedPaymentIds = new Set<string>();
 
 /**
- * Sends an instant notification when the 30-second verification completes and payment is verified,
+ * Sends an instant notification when the 15-second verification completes and payment is verified,
  * provided the user's notification system is active.
  */
 export function notifyPaymentCompleted(params: {

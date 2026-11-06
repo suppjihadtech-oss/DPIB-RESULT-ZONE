@@ -52,7 +52,7 @@ interface PaymentVerificationModalProps {
   onCloseForEdit: (errorMessage?: string) => void;
 }
 
-const VERIFICATION_DURATION_MS = 30_000;
+const VERIFICATION_DURATION_MS = 15_000;
 
 const VERIFICATION_STAGES = [
   {
@@ -480,7 +480,7 @@ export const PaymentVerificationModal: React.FC<PaymentVerificationModalProps> =
   const [notifEnabled, setNotifEnabled] = useState<boolean>(() => isNotificationSystemActive());
   const [notifEnabling, setNotifEnabling] = useState<boolean>(false);
 
-  // Refs to hold latest DB check outcome and callback across the 30-second verification window
+  // Refs to hold latest DB check outcome and callback across the 15-second verification window
   const matchedSmsRef = useRef<DonationSmsLog | null>(null);
   const checkErrorRef = useRef<string | null>(null);
   const completionTriggeredRef = useRef<boolean>(false);
@@ -540,6 +540,7 @@ export const PaymentVerificationModal: React.FC<PaymentVerificationModalProps> =
           paymentMethod: paymentData.paymentMethod,
           amount: paymentData.amount,
           transactionId: paymentData.transactionId,
+          senderPhone: paymentData.senderPhone,
           referenceCode: paymentData.referenceCode,
         });
         if (cancelled) return;
@@ -552,7 +553,7 @@ export const PaymentVerificationModal: React.FC<PaymentVerificationModalProps> =
             res.errorMessage || 'প্রদত্ত ট্রানজেকশন নম্বর বা টাকার অ্যামাউন্ট মেলেনি।';
         } else {
           matchedSmsRef.current = null;
-          checkErrorRef.current = null;
+          checkErrorRef.current = res.errorMessage || null;
         }
       } catch (err: any) {
         if (!cancelled) {
@@ -561,14 +562,14 @@ export const PaymentVerificationModal: React.FC<PaymentVerificationModalProps> =
       }
     };
 
-    // Immediate check + real-time listener on incoming SMS logs + periodic check during 30s
+    // Immediate check + real-time listener on incoming SMS logs + periodic check during 15s
     runDatabaseCheck();
     const unsubSms = subscribeSmsLogsForVerification(() => {
       runDatabaseCheck();
     });
     const periodicCheck = setInterval(() => {
       runDatabaseCheck();
-    }, 3000);
+    }, 2000);
 
     const startTime = Date.now();
     const tickInterval = setInterval(async () => {
@@ -581,9 +582,11 @@ export const PaymentVerificationModal: React.FC<PaymentVerificationModalProps> =
         clearInterval(tickInterval);
         clearInterval(periodicCheck);
 
-        // Perform one final authoritative DB check at the 30-second mark
-        await runDatabaseCheck();
-        if (cancelled) return;
+        // Perform one final authoritative DB check at the 15-second mark if not yet matched
+        if (!matchedSmsRef.current) {
+          await runDatabaseCheck();
+          if (cancelled) return;
+        }
 
         if (matchedSmsRef.current) {
           setFinalizing(true);
@@ -634,7 +637,7 @@ export const PaymentVerificationModal: React.FC<PaymentVerificationModalProps> =
           const cleanTrxUpper = String(paymentData.transactionId || '').toUpperCase();
           setErrorMessage(
             checkErrorRef.current ||
-              `৩০ সেকেন্ড ডেটাবেজ ও SMS রিডার যাচাই করেও আপনার প্রদত্ত ট্রানজেকশন নম্বর (${cleanTrxUpper}) ও ৳ ${toBanglaDigits(
+              `১৫ সেকেন্ড ডেটাবেজ ও SMS রিডার যাচাই করেও আপনার প্রদত্ত ট্রানজেকশন নম্বর (${cleanTrxUpper}) ও ৳ ${toBanglaDigits(
                 paymentData.amount
               )} টাকার কোনো নিশ্চিতকরণ SMS পাওয়া যায়নি।`
           );
@@ -786,10 +789,10 @@ export const PaymentVerificationModal: React.FC<PaymentVerificationModalProps> =
 
               {/* Scrollable Sheet Content */}
               <div className="flex-1 overflow-y-auto px-5 sm:px-7 py-5">
-                {/* ==================== PHASE 1: 30-SECOND WALLET + TAKA ANIMATION & VERIFICATION ==================== */}
+                {/* ==================== PHASE 1: 15-SECOND WALLET + TAKA ANIMATION & VERIFICATION ==================== */}
                 {phase === 'VERIFYING' && (
                   <div className="space-y-5 text-center">
-                    {/* Dual Visual Showcase: Taka Entering Wallet SVG + 30s Circular Countdown Ring */}
+                    {/* Dual Visual Showcase: Taka Entering Wallet SVG + 15s Circular Countdown Ring */}
                     <div className="rounded-3xl bg-gradient-to-b from-slate-50 to-slate-100/75 border border-slate-200/80 p-4 sm:p-5 grid grid-cols-1 sm:grid-cols-12 items-center gap-4">
                       {/* Left/Top: Money Entering Wallet SVG Scene */}
                       <div className="sm:col-span-7 flex items-center justify-center">
@@ -799,7 +802,7 @@ export const PaymentVerificationModal: React.FC<PaymentVerificationModalProps> =
                         />
                       </div>
 
-                      {/* Right/Bottom: Circular 30-Second SVG Progress Ring */}
+                      {/* Right/Bottom: Circular 15-Second SVG Progress Ring */}
                       <div className="sm:col-span-5 flex flex-col items-center justify-center">
                         <div className="relative w-28 h-28 flex items-center justify-center">
                           {/* Subtle expanding radar pulse ring */}
@@ -946,7 +949,7 @@ export const PaymentVerificationModal: React.FC<PaymentVerificationModalProps> =
                       <div className="flex items-center justify-center gap-2 px-3.5 py-2 rounded-2xl bg-emerald-50/90 border border-emerald-200/80 text-[11px] font-bold text-emerald-800">
                         <BellRing className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                         <span>
-                          নোটিফিকেশন সিস্টেম চালু আছে — ৩০ সেকেন্ড পর পেমেন্ট সম্পন্ন হলেই নোটিফিকেশন পাবেন
+                          নোটিফিকেশন সিস্টেম চালু আছে — ১৫ সেকেন্ড পর পেমেন্ট সম্পন্ন হলেই নোটিফিকেশন পাবেন
                         </span>
                       </div>
                     ) : (
@@ -970,7 +973,7 @@ export const PaymentVerificationModal: React.FC<PaymentVerificationModalProps> =
                           <span>
                             {notifEnabling
                               ? 'নোটিফিকেশন চালু করা হচ্ছে...'
-                              : '৩০ সেকেন্ড পর পেমেন্ট সম্পন্ন হলে অ্যালার্ট পেতে নোটিফিকেশন চালু করুন'}
+                              : '১৫ সেকেন্ড পর পেমেন্ট সম্পন্ন হলে অ্যালার্ট পেতে নোটিফিকেশন চালু করুন'}
                           </span>
                         </button>
                       )
@@ -1090,7 +1093,7 @@ export const PaymentVerificationModal: React.FC<PaymentVerificationModalProps> =
                         className="w-full min-h-[48px] px-6 py-3 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white text-xs sm:text-sm font-black shadow-xs transition-all inline-flex items-center justify-center gap-2 cursor-pointer"
                       >
                         <RefreshCw className="w-4 h-4 shrink-0" />
-                        <span>পুনরায় ৩০ সেকেন্ড যাচাই করুন</span>
+                        <span>পুনরায় ১৫ সেকেন্ড যাচাই করুন</span>
                       </button>
 
                       <button

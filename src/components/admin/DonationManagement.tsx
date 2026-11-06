@@ -41,6 +41,7 @@ import {
   deleteDonationRecord,
   formatTransactionDateTimeBangla,
   getPurposeLabel,
+  isUnexpandedSmsPlaceholder,
   subscribeAllDonations,
   subscribeDonationSmsLogs,
   subscribeTransactions,
@@ -1282,17 +1283,44 @@ export const DonationManagement: React.FC<DonationManagementProps> = ({
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 min-w-0">
-              <div className="min-w-0 p-4 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-2 overflow-hidden">
-                <span className="text-[11px] font-bold uppercase text-slate-400 font-outfit block">
-                  JSON PAYLOAD FORMAT (APPLICATION/JSON)
-                </span>
+              <div className="min-w-0 p-4 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-2.5 overflow-hidden">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-bold uppercase text-slate-400 font-outfit block">
+                    JSON PAYLOAD FORMAT (APPLICATION/JSON)
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      copyToClipboard(
+                        `{\n  "sender": "{sender}",\n  "message": "{msg}",\n  "secret": "${
+                          config.smsWebhookSecret || 'YOUR_SECRET'
+                        }"\n}`,
+                        'WEBHOOK_JSON',
+                        'FORWARD SMS JSON PAYLOAD কপি হয়েছে!'
+                      )
+                    }
+                    className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-emerald-300 text-[10px] font-black uppercase inline-flex items-center gap-1 cursor-pointer shrink-0"
+                  >
+                    {copiedKey === 'WEBHOOK_JSON' ? (
+                      <Check className="w-3 h-3" />
+                    ) : (
+                      <Copy className="w-3 h-3" />
+                    )}
+                    <span>{copiedKey === 'WEBHOOK_JSON' ? 'COPIED' : 'COPY JSON'}</span>
+                  </button>
+                </div>
                 <pre className="w-full max-w-full text-[11px] sm:text-xs font-mono text-slate-200 overflow-x-auto leading-relaxed">
 {`{
-  "SENDER": "BKASH",
-  "MESSAGE": "%SMS_BODY%",
-  "SECRET": "${config.smsWebhookSecret || 'YOUR_SECRET'}"
+  "sender": "{sender}",
+  "message": "{msg}",
+  "secret": "${config.smsWebhookSecret || 'YOUR_SECRET'}"
 }`}
                 </pre>
+                <p className="text-[11px] text-amber-300/90 leading-relaxed">
+                  গুরুত্বপূর্ণ: ZEROGIC FORWARD SMS অ্যাপের JSON BODY-তে মেসেজের জন্য{' '}
+                  <code className="font-mono font-bold text-white">{`{msg}`}</code> এবং প্রেরকের জন্য{' '}
+                  <code className="font-mono font-bold text-white">{`{sender}`}</code> ব্যবহার করুন (<code className="font-mono">${`{message}`}</code> নয়)।
+                </p>
               </div>
 
               <div className="min-w-0 p-4 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-2 text-xs text-slate-300">
@@ -1465,11 +1493,17 @@ export const DonationManagement: React.FC<DonationManagementProps> = ({
 
                       <span
                         className={`font-outfit uppercase text-xs font-black ${
-                          log.matchStatus === 'MATCHED' ? 'text-emerald-700' : 'text-amber-700'
+                          log.matchStatus === 'MATCHED'
+                            ? 'text-emerald-700'
+                            : isUnexpandedSmsPlaceholder(log.rawMessage)
+                            ? 'text-rose-700'
+                            : 'text-amber-700'
                         }`}
                       >
                         {log.matchStatus === 'MATCHED'
                           ? `MATCHED (${log.matchedReferenceCode || ''})`
+                          : isUnexpandedSmsPlaceholder(log.rawMessage)
+                          ? 'TEMPLATE PLACEHOLDER ERROR'
                           : 'PENDING LOG'}
                       </span>
                     </div>

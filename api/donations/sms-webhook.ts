@@ -66,23 +66,65 @@ function convertToEnglishDigits(input: string): string {
   });
 }
 
+function stripInvisibleUnicode(input: string): string {
+  return String(input || '')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .replace(/\u00A0/g, ' ');
+}
+
 function normalizePhone(rawPhone: string): string {
-  const eng = convertToEnglishDigits(rawPhone).replace(/[\s\-()]/g, '');
+  const eng = convertToEnglishDigits(stripInvisibleUnicode(rawPhone)).replace(
+    /[\s\-()]/g,
+    ''
+  );
   if (eng.startsWith('+880')) return '0' + eng.slice(4);
   if (eng.startsWith('880') && eng.length >= 13) return '0' + eng.slice(3);
   return eng;
 }
 
 function normalizeCode(val: string): string {
-  return convertToEnglishDigits(val || '')
+  return convertToEnglishDigits(stripInvisibleUnicode(val || ''))
     .trim()
     .replace(/[^A-Z0-9]/gi, '')
     .toUpperCase();
 }
 
+function isUnexpandedTemplatePlaceholder(rawText?: string): boolean {
+  const cleaned = stripInvisibleUnicode(rawText || '').trim();
+  if (!cleaned) return true;
+  if (
+    /^(?:\$\{?\s*[a-z0-9_.\s-]+\s*\}?|\{\s*[a-z0-9_.\s-]+\s*\}|%\s*[a-z0-9_.\s-]+\s*%?)$/i.test(
+      cleaned
+    )
+  ) {
+    return true;
+  }
+  const lower = cleaned.toLowerCase();
+  const known = [
+    '${message}',
+    '${msg}',
+    '${text}',
+    '${body}',
+    '{message}',
+    '{msg}',
+    '{text}',
+    '{body}',
+    '%sms_body%',
+    '%msg%',
+    '%message%',
+    '%m',
+    '%text%',
+  ];
+  return known.includes(lower);
+}
+
 function parseMobileBankingSms(rawMessage: string, senderAddress?: string) {
-  const cleanText = convertToEnglishDigits(rawMessage || '').trim();
-  const senderLower = (senderAddress || '').toLowerCase();
+  const cleanText = convertToEnglishDigits(stripInvisibleUnicode(rawMessage || ''))
+    .replace(/[\r\n\t]+/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+  const cleanSender = stripInvisibleUnicode(senderAddress || '').trim();
+  const senderLower = cleanSender.toLowerCase();
   const bodyLower = cleanText.toLowerCase();
 
   let provider: 'BKASH' | 'NAGAD' = 'BKASH';
@@ -90,31 +132,55 @@ function parseMobileBankingSms(rawMessage: string, senderAddress?: string) {
     senderLower.includes('nagad') ||
     senderLower === '16167' ||
     bodyLower.includes('nagad') ||
-    (/\btxnid\b/i.test(cleanText) && !/\btrxid\b/i.test(cleanText))
+    bodyLower.includes('নগদ') ||
+    (/\btxn\s*id\b/i.test(cleanText) && !/\btrx\s*id\b/i.test(cleanText))
   ) {
     provider = 'NAGAD';
   }
 
   let parsedTrxId: string | undefined;
   const trxMatch = cleanText.match(
-    /(?:TrxID|TxnId|TxnID|Transaction\s*ID|Trans\s*ID)\s*[:#-]?\s*([A-Z0-9_-]{5,24})/i
+    /(?:Trx\s*ID|Txn\s*Id|Txn\s*ID|Transaction\s*ID|Trans\s*ID|TRX\s*NO|TXN\s*NO|ট্রানজেকশন\s*আইডি)\s*[:.#=\-]?\s*([A-Z0-9][A-Z0-9_-]{4,25})/i
   );
   if (trxMatch && trxMatch[1]) {
-    parsedTrxId = trxMatch[1].toUpperCase();
+    parsedTrxId = normalizeCode(trxMatch[1]);
   }
 
   let parsedAmount: number | undefined;
   const primaryAmountMatch = cleanText.match(
-    /(?:received|cash\s*in|payment|amount|send\s*money)[^0-9]{0,25}(?:Tk|BDT|৳)\s*\.?\s*([0-9,]+(?:\.[0-9]{1,2})?)/i
+    /(?:received|cash\s*in|payment|amount|send\s*money|পেয়েছেন|পাঠিয়েছেন)\s*(?:of\s*)?(?:Tk|BDT|৳)\s*\.?\s*([0-9,]+(?:\.[0-9]{1,2})?)/i
   );
-  const fallbackAmountMatch = cleanText.match(
-    /(?:Tk|BDT|৳)\s*\.?\s*([0-9,]+(?:\.[0-9]{1,2})?)/i
+
+  let nonFeeCurrencyAmount: string | undefined;
+  const currencyRegex =
+    /(?:(fee|charge|balance|comm|vat|ফি|চার্জ|ব্যালেন্স)\s*(?:is|:)?\s*)?(?:Tk|BDT|৳)\s*\.?\s*([0-9,]+(?:\.[0-9]{1,2})?)/gi;
+  let m: RegExpExecArray | null;
+  while ((m = currencyRegex.exec(cleanText)) !== null) {
+    if (!m[1] && m[2]) {
+      nonFeeCurrencyAmount = m[2];
+      break;
+    }
+  }
+
+  const bengaliTakaMatch = cleanText.match(
+    /(?:থেকে|মোট|পরিমাণ)\s*(?:Tk|BDT|৳)?\s*([0-9,]+(?:\.[0-9]{1,2})?)\s*টাকা/i
   );
-  const suffixCurrencyMatch = cleanText.match(
-    /([0-9,]+(?:\.[0-9]{1,2})?)\s*(?:টাকা|Tk|BDT|৳)/i
-  );
+  let genericBengaliTaka: string | undefined;
+  const bnRegex =
+    /(?:(ফি|চার্জ|ব্যালেন্স|fee|balance)\s*)?([0-9,]+(?:\.[0-9]{1,2})?)\s*টাকা/gi;
+  let bMatch: RegExpExecArray | null;
+  while ((bMatch = bnRegex.exec(cleanText)) !== null) {
+    if (!bMatch[1] && bMatch[2]) {
+      genericBengaliTaka = bMatch[2];
+      break;
+    }
+  }
+
   const amountRaw =
-    primaryAmountMatch?.[1] || fallbackAmountMatch?.[1] || suffixCurrencyMatch?.[1];
+    primaryAmountMatch?.[1] ||
+    nonFeeCurrencyAmount ||
+    bengaliTakaMatch?.[1] ||
+    genericBengaliTaka;
   if (amountRaw) {
     const num = parseFloat(amountRaw.replace(/,/g, ''));
     if (!isNaN(num) && num > 0) parsedAmount = num;
@@ -122,12 +188,16 @@ function parseMobileBankingSms(rawMessage: string, senderAddress?: string) {
 
   let parsedSenderPhone: string | undefined;
   const labeledPhoneMatch = cleanText.match(
-    /(?:from|sender|customer|account|a\/c|no|থেকে)\s*[:#-]?\s*((?:\+?88)?01[3-9]\d{8})/i
+    /(?:from|sender|customer|account|a\/c|no|number|থেকে)\s*[:.#=\-]?\s*((?:\+?88)?01[3-9][\d*]{8})/i
   );
-  const anyPhoneMatch = cleanText.match(/((?:\+?88)?01[3-9]\d{8})/);
-  const phoneRaw = labeledPhoneMatch?.[1] || anyPhoneMatch?.[1];
+  const anyUnmaskedPhoneMatch = cleanText.match(/((?:\+?88)?01[3-9]\d{8})/);
+  const anyMaskedPhoneMatch = cleanText.match(/(01[3-9]\d*\*+\d*)/);
+  const phoneRaw =
+    labeledPhoneMatch?.[1] || anyUnmaskedPhoneMatch?.[1] || anyMaskedPhoneMatch?.[1];
   if (phoneRaw) {
-    parsedSenderPhone = normalizePhone(phoneRaw);
+    parsedSenderPhone = phoneRaw.includes('*')
+      ? phoneRaw.replace(/\s+/g, '')
+      : normalizePhone(phoneRaw);
   }
 
   let parsedReference: string | undefined;
@@ -139,11 +209,11 @@ function parseMobileBankingSms(rawMessage: string, senderAddress?: string) {
     }
   } else {
     const genericRefMatch = cleanText.match(
-      /\b(?:Ref|Reference|রেফারেন্স)\s*[:#-]?\s*([A-Z0-9][A-Z0-9-]{2,18})\b/i
+      /\b(?:Ref|Reference|রেফারেন্স)\s*[:.#=\-]?\s*([A-Z0-9][A-Z0-9_-]{2,20})\b/i
     );
     if (genericRefMatch && genericRefMatch[1]) {
       const candidate = genericRefMatch[1].toUpperCase();
-      if (!['FEE', 'BALANCE', 'TRXID', 'TXNID', 'TK', 'BDT'].includes(candidate)) {
+      if (!['FEE', 'BALANCE', 'TRXID', 'TXNID', 'TK', 'BDT', 'AT'].includes(candidate)) {
         parsedReference = candidate;
       }
     }
@@ -332,53 +402,81 @@ export default async function handler(req: any, res: any) {
     const body = await extractRequestBody(req);
     const q = (req.query || {}) as Record<string, any>;
     const headers = (req.headers || {}) as Record<string, any>;
+    const nested =
+      (body.data && typeof body.data === 'object' ? body.data : null) ||
+      (body.payload && typeof body.payload === 'object' ? body.payload : null) ||
+      (body.sms && typeof body.sms === 'object' ? body.sms : null) ||
+      {};
 
-    const rawMessage = String(
-      body.message ||
-        body.MESSAGE ||
-        body.text ||
-        body.TEXT ||
-        body.body ||
-        body.BODY ||
-        body.msg ||
-        body.MSG ||
-        body.content ||
-        body.CONTENT ||
-        body.sms ||
-        body.SMS ||
-        body.smsBody ||
-        body.Message ||
-        body.Text ||
-        body.Body ||
-        body.Msg ||
-        body.Content ||
-        q.message ||
-        q.text ||
-        q.msg ||
-        ''
-    ).trim();
+    const messageCandidates = [
+      body.message,
+      body.MESSAGE,
+      body.formatted_message,
+      body.formattedMessage,
+      body.formattedMsg,
+      body['formatted-msg'],
+      body.text,
+      body.TEXT,
+      body.body,
+      body.BODY,
+      body.msg,
+      body.MSG,
+      body.content,
+      body.CONTENT,
+      typeof body.sms === 'string' ? body.sms : undefined,
+      body.SMS,
+      body.smsBody,
+      body.Message,
+      body.Text,
+      body.Body,
+      body.Msg,
+      body.Content,
+      nested.message,
+      nested.msg,
+      nested.text,
+      nested.body,
+      q.message,
+      q.text,
+      q.msg,
+    ]
+      .filter((v) => typeof v === 'string' && v.trim().length > 0)
+      .map((v) => String(v).trim());
 
-    const senderAddress = String(
-      body.sender ||
-        body.SENDER ||
-        body.from ||
-        body.FROM ||
-        body.address ||
-        body.ADDRESS ||
-        body.senderNumber ||
-        body.number ||
-        body.NUMBER ||
-        body.phone ||
-        body.PHONE ||
-        body.Sender ||
-        body.From ||
-        body.Address ||
-        body.Number ||
-        body.Phone ||
-        q.sender ||
-        q.from ||
-        'bKash'
-    ).trim();
+    const rawMessage =
+      messageCandidates.find((c) => !isUnexpandedTemplatePlaceholder(c)) ||
+      messageCandidates[0] ||
+      '';
+
+    const senderCandidates = [
+      body.sender,
+      body.SENDER,
+      body.from,
+      body.FROM,
+      body.address,
+      body.ADDRESS,
+      body.senderNumber,
+      body.number,
+      body.NUMBER,
+      body.phone,
+      body.PHONE,
+      body.Sender,
+      body.From,
+      body.Address,
+      body.Number,
+      body.Phone,
+      nested.sender,
+      nested.from,
+      nested.address,
+      q.sender,
+      q.from,
+    ]
+      .filter((v) => typeof v === 'string' && v.trim().length > 0)
+      .map((v) => String(v).trim());
+
+    let senderAddress =
+      senderCandidates.find((c) => !isUnexpandedTemplatePlaceholder(c)) ||
+      senderCandidates[0] ||
+      'bKash';
 
     const authHeader = String(headers.authorization || headers.Authorization || '');
     const providedSecret = String(
@@ -386,6 +484,7 @@ export default async function handler(req: any, res: any) {
         body.SECRET ||
         body.apiKey ||
         body.webhookSecret ||
+        nested.secret ||
         q.secret ||
         headers['x-webhook-secret'] ||
         headers['X-Webhook-Secret'] ||
@@ -393,14 +492,6 @@ export default async function handler(req: any, res: any) {
     ).trim();
 
     const isAdminSimulation = Boolean(body.adminSimulation);
-
-    if (!rawMessage) {
-      res.status(400).json({
-        success: false,
-        error: 'SMS message body is required (fields: message, text, body, or msg).',
-      });
-      return;
-    }
 
     const baseUrl = getFirestoreRestBaseUrl(fbConfig);
     const apiKeyParam = fbConfig?.apiKey
@@ -435,8 +526,30 @@ export default async function handler(req: any, res: any) {
       return;
     }
 
+    if (!rawMessage) {
+      res.status(400).json({
+        success: false,
+        error: 'SMS message body is required (fields: message, text, body, or msg).',
+      });
+      return;
+    }
+
+    if (isUnexpandedTemplatePlaceholder(rawMessage)) {
+      res.status(422).json({
+        success: false,
+        code: 'UNEXPANDED_TEMPLATE_PLACEHOLDER',
+        receivedMessage: rawMessage,
+        error:
+          'Unexpanded template placeholder received in message field. In Zerogic Forward SMS app, use "{msg}" for message and "{sender}" for sender instead of "${message}" or "%SMS_BODY%".',
+      });
+      return;
+    }
+
     // 2. Parse bKash / Nagad SMS text (plus explicit fields if supplied)
     const parsed = parseMobileBankingSms(rawMessage, senderAddress);
+    if (senderAddress.startsWith('$') || isUnexpandedTemplatePlaceholder(senderAddress)) {
+      senderAddress = senderAddress.replace(/^\$/, '').trim() || parsed.provider;
+    }
     if (body.provider && (body.provider === 'BKASH' || body.provider === 'NAGAD')) {
       parsed.provider = body.provider;
     }
