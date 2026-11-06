@@ -431,7 +431,7 @@ function parseMobileBankingSmsServer(rawMessage: string, senderAddress?: string)
 
   let parsedTrxId: string | undefined;
   const trxMatch = cleanText.match(
-    /(?:TrxID|TxnId|TxnID|Transaction\s*ID|Trans\s*ID)\s*[:#-]?\s*([A-Z0-9]{6,22})/i
+    /(?:TrxID|TxnId|TxnID|Transaction\s*ID|Trans\s*ID)\s*[:#-]?\s*([A-Z0-9_-]{5,24})/i
   );
   if (trxMatch && trxMatch[1]) {
     parsedTrxId = trxMatch[1].toUpperCase();
@@ -444,7 +444,11 @@ function parseMobileBankingSmsServer(rawMessage: string, senderAddress?: string)
   const fallbackAmountMatch = cleanText.match(
     /(?:Tk|BDT|৳)\s*\.?\s*([0-9,]+(?:\.[0-9]{1,2})?)/i
   );
-  const amountRaw = primaryAmountMatch?.[1] || fallbackAmountMatch?.[1];
+  const suffixCurrencyMatch = cleanText.match(
+    /([0-9,]+(?:\.[0-9]{1,2})?)\s*(?:টাকা|Tk|BDT|৳)/i
+  );
+  const amountRaw =
+    primaryAmountMatch?.[1] || fallbackAmountMatch?.[1] || suffixCurrencyMatch?.[1];
   if (amountRaw) {
     const num = parseFloat(amountRaw.replace(/,/g, ''));
     if (!isNaN(num) && num > 0) parsedAmount = num;
@@ -452,7 +456,7 @@ function parseMobileBankingSmsServer(rawMessage: string, senderAddress?: string)
 
   let parsedSenderPhone: string | undefined;
   const labeledPhoneMatch = cleanText.match(
-    /(?:from|sender|customer|account|a\/c|no)\s*[:#-]?\s*((?:\+?88)?01[3-9]\d{8})/i
+    /(?:from|sender|customer|account|a\/c|no|থেকে)\s*[:#-]?\s*((?:\+?88)?01[3-9]\d{8})/i
   );
   const anyPhoneMatch = cleanText.match(/((?:\+?88)?01[3-9]\d{8})/);
   const phoneRaw = labeledPhoneMatch?.[1] || anyPhoneMatch?.[1];
@@ -469,7 +473,7 @@ function parseMobileBankingSmsServer(rawMessage: string, senderAddress?: string)
     }
   } else {
     const genericRefMatch = cleanText.match(
-      /\b(?:Ref|Reference)\s*[:#-]?\s*([A-Z0-9][A-Z0-9-]{2,18})\b/i
+      /\b(?:Ref|Reference|রেফারেন্স)\s*[:#-]?\s*([A-Z0-9][A-Z0-9-]{2,18})\b/i
     );
     if (genericRefMatch && genericRefMatch[1]) {
       const candidate = genericRefMatch[1].toUpperCase();
@@ -573,6 +577,19 @@ app.get('/api/donations/webhook-info', (req, res) => {
   });
 });
 
+// GET ping handler on /api/donations/sms-webhook for endpoint connectivity checks
+app.get('/api/donations/sms-webhook', (_req, res) => {
+  res.status(200).json({
+    success: true,
+    status: 'ACTIVE',
+    endpoint: '/api/donations/sms-webhook',
+    method: 'POST',
+    firebaseConnected: Boolean(firebaseConfig?.projectId),
+    firebaseProjectId: firebaseConfig?.projectId || null,
+    firestoreDatabaseId: firebaseConfig?.firestoreDatabaseId || '(default)',
+  });
+});
+
 // Webhook called by external Android SMS Reader / SMS Forwarder App (or Admin Simulator)
 app.post('/api/donations/sms-webhook', async (req, res) => {
   try {
@@ -580,11 +597,17 @@ app.post('/api/donations/sms-webhook', async (req, res) => {
     const q = req.query || {};
     const rawMessage = String(
       body.message ||
+        body.MESSAGE ||
         body.text ||
+        body.TEXT ||
         body.body ||
+        body.BODY ||
         body.msg ||
+        body.MSG ||
         body.content ||
+        body.CONTENT ||
         body.sms ||
+        body.SMS ||
         body.smsBody ||
         body.Message ||
         body.Text ||
@@ -598,11 +621,16 @@ app.post('/api/donations/sms-webhook', async (req, res) => {
     ).trim();
     const senderAddress = String(
       body.sender ||
+        body.SENDER ||
         body.from ||
+        body.FROM ||
         body.address ||
+        body.ADDRESS ||
         body.senderNumber ||
         body.number ||
+        body.NUMBER ||
         body.phone ||
+        body.PHONE ||
         body.Sender ||
         body.From ||
         body.Address ||
@@ -614,6 +642,7 @@ app.post('/api/donations/sms-webhook', async (req, res) => {
     ).trim();
     const providedSecret = String(
       body.secret ||
+        body.SECRET ||
         body.apiKey ||
         body.webhookSecret ||
         q.secret ||
@@ -685,6 +714,13 @@ app.post('/api/donations/sms-webhook', async (req, res) => {
     let matchedReferenceCode: string | undefined;
     let generatedTransactionNumber: string | undefined;
     let matchStatus: 'MATCHED' | 'UNMATCHED' | 'DUPLICATE' = 'UNMATCHED';
+    let alreadyVerified = false;
+
+    const normalizeCodeServer = (val: string) =>
+      convertToEnglishDigitsServer(val || '')
+        .trim()
+        .replace(/[^A-Z0-9]/gi, '')
+        .toUpperCase();
 
     if (baseUrl) {
       // 3. Query PENDING donations from Firestore
@@ -725,16 +761,25 @@ app.post('/api/donations/sms-webhook', async (req, res) => {
           }
         }
 
+        const parsedTrxNormalized = parsed.parsedTrxId
+          ? normalizeCodeServer(parsed.parsedTrxId)
+          : '';
+        const parsedRefNormalized = parsed.parsedReference
+          ? normalizeCodeServer(parsed.parsedReference)
+          : '';
+
         // Priority 1: Exact TrxID match
-        if (parsed.parsedTrxId) {
+        if (parsedTrxNormalized) {
           const foundByTrx = pendingDonations.find((item) => {
             const d = item.data;
-            const dTrx = String(d.transactionIdUpper || d.transactionId || '').toUpperCase();
+            const dTrx = normalizeCodeServer(
+              String(d.transactionIdUpper || d.transactionId || '')
+            );
             const amountOk =
               typeof parsed.parsedAmount === 'number'
                 ? parsed.parsedAmount >= Number(d.amount || 0)
                 : true;
-            return dTrx === parsed.parsedTrxId && amountOk;
+            return Boolean(dTrx) && dTrx === parsedTrxNormalized && amountOk;
           });
           if (foundByTrx) {
             matchedDocId = foundByTrx.id;
@@ -743,15 +788,20 @@ app.post('/api/donations/sms-webhook', async (req, res) => {
         }
 
         // Priority 2: Exact Reference Code match (e.g. DPIB-4829)
-        if (!matchedDocId && parsed.parsedReference) {
+        if (!matchedDocId && parsedRefNormalized) {
           const foundByRef = pendingDonations.find((item) => {
             const d = item.data;
-            const dRef = String(d.referenceCode || '').toUpperCase();
+            const dRef = normalizeCodeServer(String(d.referenceCode || ''));
             const amountOk =
               typeof parsed.parsedAmount === 'number'
                 ? parsed.parsedAmount >= Number(d.amount || 0)
                 : true;
-            return dRef === parsed.parsedReference && d.paymentMethod === parsed.provider && amountOk;
+            return (
+              Boolean(dRef) &&
+              dRef === parsedRefNormalized &&
+              d.paymentMethod === parsed.provider &&
+              amountOk
+            );
           });
           if (foundByRef) {
             matchedDocId = foundByRef.id;
@@ -759,21 +809,56 @@ app.post('/api/donations/sms-webhook', async (req, res) => {
           }
         }
 
-        // Priority 3: Exact Sender Phone + Exact Amount + Same Provider within 2 hours
+        // Priority 3: Exact Sender Phone + Exact Amount + Same Provider within 6 hours
         if (!matchedDocId && parsed.parsedSenderPhone && typeof parsed.parsedAmount === 'number') {
-          const twoHoursAgo = now - 2 * 60 * 60 * 1000;
+          const sixHoursAgo = now - 6 * 60 * 60 * 1000;
           const foundByPhoneAmt = pendingDonations.find((item) => {
             const d = item.data;
+            const dPhone = normalizePhoneServer(String(d.senderPhone || ''));
             return (
-              d.senderPhone === parsed.parsedSenderPhone &&
+              dPhone === parsed.parsedSenderPhone &&
               Number(d.amount) === parsed.parsedAmount &&
               d.paymentMethod === parsed.provider &&
-              Number(d.createdAt || 0) >= twoHoursAgo
+              Number(d.createdAt || 0) >= sixHoursAgo
             );
           });
           if (foundByPhoneAmt) {
             matchedDocId = foundByPhoneAmt.id;
             matchedDocData = foundByPhoneAmt.data;
+          }
+        }
+      }
+
+      // Check duplicate already-verified TrxID
+      if (!matchedDocId && parsed.parsedTrxId) {
+        const cleanTrxUpper = parsed.parsedTrxId.toUpperCase();
+        const dupQueryResp = await fetch(`${baseUrl}:runQuery?${apiKeyParam}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            structuredQuery: {
+              from: [{ collectionId: 'donations' }],
+              where: {
+                fieldFilter: {
+                  field: { fieldPath: 'transactionIdUpper' },
+                  op: 'EQUAL',
+                  value: { stringValue: cleanTrxUpper },
+                },
+              },
+              limit: 1,
+            },
+          }),
+        });
+        if (dupQueryResp.ok) {
+          const dupRows = await dupQueryResp.json();
+          if (Array.isArray(dupRows) && dupRows[0]?.document?.fields) {
+            const existingData = fromFirestoreFields(dupRows[0].document.fields);
+            if (existingData.status === 'VERIFIED') {
+              matchedDonationId = dupRows[0].document.name.split('/').pop();
+              matchedReferenceCode = String(existingData.referenceCode || '');
+              matchStatus = 'DUPLICATE';
+              alreadyVerified = true;
+            }
           }
         }
       }
@@ -879,7 +964,8 @@ app.post('/api/donations/sms-webhook', async (req, res) => {
 
     res.json({
       success: true,
-      matched: matchStatus === 'MATCHED',
+      matched: matchStatus === 'MATCHED' || alreadyVerified,
+      alreadyVerified,
       matchStatus,
       smsLogId,
       matchedDonationId: matchedDonationId || null,

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   HeartHandshake,
   CheckCircle2,
@@ -13,12 +13,21 @@ import {
   Trash2,
   Play,
   Terminal,
-  RefreshCw,
   ShieldCheck,
   KeyRound,
   AlertCircle,
   History,
   Receipt,
+  SlidersHorizontal,
+  Layers,
+  CreditCard,
+  Sparkles,
+  FileText,
+  User,
+  Phone,
+  Hash,
+  Calendar,
+  AlertTriangle,
 } from 'lucide-react';
 import {
   DonationConfig,
@@ -41,15 +50,49 @@ import { getSystemSettings, saveSystemSettings } from '../../services/db';
 import { toBanglaDigits, toEnglishDigits } from '../../utils/bangla';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { PaymentMethodLogo } from '../common/PaymentMethodLogo';
+import { BottomSheet } from '../common/BottomSheet';
+import { SelectBottomSheet, SelectOption, SelectTrigger } from '../common/SelectBottomSheet';
 
 interface DonationManagementProps {
   onRefreshSettings?: () => void;
 }
 
+type AdminDonationTab = 'DONATIONS' | 'TRANSACTIONS' | 'SETTINGS' | 'SIMULATOR';
+
+const ACCOUNT_TYPE_OPTIONS: SelectOption[] = [
+  {
+    value: 'PERSONAL',
+    label: 'পার্সোনাল অ্যাকাউন্ট (SEND MONEY)',
+    badge: 'PERSONAL',
+    sublabel: 'ব্যক্তিগত নম্বর — SEND MONEY অপশন থেকে অনুদান গ্রহণ',
+    icon: User,
+  },
+  {
+    value: 'MERCHANT',
+    label: 'মার্চেন্ট অ্যাকাউন্ট (MAKE PAYMENT)',
+    badge: 'MERCHANT',
+    sublabel: 'অফিসিয়াল পেমেন্ট গেটওয়ে — MAKE PAYMENT অপশন',
+    icon: ShieldCheck,
+  },
+  {
+    value: 'AGENT',
+    label: 'এজেন্ট অ্যাকাউন্ট (CASH OUT)',
+    badge: 'AGENT',
+    sublabel: 'এজেন্ট নম্বর — CASH OUT অপশনে পেমেন্ট গ্রহণ',
+    icon: CreditCard,
+  },
+];
+
+const ACCOUNT_TYPE_LABELS: Record<'PERSONAL' | 'MERCHANT' | 'AGENT', string> = {
+  PERSONAL: 'পার্সোনাল (SEND MONEY)',
+  MERCHANT: 'মার্চেন্ট (MAKE PAYMENT)',
+  AGENT: 'এজেন্ট (CASH OUT)',
+};
+
 export const DonationManagement: React.FC<DonationManagementProps> = ({
   onRefreshSettings,
 }) => {
-  const [activeTab, setActiveTab] = useState<'DONATIONS' | 'TRANSACTIONS' | 'SETTINGS' | 'SIMULATOR'>('DONATIONS');
+  const [activeTab, setActiveTab] = useState<AdminDonationTab>('DONATIONS');
 
   // Data States
   const [donations, setDonations] = useState<DonationRecord[]>([]);
@@ -68,16 +111,46 @@ export const DonationManagement: React.FC<DonationManagementProps> = ({
   const [fullSettings, setFullSettings] = useState<SystemSettings | null>(null);
   const [config, setConfig] = useState<DonationConfig>(DEFAULT_DONATION_CONFIG);
   const [savingConfig, setSavingConfig] = useState(false);
-  const [configSavedMsg, setConfigSavedMsg] = useState<string | null>(null);
-  const [copiedWebhook, setCopiedWebhook] = useState(false);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  // Inline Feedback Banner (Replaces native window.alert)
+  const [bannerFeedback, setBannerFeedback] = useState<{
+    type: 'success' | 'error';
+    text: string;
+  } | null>(null);
+
+  // Digital Action Sheet Modal States
+  const [mobileTabSheetOpen, setMobileTabSheetOpen] = useState(false);
+  const [statusFilterSheetOpen, setStatusFilterSheetOpen] = useState(false);
+  const [txnProviderSheetOpen, setTxnProviderSheetOpen] = useState(false);
+  const [bkashTypeSheetOpen, setBkashTypeSheetOpen] = useState(false);
+  const [nagadTypeSheetOpen, setNagadTypeSheetOpen] = useState(false);
+  const [simSenderSheetOpen, setSimSenderSheetOpen] = useState(false);
+  const [simTemplateSheetOpen, setSimTemplateSheetOpen] = useState(false);
+
+  // Detail & Confirmation Digital Action Sheets
+  const [selectedDonationSheet, setSelectedDonationSheet] = useState<DonationRecord | null>(null);
+  const [selectedTxnSheet, setSelectedTxnSheet] = useState<TransactionRecord | null>(null);
+  const [deleteConfirmDonation, setDeleteConfirmDonation] = useState<DonationRecord | null>(null);
 
   // SMS Webhook Simulator States
-  const [simSender, setSimSender] = useState<'bKash' | 'NAGAD'>('bKash');
+  const [simSender, setSimSender] = useState<'BKASH' | 'NAGAD'>('BKASH');
+  const [simTemplateKey, setSimTemplateKey] = useState<string>('SAMPLE_BKASH');
   const [simMessage, setSimMessage] = useState<string>(
     'You have received Tk 100.00 from 01712345678. Ref DPIB-4829. Fee Tk 0.00. Balance Tk 1500.00. TrxID BKH9A21M4P at 05/11/2026 14:30'
   );
   const [simRunning, setSimRunning] = useState(false);
   const [simResult, setSimResult] = useState<any>(null);
+
+  const showBanner = (type: 'success' | 'error', text: string) => {
+    setBannerFeedback({ type, text });
+  };
+
+  useEffect(() => {
+    if (!bannerFeedback) return;
+    const timer = setTimeout(() => setBannerFeedback(null), 4500);
+    return () => clearTimeout(timer);
+  }, [bannerFeedback]);
 
   useEffect(() => {
     const unsubDonations = subscribeAllDonations(
@@ -86,7 +159,7 @@ export const DonationManagement: React.FC<DonationManagementProps> = ({
         setLoading(false);
       },
       (err) => {
-        console.error('Donations subscription error:', err);
+        console.error('DONATIONS SUBSCRIPTION ERROR:', err);
         setLoading(false);
       }
     );
@@ -96,7 +169,7 @@ export const DonationManagement: React.FC<DonationManagementProps> = ({
         setSmsLogs(logs);
       },
       (err) => {
-        console.warn('SMS logs subscription warning:', err);
+        console.warn('SMS LOGS SUBSCRIPTION WARNING:', err);
       }
     );
 
@@ -105,7 +178,7 @@ export const DonationManagement: React.FC<DonationManagementProps> = ({
         setTransactions(items);
       },
       (err) => {
-        console.warn('Transactions subscription warning:', err);
+        console.warn('TRANSACTIONS SUBSCRIPTION WARNING:', err);
       }
     );
 
@@ -126,24 +199,38 @@ export const DonationManagement: React.FC<DonationManagementProps> = ({
     };
   }, []);
 
+  // Sync open detail sheet if underlying donation updates in real time
+  useEffect(() => {
+    if (!selectedDonationSheet) return;
+    const updated = donations.find((d) => d.id === selectedDonationSheet.id);
+    if (updated) {
+      setSelectedDonationSheet(updated);
+    }
+  }, [donations]);
+
   const webhookUrl =
     typeof window !== 'undefined'
       ? `${window.location.origin}/api/donations/sms-webhook`
       : '/api/donations/sms-webhook';
 
-  const handleCopyWebhookUrl = async () => {
+  const copyToClipboard = async (text: string, key: string, successText?: string) => {
     try {
-      await navigator.clipboard.writeText(webhookUrl);
+      await navigator.clipboard.writeText(text);
     } catch {
       const ta = document.createElement('textarea');
-      ta.value = webhookUrl;
+      ta.value = text;
       document.body.appendChild(ta);
       ta.select();
       document.execCommand('copy');
       document.body.removeChild(ta);
     }
-    setCopiedWebhook(true);
-    setTimeout(() => setCopiedWebhook(false), 2000);
+    setCopiedKey(key);
+    if (successText) {
+      showBanner('success', successText);
+    }
+    setTimeout(() => {
+      setCopiedKey((prev) => (prev === key ? null : prev));
+    }, 2000);
   };
 
   const handleGenerateSecret = () => {
@@ -153,23 +240,22 @@ export const DonationManagement: React.FC<DonationManagementProps> = ({
       token += chars.charAt(Math.floor(Math.random() * chars.length));
     }
     setConfig((prev) => ({ ...prev, smsWebhookSecret: token }));
+    showBanner('success', 'নতুন WEBHOOK SECRET KEY তৈরি হয়েছে — সংরক্ষণ করতে ভুলবেন না!');
   };
 
   const handleSaveConfig = async (e: React.FormEvent) => {
     e.preventDefault();
     setSavingConfig(true);
-    setConfigSavedMsg(null);
     try {
       await saveSystemSettings({
         ...(fullSettings || {}),
         donationConfig: config,
         updatedAt: Date.now(),
       });
-      setConfigSavedMsg('বিকাশ, নগদ ও অটো-SMS ওয়েবহুক সেটিংস সফলভাবে সংরক্ষিত হয়েছে!');
+      showBanner('success', 'বিকাশ, নগদ ও অটো-SMS WEBHOOK সেটিংস সফলভাবে সংরক্ষিত হয়েছে!');
       if (onRefreshSettings) onRefreshSettings();
-      setTimeout(() => setConfigSavedMsg(null), 4000);
     } catch (err: any) {
-      alert(`সেটিংস সংরক্ষণে ত্রুটি: ${err?.message || err}`);
+      showBanner('error', `সেটিংস সংরক্ষণে ত্রুটি: ${err?.message || 'UNKNOWN ERROR'}`);
     } finally {
       setSavingConfig(false);
     }
@@ -182,28 +268,42 @@ export const DonationManagement: React.FC<DonationManagementProps> = ({
     setProcessingId(donationId);
     try {
       await updateDonationStatusManually(donationId, newStatus);
+      const statusText =
+        newStatus === 'VERIFIED'
+          ? 'অনুদানটি সফলভাবে অনুমোদিত (VERIFIED) হয়েছে এবং লেনদেন হিস্ট্রিতে যুক্ত হয়েছে!'
+          : newStatus === 'REJECTED'
+          ? 'অনুদানটি বাতিল (REJECTED) করা হয়েছে।'
+          : 'অনুদানটি অপেক্ষমাণ (PENDING) তালিকায় নেওয়া হয়েছে।';
+      showBanner('success', statusText);
     } catch (err: any) {
-      alert(`স্ট্যাটাস আপডেটে সমস্যা: ${err?.message || err}`);
+      showBanner('error', `স্ট্যাটাস আপডেটে সমস্যা: ${err?.message || 'UNKNOWN ERROR'}`);
     } finally {
       setProcessingId(null);
     }
   };
 
-  const handleDeleteRecord = async (donationId: string) => {
-    if (!window.confirm('আপনি কি নিশ্চিতভাবে এই অনুদান রেকর্ডটি মুছে ফেলতে চান?')) return;
-    setProcessingId(donationId);
+  const handleConfirmDeleteRecord = async () => {
+    if (!deleteConfirmDonation) return;
+    const targetId = deleteConfirmDonation.id;
+    setProcessingId(targetId);
     try {
-      await deleteDonationRecord(donationId);
+      await deleteDonationRecord(targetId);
+      if (selectedDonationSheet?.id === targetId) {
+        setSelectedDonationSheet(null);
+      }
+      setDeleteConfirmDonation(null);
+      showBanner('success', 'অনুদান রেকর্ডটি স্থায়ীভাবে মুছে ফেলা হয়েছে।');
     } catch (err: any) {
-      alert(`মুছে ফেলতে সমস্যা: ${err?.message || err}`);
+      showBanner('error', `মুছে ফেলতে সমস্যা: ${err?.message || 'UNKNOWN ERROR'}`);
     } finally {
       setProcessingId(null);
     }
   };
 
   const handleFillSampleFromPending = (pending: DonationRecord) => {
+    setSimTemplateKey(`PENDING_${pending.id}`);
     if (pending.paymentMethod === 'BKASH') {
-      setSimSender('bKash');
+      setSimSender('BKASH');
       setSimMessage(
         `You have received Tk ${pending.amount}.00 from ${pending.senderPhone}. Ref ${pending.referenceCode}. Fee Tk 0.00. Balance Tk 2500.00. TrxID ${pending.transactionId} at 05/11/2026 15:10`
       );
@@ -212,6 +312,31 @@ export const DonationManagement: React.FC<DonationManagementProps> = ({
       setSimMessage(
         `Money Received. Amount: Tk ${pending.amount}.00 Sender: ${pending.senderPhone} Ref: ${pending.referenceCode} TxnId: ${pending.transactionId} Balance: Tk 3200.00`
       );
+    }
+  };
+
+  const handleSelectSimulatorTemplate = (val: string) => {
+    setSimTemplateKey(val);
+    if (val === 'SAMPLE_BKASH') {
+      setSimSender('BKASH');
+      setSimMessage(
+        'You have received Tk 100.00 from 01712345678. Ref DPIB-4829. Fee Tk 0.00. Balance Tk 1500.00. TrxID BKH9A21M4P at 05/11/2026 14:30'
+      );
+      return;
+    }
+    if (val === 'SAMPLE_NAGAD') {
+      setSimSender('NAGAD');
+      setSimMessage(
+        'Money Received. Amount: Tk 50.00 Sender: 01812345678 Ref: DPIB-9012 TxnId: 72A8B9C1 Balance: Tk 2200.00'
+      );
+      return;
+    }
+    if (val.startsWith('PENDING_')) {
+      const id = val.replace('PENDING_', '');
+      const found = pendingDonations.find((p) => p.id === id);
+      if (found) {
+        handleFillSampleFromPending(found);
+      }
     }
   };
 
@@ -225,7 +350,7 @@ export const DonationManagement: React.FC<DonationManagementProps> = ({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          sender: simSender,
+          sender: simSender === 'BKASH' ? 'bKash' : 'NAGAD',
           message: simMessage.trim(),
           secret: config.smsWebhookSecret || '',
           adminSimulation: true,
@@ -234,220 +359,462 @@ export const DonationManagement: React.FC<DonationManagementProps> = ({
       const data = await resp.json();
       setSimResult(data);
     } catch (err: any) {
-      setSimResult({ success: false, error: err?.message || 'Webhook request failed' });
+      setSimResult({ success: false, error: err?.message || 'WEBHOOK REQUEST FAILED' });
     } finally {
       setSimRunning(false);
     }
   };
 
   // Summary Statistics
-  const verifiedDonations = donations.filter((d) => d.status === 'VERIFIED');
-  const totalVerifiedAmount = verifiedDonations.reduce((sum, d) => sum + Number(d.amount || 0), 0);
-  const autoVerifiedCount = verifiedDonations.filter(
-    (d) => d.verificationSource === 'AUTO_SMS_APP'
-  ).length;
-  const pendingDonations = donations.filter((d) => d.status === 'PENDING');
+  const verifiedDonations = useMemo(
+    () => donations.filter((d) => d.status === 'VERIFIED'),
+    [donations]
+  );
+  const pendingDonations = useMemo(
+    () => donations.filter((d) => d.status === 'PENDING'),
+    [donations]
+  );
+  const rejectedDonations = useMemo(
+    () => donations.filter((d) => d.status === 'REJECTED'),
+    [donations]
+  );
 
-  // Filtered list
-  const filteredDonations = donations.filter((d) => {
-    if (statusFilter !== 'ALL' && d.status !== statusFilter) return false;
-    if (!searchQuery.trim()) return true;
-    const q = searchQuery.trim().toLowerCase();
-    return (
-      d.referenceCode.toLowerCase().includes(q) ||
-      d.transactionId.toLowerCase().includes(q) ||
-      d.senderPhone.toLowerCase().includes(q) ||
-      (d.donorName || '').toLowerCase().includes(q)
-    );
-  });
+  const totalVerifiedAmount = useMemo(
+    () => verifiedDonations.reduce((sum, d) => sum + Number(d.amount || 0), 0),
+    [verifiedDonations]
+  );
+  const autoVerifiedCount = useMemo(
+    () => verifiedDonations.filter((d) => d.verificationSource === 'AUTO_SMS_APP').length,
+    [verifiedDonations]
+  );
 
-  const filteredTransactions = transactions.filter((t) => {
-    if (txnProviderFilter !== 'ALL' && t.paymentMethod !== txnProviderFilter) return false;
-    if (!txnSearchQuery.trim()) return true;
-    const q = toEnglishDigits(txnSearchQuery.trim()).toLowerCase();
-    return (
-      t.transactionNumber.toLowerCase().includes(q) ||
-      t.referenceCode.toLowerCase().includes(q) ||
-      t.gatewayTrxId.toLowerCase().includes(q) ||
-      t.senderPhone.toLowerCase().includes(q) ||
-      (t.donorName || '').toLowerCase().includes(q)
-    );
-  });
+  const bkashTxnCount = useMemo(
+    () => transactions.filter((t) => t.paymentMethod === 'BKASH').length,
+    [transactions]
+  );
+  const nagadTxnCount = useMemo(
+    () => transactions.filter((t) => t.paymentMethod === 'NAGAD').length,
+    [transactions]
+  );
+
+  // Filtered Lists
+  const filteredDonations = useMemo(() => {
+    return donations.filter((d) => {
+      if (statusFilter !== 'ALL' && d.status !== statusFilter) return false;
+      if (!searchQuery.trim()) return true;
+      const q = toEnglishDigits(searchQuery.trim()).toLowerCase();
+      return (
+        d.referenceCode.toLowerCase().includes(q) ||
+        d.transactionId.toLowerCase().includes(q) ||
+        d.senderPhone.toLowerCase().includes(q) ||
+        (d.donorName || '').toLowerCase().includes(q)
+      );
+    });
+  }, [donations, statusFilter, searchQuery]);
+
+  const filteredTransactions = useMemo(() => {
+    return transactions.filter((t) => {
+      if (txnProviderFilter !== 'ALL' && t.paymentMethod !== txnProviderFilter) return false;
+      if (!txnSearchQuery.trim()) return true;
+      const q = toEnglishDigits(txnSearchQuery.trim()).toLowerCase();
+      return (
+        t.transactionNumber.toLowerCase().includes(q) ||
+        t.referenceCode.toLowerCase().includes(q) ||
+        t.gatewayTrxId.toLowerCase().includes(q) ||
+        t.senderPhone.toLowerCase().includes(q) ||
+        (t.donorName || '').toLowerCase().includes(q)
+      );
+    });
+  }, [transactions, txnProviderFilter, txnSearchQuery]);
+
+  // Digital Action Sheet Option Definitions
+  const tabSheetOptions: SelectOption[] = useMemo(
+    () => [
+      {
+        value: 'DONATIONS',
+        label: `অনুদান তালিকা (${toBanglaDigits(donations.length)})`,
+        badge: 'DONATIONS',
+        sublabel: 'সকল বিকাশ ও নগদ অনুদান যাচাই এবং অনুমোদন ব্যবস্থাপনা',
+        icon: HeartHandshake,
+      },
+      {
+        value: 'TRANSACTIONS',
+        label: `লেনদেন হিস্ট্রি (${toBanglaDigits(transactions.length)})`,
+        badge: 'TXN HISTORY',
+        sublabel: 'অনুমোদিত সকল পেমেন্টের স্থায়ী TXN ডিজিটাল রসিদ তালিকা',
+        icon: History,
+      },
+      {
+        value: 'SETTINGS',
+        label: 'নম্বর ও WEBHOOK সেটিংস',
+        badge: 'API CONFIG',
+        sublabel: 'বিকাশ ও নগদ অ্যাকাউন্ট নম্বর, SECRET KEY এবং SMS WEBHOOK',
+        icon: Settings,
+      },
+      {
+        value: 'SIMULATOR',
+        label: `SMS টেস্টার ও লগ (${toBanglaDigits(smsLogs.length)})`,
+        badge: 'SMS TESTER',
+        sublabel: 'অটোমেটিক SMS পার্সিং টেস্টার এবং ইনকামিং WEBHOOK লগ',
+        icon: Terminal,
+      },
+    ],
+    [donations.length, transactions.length, smsLogs.length]
+  );
+
+  const activeTabDisplayLabel = useMemo(() => {
+    const match = tabSheetOptions.find((t) => t.value === activeTab);
+    return match ? match.label : 'অনুদান তালিকা';
+  }, [tabSheetOptions, activeTab]);
+
+  const statusFilterOptions: SelectOption[] = useMemo(
+    () => [
+      {
+        value: 'ALL',
+        label: `সকল অনুদান (${toBanglaDigits(donations.length)})`,
+        badge: 'ALL',
+        sublabel: 'যাচাইাধীন, সম্পন্ন এবং বাতিলকৃত সব অনুদান দেখুন',
+        icon: Layers,
+      },
+      {
+        value: 'PENDING',
+        label: `যাচাই অপেক্ষমাণ (${toBanglaDigits(pendingDonations.length)})`,
+        badge: 'PENDING',
+        sublabel: 'SMS ভেরিফিকেশন বা অ্যাডমিন অনুমোদনের অপেক্ষায়',
+        icon: Clock,
+      },
+      {
+        value: 'VERIFIED',
+        label: `যাচাই সম্পন্ন (${toBanglaDigits(verifiedDonations.length)})`,
+        badge: 'VERIFIED',
+        sublabel: 'সফলভাবে যাচাইকৃত এবং অনুমোদিত অনুদানসমূহ',
+        icon: CheckCircle2,
+      },
+      {
+        value: 'REJECTED',
+        label: `বাতিলকৃত অনুদান (${toBanglaDigits(rejectedDonations.length)})`,
+        badge: 'REJECTED',
+        sublabel: 'বাতিল বা অসামঞ্জস্যপূর্ণ TRXID যুক্ত রিকোয়েস্ট',
+        icon: XCircle,
+      },
+    ],
+    [
+      donations.length,
+      pendingDonations.length,
+      verifiedDonations.length,
+      rejectedDonations.length,
+    ]
+  );
+
+  const statusFilterDisplayLabel = useMemo(() => {
+    const found = statusFilterOptions.find((o) => o.value === statusFilter);
+    return found ? found.label : 'সকল অনুদান';
+  }, [statusFilterOptions, statusFilter]);
+
+  const txnProviderOptions: SelectOption[] = useMemo(
+    () => [
+      {
+        value: 'ALL',
+        label: `সকল পেমেন্ট মাধ্যম (${toBanglaDigits(transactions.length)})`,
+        badge: 'ALL',
+        sublabel: 'বিকাশ (BKASH) ও নগদ (NAGAD) উভয় গেটওয়ের লেনদেন',
+        icon: Layers,
+      },
+      {
+        value: 'BKASH',
+        label: `বিকাশ লেনদেন (${toBanglaDigits(bkashTxnCount)})`,
+        badge: 'BKASH',
+        sublabel: 'শুধুমাত্র বিকাশ পেমেন্ট গেটওয়ে সম্পন্ন হিস্ট্রি',
+        icon: Smartphone,
+      },
+      {
+        value: 'NAGAD',
+        label: `নগদ লেনদেন (${toBanglaDigits(nagadTxnCount)})`,
+        badge: 'NAGAD',
+        sublabel: 'শুধুমাত্র নগদ পেমেন্ট গেটওয়ে সম্পন্ন হিস্ট্রি',
+        icon: Smartphone,
+      },
+    ],
+    [transactions.length, bkashTxnCount, nagadTxnCount]
+  );
+
+  const txnProviderDisplayLabel = useMemo(() => {
+    const found = txnProviderOptions.find((o) => o.value === txnProviderFilter);
+    return found ? found.label : 'সকল পেমেন্ট মাধ্যম';
+  }, [txnProviderOptions, txnProviderFilter]);
+
+  const simSenderOptions: SelectOption[] = useMemo(
+    () => [
+      {
+        value: 'BKASH',
+        label: 'বিকাশ (BKASH)',
+        badge: 'BKASH',
+        sublabel: 'BKASH অফিসিয়াল SMS সেন্টার ফরম্যাট',
+        icon: Smartphone,
+      },
+      {
+        value: 'NAGAD',
+        label: 'নগদ (NAGAD)',
+        badge: 'NAGAD',
+        sublabel: 'NAGAD অফিসিয়াল SMS সেন্টার ফরম্যাট',
+        icon: Smartphone,
+      },
+    ],
+    []
+  );
+
+  const simTemplateOptions: SelectOption[] = useMemo(() => {
+    const base: SelectOption[] = [
+      {
+        value: 'SAMPLE_BKASH',
+        label: 'স্যাম্পল বিকাশ SMS (৳ ১০০)',
+        badge: 'BKASH SAMPLE',
+        sublabel: 'TRXID BKH9A21M4P · REF DPIB-4829',
+        icon: Sparkles,
+      },
+      {
+        value: 'SAMPLE_NAGAD',
+        label: 'স্যাম্পল নগদ SMS (৳ ৫০)',
+        badge: 'NAGAD SAMPLE',
+        sublabel: 'TXNID 72A8B9C1 · REF DPIB-9012',
+        icon: Sparkles,
+      },
+    ];
+
+    const pendingOpts: SelectOption[] = pendingDonations.map((p) => ({
+      value: `PENDING_${p.id}`,
+      label: `${p.paymentMethod === 'BKASH' ? 'বিকাশ' : 'নগদ'} পেন্ডিং — ৳ ${toBanglaDigits(
+        p.amount
+      )} (${p.referenceCode})`,
+      badge: `PENDING · ${p.paymentMethod}`,
+      sublabel: `TRXID: ${p.transactionId} · নম্বর: ${p.senderPhone}`,
+      icon: Clock,
+    }));
+
+    return [...pendingOpts, ...base];
+  }, [pendingDonations]);
+
+  const simTemplateDisplayLabel = useMemo(() => {
+    const found = simTemplateOptions.find((o) => o.value === simTemplateKey);
+    return found ? found.label : 'স্যাম্পল বা পেন্ডিং অনুদান বাছাই করুন';
+  }, [simTemplateOptions, simTemplateKey]);
 
   if (loading) {
     return <LoadingSpinner message="অনুদান ও পেমেন্ট ডাটা লোড হচ্ছে..." />;
   }
 
   return (
-    <div className="space-y-6 font-bengali">
-      {/* Page Header & Tab Navigation */}
-      <div className="bg-white rounded-3xl p-5 sm:p-6 border border-slate-200/90 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-        <div className="flex items-center gap-3.5">
-          <div className="w-12 h-12 rounded-2xl bg-rose-50 border border-rose-200/80 text-rose-600 flex items-center justify-center shrink-0">
-            <HeartHandshake className="w-6 h-6" />
+    <div className="w-full max-w-full overflow-x-hidden space-y-5 sm:space-y-6 font-bengali">
+      {/* Inline Status Feedback Banner (Zero window.alert) */}
+      {bannerFeedback && (
+        <div
+          className={`p-3.5 sm:p-4 rounded-2xl border text-xs sm:text-sm font-bold flex items-center justify-between gap-3 shadow-xs ${
+            bannerFeedback.type === 'success'
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+              : 'bg-rose-50 border-rose-200 text-rose-900'
+          }`}
+        >
+          <div className="flex items-center gap-2.5 min-w-0">
+            {bannerFeedback.type === 'success' ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            ) : (
+              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+            )}
+            <span className="break-words">{bannerFeedback.text}</span>
           </div>
-          <div>
-            <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
-              অনুদান ও অটোমেটিক পেমেন্ট হাব
-            </h1>
-            <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
-              বিকাশ ও নগদ অনুদান ব্যবস্থাপনা এবং অ্যান্ড্রয়েড SMS রিডিং অ্যাপ অটো-ভেরিফিকেশন
-            </p>
-          </div>
+          <button
+            type="button"
+            onClick={() => setBannerFeedback(null)}
+            className="px-2.5 py-1 rounded-lg text-[11px] font-black uppercase bg-white/80 hover:bg-white border border-current/15 shrink-0 cursor-pointer"
+          >
+            CLOSE
+          </button>
         </div>
+      )}
 
-        <div className="flex flex-wrap items-center gap-1.5 bg-slate-100 p-1.5 rounded-2xl border border-slate-200/80">
-          <button
-            type="button"
-            id="admin-donation-tab-list"
-            onClick={() => setActiveTab('DONATIONS')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              activeTab === 'DONATIONS'
-                ? 'bg-teal-700 text-white shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            অনুদান তালিকা ({toBanglaDigits(donations.length)})
-          </button>
-          <button
-            type="button"
-            id="admin-donation-tab-transactions"
-            onClick={() => setActiveTab('TRANSACTIONS')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-              activeTab === 'TRANSACTIONS'
-                ? 'bg-teal-700 text-white shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <History className="w-3.5 h-3.5" />
-            <span>লেনদেন হিস্ট্রি ({toBanglaDigits(transactions.length)})</span>
-          </button>
-          <button
-            type="button"
-            id="admin-donation-tab-settings"
-            onClick={() => setActiveTab('SETTINGS')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-              activeTab === 'SETTINGS'
-                ? 'bg-teal-700 text-white shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <Settings className="w-3.5 h-3.5" />
-            <span>নম্বর ও ওয়েবহুক সেটিংস</span>
-          </button>
-          <button
-            type="button"
-            id="admin-donation-tab-simulator"
-            onClick={() => setActiveTab('SIMULATOR')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-              activeTab === 'SIMULATOR'
-                ? 'bg-teal-700 text-white shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <Terminal className="w-3.5 h-3.5" />
-            <span>SMS টেস্টার ও লগ ({toBanglaDigits(smsLogs.length)})</span>
-          </button>
+      {/* Page Header & Responsive Digital Navigation */}
+      <div className="bg-white rounded-3xl p-4 sm:p-6 border border-slate-200/90 shadow-xs space-y-4">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div className="flex items-start sm:items-center gap-3.5 min-w-0">
+            <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-rose-50 border border-rose-200/80 text-rose-600 flex items-center justify-center shrink-0">
+              <HeartHandshake className="w-6 h-6" />
+            </div>
+            <div className="min-w-0">
+              <h1 className="text-lg sm:text-2xl font-black text-slate-900 tracking-tight leading-snug">
+                অনুদান ও অটোমেটিক পেমেন্ট হাব
+              </h1>
+              <p className="text-xs sm:text-sm text-slate-500 mt-0.5 leading-relaxed">
+                বিকাশ (BKASH) ও নগদ (NAGAD) অনুদান ব্যবস্থাপনা এবং অ্যান্ড্রয়েড SMS অটো-ভেরিফিকেশন
+              </p>
+            </div>
+          </div>
+
+          {/* Mobile Section Selector — Digital Action Sheet Trigger */}
+          <div className="sm:hidden">
+            <SelectTrigger
+              id="mobile-donation-tab-trigger"
+              label="অ্যাক্টিভ সেকশন (SECTION MENU)"
+              value={activeTab}
+              displayValue={activeTabDisplayLabel}
+              icon={SlidersHorizontal}
+              onClick={() => setMobileTabSheetOpen(true)}
+            />
+          </div>
+
+          {/* Tablet / Desktop Single-Row Segmented Tabs */}
+          <div className="hidden sm:flex items-center gap-1.5 bg-slate-100 p-1.5 rounded-2xl border border-slate-200/80 overflow-x-auto max-w-full">
+            <button
+              type="button"
+              id="admin-donation-tab-list"
+              onClick={() => setActiveTab('DONATIONS')}
+              className={`min-h-[42px] px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 tabular-nums ${
+                activeTab === 'DONATIONS'
+                  ? 'bg-teal-700 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              অনুদান তালিকা ({toBanglaDigits(donations.length)})
+            </button>
+            <button
+              type="button"
+              id="admin-donation-tab-transactions"
+              onClick={() => setActiveTab('TRANSACTIONS')}
+              className={`min-h-[42px] px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap shrink-0 tabular-nums ${
+                activeTab === 'TRANSACTIONS'
+                  ? 'bg-teal-700 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <History className="w-3.5 h-3.5 shrink-0" />
+              <span>লেনদেন হিস্ট্রি ({toBanglaDigits(transactions.length)})</span>
+            </button>
+            <button
+              type="button"
+              id="admin-donation-tab-settings"
+              onClick={() => setActiveTab('SETTINGS')}
+              className={`min-h-[42px] px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
+                activeTab === 'SETTINGS'
+                  ? 'bg-teal-700 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Settings className="w-3.5 h-3.5 shrink-0" />
+              <span>নম্বর ও WEBHOOK সেটিংস</span>
+            </button>
+            <button
+              type="button"
+              id="admin-donation-tab-simulator"
+              onClick={() => setActiveTab('SIMULATOR')}
+              className={`min-h-[42px] px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap shrink-0 tabular-nums ${
+                activeTab === 'SIMULATOR'
+                  ? 'bg-teal-700 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Terminal className="w-3.5 h-3.5 shrink-0" />
+              <span>SMS টেস্টার ও লগ ({toBanglaDigits(smsLogs.length)})</span>
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* 4 Clean Summary Cards (Tabular Numerals) */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
-        <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/90 shadow-2xs">
-          <span className="text-xs font-bold text-slate-500 block">মোট যাচাইকৃত অনুদান</span>
-          <span className="text-xl sm:text-2xl font-black text-emerald-700 tabular-nums mt-1 block">
+      {/* 4 Clean Mobile-First Summary Cards (Tabular Numerals, Zero Overflow) */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+        <div className="min-w-0 bg-white rounded-2xl p-3.5 sm:p-5 border border-slate-200/90 shadow-2xs flex flex-col justify-between">
+          <span className="text-[11px] sm:text-xs font-bold text-slate-500 block leading-snug">
+            মোট যাচাইকৃত অনুদান
+          </span>
+          <span className="text-lg sm:text-2xl font-black text-emerald-700 tabular-nums mt-1.5 block truncate">
             ৳ {toBanglaDigits(totalVerifiedAmount)}
           </span>
-          <span className="text-[11px] text-slate-400 mt-0.5 block">
+          <span className="text-[11px] text-slate-400 mt-1 block tabular-nums">
             {toBanglaDigits(verifiedDonations.length)}টি সফল লেনদেন
           </span>
         </div>
 
-        <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/90 shadow-2xs">
-          <span className="text-xs font-bold text-slate-500 block">অটো-ভেরিফাইড (SMS অ্যাপ)</span>
-          <span className="text-xl sm:text-2xl font-black text-blue-700 tabular-nums mt-1 block">
+        <div className="min-w-0 bg-white rounded-2xl p-3.5 sm:p-5 border border-slate-200/90 shadow-2xs flex flex-col justify-between">
+          <span className="text-[11px] sm:text-xs font-bold text-slate-500 block leading-snug">
+            অটো-ভেরিফাইড (AUTO SMS)
+          </span>
+          <span className="text-lg sm:text-2xl font-black text-blue-700 tabular-nums mt-1.5 block">
             {toBanglaDigits(autoVerifiedCount)} টি
           </span>
-          <span className="text-[11px] text-slate-400 mt-0.5 block">
-            স্বয়ংক্রিয় TrxID ম্যাচিং
+          <span className="text-[11px] text-slate-400 mt-1 block">
+            স্বয়ংক্রিয় TRXID ম্যাচিং
           </span>
         </div>
 
-        <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/90 shadow-2xs">
-          <span className="text-xs font-bold text-slate-500 block">যাচাইাধীন (Pending)</span>
-          <span className="text-xl sm:text-2xl font-black text-amber-600 tabular-nums mt-1 block">
+        <div className="min-w-0 bg-white rounded-2xl p-3.5 sm:p-5 border border-slate-200/90 shadow-2xs flex flex-col justify-between">
+          <span className="text-[11px] sm:text-xs font-bold text-slate-500 block leading-snug">
+            যাচাইাধীন (PENDING)
+          </span>
+          <span className="text-lg sm:text-2xl font-black text-amber-600 tabular-nums mt-1.5 block">
             {toBanglaDigits(pendingDonations.length)} টি
           </span>
-          <span className="text-[11px] text-slate-400 mt-0.5 block">
-            SMS বা ম্যানুয়াল অনুমোদনের অপেক্ষায়
+          <span className="text-[11px] text-slate-400 mt-1 block">
+            SMS বা ম্যানুয়াল অপেক্ষায়
           </span>
         </div>
 
-        <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/90 shadow-2xs">
-          <span className="text-xs font-bold text-slate-500 block">সক্রিয় পেমেন্ট মাধ্যম</span>
-          <div className="mt-2 space-y-1.5 text-xs font-mono font-bold text-slate-800 tabular-nums">
-            <div className="flex items-center gap-2 truncate">
+        <div className="min-w-0 bg-white rounded-2xl p-3.5 sm:p-5 border border-slate-200/90 shadow-2xs flex flex-col justify-between">
+          <span className="text-[11px] sm:text-xs font-bold text-slate-500 block leading-snug">
+            সক্রিয় পেমেন্ট নম্বর
+          </span>
+          <div className="mt-2 space-y-1.5 text-[11px] sm:text-xs font-mono font-bold text-slate-800 tabular-nums">
+            <div className="flex items-center gap-1.5 min-w-0">
               <PaymentMethodLogo provider="BKASH" size="xs" />
-              <span className="text-[#E2136E] font-bengali">বিকাশ:</span>
-              <span className="truncate">{config.bkashNumber}</span>
+              <span className="text-[#E2136E] font-outfit uppercase shrink-0">BKASH:</span>
+              <span className="truncate">{toBanglaDigits(config.bkashNumber)}</span>
             </div>
-            <div className="flex items-center gap-2 truncate">
+            <div className="flex items-center gap-1.5 min-w-0">
               <PaymentMethodLogo provider="NAGAD" size="xs" />
-              <span className="text-[#EA580C] font-bengali">নগদ:</span>
-              <span className="truncate">{config.nagadNumber}</span>
+              <span className="text-[#EA580C] font-outfit uppercase shrink-0">NAGAD:</span>
+              <span className="truncate">{toBanglaDigits(config.nagadNumber)}</span>
             </div>
           </div>
         </div>
       </div>
 
-      {/* ================= TAB 1: DONATIONS LIST & MANUAL VERIFICATION ================= */}
+      {/* ================= TAB 1: DONATIONS LIST & DIGITAL ACTION SHEET ================= */}
       {activeTab === 'DONATIONS' && (
         <div className="bg-white rounded-3xl border border-slate-200/90 shadow-xs overflow-hidden">
-          {/* Search & Status Filter Bar */}
-          <div className="p-4 sm:p-6 border-b border-slate-200/80 flex flex-col md:flex-row md:items-center justify-between gap-3">
-            <div className="relative flex-1 max-w-md">
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="TrxID, রেফারেন্স (DPIB-XXXX), নম্বর বা নাম দিয়ে খুঁজুন..."
-                className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-semibold text-slate-900 placeholder:text-slate-400 focus:bg-white focus:border-teal-700 outline-none"
-              />
-              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+          {/* Mobile-First Search & Digital Action Sheet Status Filter */}
+          <div className="p-4 sm:p-6 border-b border-slate-200/80 grid grid-cols-1 md:grid-cols-12 gap-3.5 items-end">
+            <div className="md:col-span-7 space-y-1">
+              <label className="block text-xs font-bold text-slate-700 uppercase">
+                অনুদান খুঁজুন (TRXID / REF / PHONE)
+              </label>
+              <div className="relative">
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="TRXID, রেফারেন্স (DPIB-XXXX), নম্বর বা নাম..."
+                  className="w-full min-h-[44px] pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-semibold text-slate-900 placeholder:text-slate-400 focus:bg-white focus:border-teal-700 outline-none"
+                />
+                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-1.5">
-              {(
-                [
-                  { id: 'ALL', label: 'সকল' },
-                  { id: 'PENDING', label: 'যাচাইাধীন' },
-                  { id: 'VERIFIED', label: 'যাচাই সম্পন্ন' },
-                  { id: 'REJECTED', label: 'বাতিল' },
-                ] as const
-              ).map((st) => (
-                <button
-                  key={st.id}
-                  type="button"
-                  onClick={() => setStatusFilter(st.id)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
-                    statusFilter === st.id
-                      ? 'bg-slate-900 text-white border-slate-900'
-                      : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
-                  }`}
-                >
-                  {st.label}
-                </button>
-              ))}
+            <div className="md:col-span-5">
+              <SelectTrigger
+                id="donation-status-filter-trigger"
+                label="অনুদান স্ট্যাটাস ফিল্টার (STATUS)"
+                value={statusFilter}
+                displayValue={statusFilterDisplayLabel}
+                icon={SlidersHorizontal}
+                onClick={() => setStatusFilterSheetOpen(true)}
+              />
             </div>
           </div>
 
           {/* Donations List */}
           {filteredDonations.length === 0 ? (
-            <div className="p-10 text-center space-y-2">
+            <div className="p-8 sm:p-12 text-center space-y-2">
               <HeartHandshake className="w-10 h-10 text-slate-300 mx-auto" />
               <h3 className="text-base font-bold text-slate-800">কোনো অনুদান রেকর্ড পাওয়া যায়নি</h3>
-              <p className="text-xs text-slate-500">
-                ব্যবহারকারীরা বিকাশ বা নগদে অনুদান পাঠিয়ে তথ্য জমা দিলে এখানে রিয়েলটাইমে প্রদর্শিত হবে।
+              <p className="text-xs text-slate-500 max-w-md mx-auto">
+                ব্যবহারকারীরা বিকাশ (BKASH) বা নগদ (NAGAD)-এ অনুদান পাঠিয়ে তথ্য জমা দিলে এখানে রিয়েলটাইমে প্রদর্শিত হবে।
               </p>
             </div>
           ) : (
@@ -457,39 +824,38 @@ export const DonationManagement: React.FC<DonationManagementProps> = ({
                 return (
                   <div
                     key={item.id}
-                    className="p-4 sm:p-6 hover:bg-slate-50/70 transition-colors flex flex-col lg:flex-row lg:items-center justify-between gap-4"
+                    className="p-4 sm:p-6 hover:bg-slate-50/70 transition-colors flex flex-col lg:flex-row lg:items-center justify-between gap-4 min-w-0"
                   >
-                    <div className="space-y-1.5 min-w-0 flex-1">
-                      {/* Top Meta Line (Zero Pill Clutter — Clean Inline Typography with Dot Separators) */}
-                      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs">
+                    <div
+                      onClick={() => setSelectedDonationSheet(item)}
+                      className="space-y-2 min-w-0 flex-1 cursor-pointer"
+                    >
+                      {/* Clean Inline Metadata Row (Zero Pill Clutter — Dot Separators) */}
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
                         <PaymentMethodLogo provider={item.paymentMethod} size="xs" />
                         <span
-                          className={`font-black ${
+                          className={`font-black uppercase font-outfit ${
                             item.paymentMethod === 'BKASH' ? 'text-[#E2136E]' : 'text-[#EA580C]'
                           }`}
                         >
-                          {item.paymentMethod === 'BKASH' ? 'বিকাশ' : 'নগদ'}
+                          {item.paymentMethod}
                         </span>
                         <span className="text-slate-300">·</span>
                         <span className="font-mono font-black text-slate-900 tabular-nums">
-                          {item.referenceCode}
+                          REF: {item.referenceCode}
                         </span>
                         <span className="text-slate-300">·</span>
-                        <span className="font-mono font-bold text-slate-800 tabular-nums">
-                          আইডি: {item.transactionId}
-                        </span>
-                        <span className="text-slate-300">·</span>
-                        <span className="font-mono text-slate-600 tabular-nums">
-                          নম্বর: {item.senderPhone}
+                        <span className="font-mono font-bold text-slate-800 tabular-nums break-all">
+                          TRXID: {item.transactionId}
                         </span>
                       </div>
 
-                      {/* Primary Amount & Donor Title */}
-                      <div className="flex flex-wrap items-baseline gap-2.5">
+                      {/* Primary Amount & Donor Info */}
+                      <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
                         <span className="text-lg sm:text-xl font-black text-slate-950 tabular-nums">
                           ৳ {toBanglaDigits(item.amount)} টাকা
                         </span>
-                        <span className="text-xs sm:text-sm font-bold text-slate-700">
+                        <span className="text-xs sm:text-sm font-bold text-slate-800">
                           — {item.donorName || 'শুভাকাঙ্ক্ষী'}
                         </span>
                         <span className="text-xs text-slate-500">
@@ -497,45 +863,53 @@ export const DonationManagement: React.FC<DonationManagementProps> = ({
                         </span>
                       </div>
 
+                      {/* Secondary Mobile Number & Status Line */}
+                      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs">
+                        <span className="font-mono text-slate-600 tabular-nums">
+                          SENDER: {toBanglaDigits(item.senderPhone)}
+                        </span>
+                        <span className="text-slate-300">·</span>
+                        <span
+                          className={`font-black ${
+                            item.status === 'VERIFIED'
+                              ? 'text-emerald-700'
+                              : item.status === 'REJECTED'
+                              ? 'text-rose-700'
+                              : 'text-amber-600'
+                          }`}
+                        >
+                          {item.status === 'VERIFIED'
+                            ? item.verificationSource === 'AUTO_SMS_APP'
+                              ? 'VERIFIED (AUTO SMS)'
+                              : 'VERIFIED (MANUAL)'
+                            : item.status === 'REJECTED'
+                            ? 'REJECTED (বাতিল)'
+                            : 'PENDING (যাচাই অপেক্ষমাণ)'}
+                        </span>
+                      </div>
+
                       {item.note && (
-                        <p className="text-xs text-slate-600">মন্তব্য: {item.note}</p>
+                        <p className="text-xs text-slate-600 break-words">মন্তব্য: {item.note}</p>
                       )}
 
                       {item.matchedSmsText && (
-                        <p className="text-[11px] font-mono text-emerald-800 bg-emerald-50/80 px-2.5 py-1 rounded-lg border border-emerald-200/70 truncate max-w-2xl">
-                          এসএমএস ম্যাচ: {item.matchedSmsText}
-                        </p>
+                        <div className="text-[11px] font-mono text-emerald-900 bg-emerald-50/85 px-3 py-2 rounded-xl border border-emerald-200/70 break-words leading-relaxed">
+                          <span className="font-black uppercase mr-1.5">MATCHED SMS:</span>
+                          {item.matchedSmsText}
+                        </div>
                       )}
                     </div>
 
-                    {/* Right Status & Action Buttons */}
-                    <div className="flex flex-wrap items-center gap-2 shrink-0">
-                      <span
-                        className={`text-xs font-black mr-2 ${
-                          item.status === 'VERIFIED'
-                            ? 'text-emerald-700'
-                            : item.status === 'REJECTED'
-                            ? 'text-rose-700'
-                            : 'text-amber-600'
-                        }`}
-                      >
-                        {item.status === 'VERIFIED'
-                          ? item.verificationSource === 'AUTO_SMS_APP'
-                            ? 'যাচাই সম্পন্ন (অটো এসএমএস)'
-                            : 'যাচাই সম্পন্ন (ম্যানুয়াল)'
-                          : item.status === 'REJECTED'
-                          ? 'যাচাই ব্যর্থ'
-                          : 'যাচাই অপেক্ষমাণ'}
-                      </span>
-
+                    {/* Responsive Thumb-Friendly Action Row */}
+                    <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 shrink-0 pt-2 lg:pt-0 border-t lg:border-t-0 border-slate-100">
                       {item.status !== 'VERIFIED' && (
                         <button
                           type="button"
                           disabled={isBusy}
                           onClick={() => handleManualStatusUpdate(item.id, 'VERIFIED')}
-                          className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                          className="min-h-[44px] px-3.5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
                         >
-                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <CheckCircle2 className="w-4 h-4 shrink-0" />
                           <span>অনুমোদন করুন</span>
                         </button>
                       )}
@@ -545,21 +919,31 @@ export const DonationManagement: React.FC<DonationManagementProps> = ({
                           type="button"
                           disabled={isBusy}
                           onClick={() => handleManualStatusUpdate(item.id, 'REJECTED')}
-                          className="px-3 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold transition-all cursor-pointer flex items-center gap-1 disabled:opacity-50"
+                          className="min-h-[44px] px-3.5 py-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
                         >
-                          <XCircle className="w-3.5 h-3.5" />
-                          <span>বাতিল</span>
+                          <XCircle className="w-4 h-4 shrink-0" />
+                          <span>বাতিল করুন</span>
                         </button>
                       )}
 
                       <button
                         type="button"
-                        disabled={isBusy}
-                        onClick={() => handleDeleteRecord(item.id)}
-                        title="মুছে ফেলুন"
-                        className="p-2 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                        onClick={() => setSelectedDonationSheet(item)}
+                        className="min-h-[44px] px-3.5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5"
                       >
-                        <Trash2 className="w-4 h-4" />
+                        <SlidersHorizontal className="w-3.5 h-3.5 shrink-0" />
+                        <span>অ্যাকশন শীট</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={isBusy}
+                        onClick={() => setDeleteConfirmDonation(item)}
+                        title="রেকর্ড মুছে ফেলুন"
+                        className="min-h-[44px] px-3 py-2.5 rounded-xl bg-slate-100 hover:bg-rose-50 text-slate-600 hover:text-rose-600 border border-slate-200/80 transition-colors cursor-pointer flex items-center justify-center gap-1 text-xs font-bold"
+                      >
+                        <Trash2 className="w-4 h-4 shrink-0" />
+                        <span className="sm:hidden">মুছুন</span>
                       </button>
                     </div>
                   </div>
@@ -570,61 +954,57 @@ export const DonationManagement: React.FC<DonationManagementProps> = ({
         </div>
       )}
 
-      {/* ================= TAB 1B: AUTO-GENERATED COMPLETED TRANSACTIONS HISTORY ================= */}
+      {/* ================= TAB 2: AUTO-GENERATED COMPLETED TRANSACTIONS HISTORY ================= */}
       {activeTab === 'TRANSACTIONS' && (
         <div className="bg-white rounded-3xl border border-slate-200/90 shadow-xs overflow-hidden">
-          <div className="p-4 sm:p-6 border-b border-slate-200/80 flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div className="p-4 sm:p-6 border-b border-slate-200/80 space-y-4">
             <div>
               <h2 className="text-base sm:text-lg font-black text-slate-900">
-                স্বয়ংক্রিয় সম্পন্ন লেনদেন হিস্ট্রি (Completed Transactions)
+                স্বয়ংক্রিয় সম্পন্ন লেনদেন হিস্ট্রি (COMPLETED TRANSACTIONS)
               </h2>
-              <p className="text-xs text-slate-500 mt-0.5">
-                যেকোনো অনুদান নিশ্চিত বা অনুমোদিত হওয়া মাত্রই স্বয়ংক্রিয়ভাবে একটি স্থায়ী লেনদেন তৈরি হয়ে এখানে প্রদর্শিত হয়।
+              <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+                যেকোনো অনুদান নিশ্চিত বা অনুমোদিত হওয়া মাত্রই স্বয়ংক্রিয়ভাবে একটি স্থায়ী লেনদেন (TXN) তৈরি হয়ে এখানে প্রদর্শিত হয়।
               </p>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="relative">
-                <input
-                  type="text"
-                  value={txnSearchQuery}
-                  onChange={(e) => setTxnSearchQuery(e.target.value)}
-                  placeholder="TXN নম্বর, TrxID বা নম্বর..."
-                  className="w-56 pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 placeholder:text-slate-400 focus:bg-white focus:border-teal-700 outline-none tabular-nums"
-                />
-                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            {/* Responsive Search & Digital Action Sheet Provider Filter */}
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5 items-end">
+              <div className="md:col-span-7 space-y-1">
+                <label className="block text-xs font-bold text-slate-700 uppercase">
+                  লেনদেন খুঁজুন (TXN ID / TRXID / PHONE)
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={txnSearchQuery}
+                    onChange={(e) => setTxnSearchQuery(e.target.value)}
+                    placeholder="TXN নম্বর, TRXID বা মোবাইল নম্বর..."
+                    className="w-full min-h-[44px] pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-bold text-slate-900 placeholder:text-slate-400 focus:bg-white focus:border-teal-700 outline-none tabular-nums"
+                  />
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                </div>
               </div>
 
-              {(
-                [
-                  { id: 'ALL', label: 'সকল মাধ্যম' },
-                  { id: 'BKASH', label: 'বিকাশ' },
-                  { id: 'NAGAD', label: 'নগদ' },
-                ] as const
-              ).map((m) => (
-                <button
-                  key={m.id}
-                  type="button"
-                  onClick={() => setTxnProviderFilter(m.id)}
-                  className={`px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
-                    txnProviderFilter === m.id
-                      ? 'bg-slate-900 text-white border-slate-900'
-                      : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
-                  }`}
-                >
-                  {m.label}
-                </button>
-              ))}
+              <div className="md:col-span-5">
+                <SelectTrigger
+                  id="txn-provider-filter-trigger"
+                  label="পেমেন্ট মাধ্যম ফিল্টার (PROVIDER)"
+                  value={txnProviderFilter}
+                  displayValue={txnProviderDisplayLabel}
+                  icon={SlidersHorizontal}
+                  onClick={() => setTxnProviderSheetOpen(true)}
+                />
+              </div>
             </div>
           </div>
 
           {filteredTransactions.length === 0 ? (
-            <div className="p-10 text-center space-y-2">
+            <div className="p-8 sm:p-12 text-center space-y-2">
               <Receipt className="w-10 h-10 text-slate-300 mx-auto" />
               <h3 className="text-base font-bold text-slate-800">
                 এখনো কোনো সম্পন্ন লেনদেন তৈরি হয়নি
               </h3>
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-slate-500 max-w-md mx-auto">
                 কোনো অনুদান অটো-SMS বা অ্যাডমিন অনুমোদনের মাধ্যমে নিশ্চিত হলে এখানে স্বয়ংক্রিয়ভাবে লেনদেন তৈরি হয়ে দেখাবে।
               </p>
             </div>
@@ -633,38 +1013,35 @@ export const DonationManagement: React.FC<DonationManagementProps> = ({
               {filteredTransactions.map((txn) => (
                 <div
                   key={txn.id}
-                  className="p-4 sm:p-6 hover:bg-slate-50/70 transition-colors flex flex-col lg:flex-row lg:items-center justify-between gap-4"
+                  onClick={() => setSelectedTxnSheet(txn)}
+                  className="p-4 sm:p-6 hover:bg-slate-50/70 transition-colors flex flex-col lg:flex-row lg:items-center justify-between gap-3.5 cursor-pointer min-w-0"
                 >
-                  <div className="flex items-start sm:items-center gap-3.5 min-w-0 flex-1">
+                  <div className="flex items-start gap-3.5 min-w-0 flex-1">
                     <PaymentMethodLogo provider={txn.paymentMethod} size="md" />
-                    <div className="space-y-1 min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs">
+                    <div className="space-y-1.5 min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
                         <span className="font-mono font-black text-slate-950 tabular-nums">
                           {txn.transactionNumber}
                         </span>
                         <span className="text-slate-300">·</span>
                         <span
-                          className={`font-black ${
+                          className={`font-black uppercase font-outfit ${
                             txn.paymentMethod === 'BKASH' ? 'text-[#E2136E]' : 'text-[#EA580C]'
                           }`}
                         >
-                          {txn.paymentMethod === 'BKASH' ? 'বিকাশ' : 'নগদ'}
+                          {txn.paymentMethod}
                         </span>
                         <span className="text-slate-300">·</span>
-                        <span className="font-mono font-bold text-slate-800 tabular-nums">
-                          গেটওয়ে TrxID: {txn.gatewayTrxId}
-                        </span>
-                        <span className="text-slate-300">·</span>
-                        <span className="font-mono text-slate-700 tabular-nums">
-                          নম্বর: {toBanglaDigits(txn.senderPhone)}
+                        <span className="font-mono font-bold text-slate-800 tabular-nums break-all">
+                          GATEWAY TRXID: {txn.gatewayTrxId}
                         </span>
                       </div>
 
-                      <div className="flex flex-wrap items-baseline gap-2.5">
+                      <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
                         <span className="text-lg sm:text-xl font-black text-slate-950 tabular-nums">
                           ৳ {toBanglaDigits(txn.amount)} টাকা
                         </span>
-                        <span className="text-xs sm:text-sm font-bold text-slate-700">
+                        <span className="text-xs sm:text-sm font-bold text-slate-800">
                           — {txn.donorName || 'শুভাকাঙ্ক্ষী'}
                         </span>
                         <span className="text-xs text-slate-500">
@@ -674,23 +1051,30 @@ export const DonationManagement: React.FC<DonationManagementProps> = ({
 
                       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px] text-slate-500">
                         <span className="font-mono tabular-nums">
-                          রেফারেন্স: {txn.referenceCode}
+                          SENDER: {toBanglaDigits(txn.senderPhone)}
+                        </span>
+                        <span className="text-slate-300">·</span>
+                        <span className="font-mono tabular-nums">
+                          REF: {txn.referenceCode}
                         </span>
                         {txn.completedAt > 0 && (
                           <>
                             <span className="text-slate-300">·</span>
-                            <span>সম্পন্নের সময়: {formatTransactionDateTimeBangla(txn.completedAt)}</span>
+                            <span>সময়: {formatTransactionDateTimeBangla(txn.completedAt)}</span>
                           </>
                         )}
                       </div>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2.5 shrink-0">
+                  <div className="flex items-center justify-between lg:justify-end gap-3 shrink-0 pt-2 lg:pt-0 border-t lg:border-t-0 border-slate-100">
                     <span className="text-xs font-black text-emerald-700">
                       {txn.verificationSource === 'AUTO_SMS_APP'
-                        ? 'সম্পন্ন (অটো এসএমএস)'
-                        : 'সম্পন্ন (ম্যানুয়াল)'}
+                        ? 'COMPLETED (AUTO SMS)'
+                        : 'COMPLETED (MANUAL)'}
+                    </span>
+                    <span className="px-3 py-1.5 rounded-xl bg-slate-100 text-slate-700 text-[11px] font-bold">
+                      রসিদ দেখুন
                     </span>
                   </div>
                 </div>
@@ -700,50 +1084,45 @@ export const DonationManagement: React.FC<DonationManagementProps> = ({
         </div>
       )}
 
-      {/* ================= TAB 2: BKASH / NAGAD & ANDROID SMS WEBHOOK CONFIG ================= */}
+      {/* ================= TAB 3: BKASH / NAGAD & ANDROID SMS WEBHOOK CONFIG ================= */}
       {activeTab === 'SETTINGS' && (
         <div className="space-y-6">
-          {configSavedMsg && (
-            <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-xs sm:text-sm font-bold text-emerald-800 flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span>{configSavedMsg}</span>
-            </div>
-          )}
-
           <form
             onSubmit={handleSaveConfig}
-            className="bg-white rounded-3xl border border-slate-200/90 p-6 sm:p-8 shadow-xs space-y-6"
+            className="bg-white rounded-3xl border border-slate-200/90 p-5 sm:p-8 shadow-xs space-y-6"
           >
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
-              <div>
-                <h2 className="text-lg sm:text-xl font-black text-slate-900">
-                  বিকাশ ও নগদ অ্যাকাউন্ট নম্বর কনফিগারেশন
+              <div className="min-w-0">
+                <h2 className="text-base sm:text-xl font-black text-slate-900">
+                  বিকাশ (BKASH) ও নগদ (NAGAD) নম্বর কনফিগারেশন
                 </h2>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  অনুদান পেজে প্রদর্শিত অফিসিয়াল বিকাশ ও নগদ নম্বর এবং বিবরণ নির্ধারণ করুন।
+                <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+                  অনুদান পেজে প্রদর্শিত অফিসিয়াল BKASH ও NAGAD নম্বর এবং অ্যাকাউন্টের ধরন নির্ধারণ করুন।
                 </p>
               </div>
               <button
                 type="submit"
                 disabled={savingConfig}
-                className="px-5 py-2.5 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 cursor-pointer self-start sm:self-auto disabled:opacity-50"
+                className="w-full sm:w-auto min-h-[44px] px-5 py-2.5 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 shrink-0"
               >
-                <Save className="w-4 h-4" />
+                <Save className="w-4 h-4 shrink-0" />
                 <span>{savingConfig ? 'সংরক্ষণ হচ্ছে...' : 'সেটিংস সংরক্ষণ করুন'}</span>
               </button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* bKash Config Box */}
-              <div className="p-5 rounded-2xl bg-pink-50/40 border border-[#E2136E]/20 space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              {/* BKASH Config Box */}
+              <div className="min-w-0 p-4 sm:p-5 rounded-2xl bg-pink-50/40 border border-[#E2136E]/20 space-y-4">
                 <div className="flex items-center gap-3">
                   <PaymentMethodLogo provider="BKASH" size="md" />
-                  <h3 className="text-sm sm:text-base font-black text-slate-900">বিকাশ সেটিংস</h3>
+                  <h3 className="text-sm sm:text-base font-black text-slate-900">
+                    বিকাশ সেটিংস (BKASH)
+                  </h3>
                 </div>
 
                 <div className="space-y-1.5">
                   <label className="block text-xs font-bold text-slate-700">
-                    বিকাশ মোবাইল নম্বর <span className="text-rose-500">*</span>
+                    বিকাশ মোবাইল নম্বর (BKASH NUMBER) <span className="text-rose-500">*</span>
                   </label>
                   <input
                     type="text"
@@ -751,39 +1130,33 @@ export const DonationManagement: React.FC<DonationManagementProps> = ({
                     value={config.bkashNumber}
                     onChange={(e) => setConfig({ ...config, bkashNumber: e.target.value })}
                     placeholder="017XXXXXXXX"
-                    className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-black font-mono text-slate-900 outline-none focus:border-[#E2136E]"
+                    className="w-full min-h-[44px] px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-black font-mono text-slate-900 outline-none focus:border-[#E2136E] tabular-nums"
                   />
                 </div>
 
-                <div className="space-y-1.5">
-                  <label className="block text-xs font-bold text-slate-700">অ্যাকাউন্টের ধরন</label>
-                  <select
-                    value={config.bkashAccountType}
-                    onChange={(e) =>
-                      setConfig({
-                        ...config,
-                        bkashAccountType: e.target.value as 'PERSONAL' | 'MERCHANT' | 'AGENT',
-                      })
-                    }
-                    className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm font-bold text-slate-800 outline-none focus:border-[#E2136E]"
-                  >
-                    <option value="PERSONAL">পার্সোনাল (সেন্ড মানি)</option>
-                    <option value="MERCHANT">মার্চেন্ট (মেক পেমেন্ট)</option>
-                    <option value="AGENT">এজেন্ট (ক্যাশ আউট)</option>
-                  </select>
-                </div>
+                <SelectTrigger
+                  id="bkash-account-type-trigger"
+                  label="অ্যাকাউন্টের ধরন (ACCOUNT TYPE)"
+                  required
+                  value={config.bkashAccountType}
+                  displayValue={ACCOUNT_TYPE_LABELS[config.bkashAccountType]}
+                  icon={CreditCard}
+                  onClick={() => setBkashTypeSheetOpen(true)}
+                />
               </div>
 
-              {/* Nagad Config Box */}
-              <div className="p-5 rounded-2xl bg-orange-50/40 border border-[#EA580C]/20 space-y-4">
+              {/* NAGAD Config Box */}
+              <div className="min-w-0 p-4 sm:p-5 rounded-2xl bg-orange-50/40 border border-[#EA580C]/20 space-y-4">
                 <div className="flex items-center gap-3">
                   <PaymentMethodLogo provider="NAGAD" size="md" />
-                  <h3 className="text-sm sm:text-base font-black text-slate-900">নগদ সেটিংস</h3>
+                  <h3 className="text-sm sm:text-base font-black text-slate-900">
+                    নগদ সেটিংস (NAGAD)
+                  </h3>
                 </div>
 
                 <div className="space-y-1.5">
                   <label className="block text-xs font-bold text-slate-700">
-                    নগদ মোবাইল নম্বর <span className="text-rose-500">*</span>
+                    নগদ মোবাইল নম্বর (NAGAD NUMBER) <span className="text-rose-500">*</span>
                   </label>
                   <input
                     type="text"
@@ -791,27 +1164,19 @@ export const DonationManagement: React.FC<DonationManagementProps> = ({
                     value={config.nagadNumber}
                     onChange={(e) => setConfig({ ...config, nagadNumber: e.target.value })}
                     placeholder="018XXXXXXXX"
-                    className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-black font-mono text-slate-900 outline-none focus:border-[#EA580C]"
+                    className="w-full min-h-[44px] px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-black font-mono text-slate-900 outline-none focus:border-[#EA580C] tabular-nums"
                   />
                 </div>
 
-                <div className="space-y-1.5">
-                  <label className="block text-xs font-bold text-slate-700">অ্যাকাউন্টের ধরন</label>
-                  <select
-                    value={config.nagadAccountType}
-                    onChange={(e) =>
-                      setConfig({
-                        ...config,
-                        nagadAccountType: e.target.value as 'PERSONAL' | 'MERCHANT' | 'AGENT',
-                      })
-                    }
-                    className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm font-bold text-slate-800 outline-none focus:border-[#EA580C]"
-                  >
-                    <option value="PERSONAL">পার্সোনাল (Send Money)</option>
-                    <option value="MERCHANT">মার্চেন্ট (Make Payment)</option>
-                    <option value="AGENT">এজেন্ট (Cash Out)</option>
-                  </select>
-                </div>
+                <SelectTrigger
+                  id="nagad-account-type-trigger"
+                  label="অ্যাকাউন্টের ধরন (ACCOUNT TYPE)"
+                  required
+                  value={config.nagadAccountType}
+                  displayValue={ACCOUNT_TYPE_LABELS[config.nagadAccountType]}
+                  icon={CreditCard}
+                  onClick={() => setNagadTypeSheetOpen(true)}
+                />
               </div>
             </div>
 
@@ -823,7 +1188,7 @@ export const DonationManagement: React.FC<DonationManagementProps> = ({
                   type="text"
                   value={config.donationTitle || ''}
                   onChange={(e) => setConfig({ ...config, donationTitle: e.target.value })}
-                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-900 outline-none focus:border-teal-700"
+                  className="w-full min-h-[44px] px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-900 outline-none focus:bg-white focus:border-teal-700"
                 />
               </div>
 
@@ -833,26 +1198,26 @@ export const DonationManagement: React.FC<DonationManagementProps> = ({
                   rows={2}
                   value={config.donationDescription || ''}
                   onChange={(e) => setConfig({ ...config, donationDescription: e.target.value })}
-                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-medium text-slate-800 outline-none focus:border-teal-700"
+                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-medium text-slate-800 outline-none focus:bg-white focus:border-teal-700"
                 />
               </div>
             </div>
 
-            {/* Webhook Secret Key */}
-            <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-3">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <KeyRound className="w-4 h-4 text-teal-700" />
-                  <label className="text-xs sm:text-sm font-black text-slate-900">
-                    অ্যান্ড্রয়েড SMS অ্যাপ ওয়েবহুক সিক্রেট কী (Webhook Secret Key)
+            {/* WEBHOOK SECRET KEY */}
+            <div className="p-4 sm:p-5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                <div className="flex items-center gap-2 min-w-0">
+                  <KeyRound className="w-4 h-4 text-teal-700 shrink-0" />
+                  <label className="text-xs sm:text-sm font-black text-slate-900 leading-snug">
+                    অ্যান্ড্রয়েড SMS অ্যাপ ওয়েবহুক সিক্রেট কী (WEBHOOK SECRET KEY)
                   </label>
                 </div>
                 <button
                   type="button"
                   onClick={handleGenerateSecret}
-                  className="px-3 py-1.5 rounded-lg bg-white hover:bg-slate-100 border border-slate-200 text-xs font-bold text-teal-800 cursor-pointer"
+                  className="w-full sm:w-auto min-h-[40px] px-3.5 py-2 rounded-xl bg-white hover:bg-slate-100 border border-slate-200 text-xs font-bold text-teal-800 cursor-pointer shrink-0"
                 >
-                  নতুন সিক্রেট তৈরি করুন
+                  নতুন SECRET KEY তৈরি করুন
                 </button>
               </div>
               <input
@@ -860,72 +1225,98 @@ export const DonationManagement: React.FC<DonationManagementProps> = ({
                 value={config.smsWebhookSecret || ''}
                 onChange={(e) => setConfig({ ...config, smsWebhookSecret: e.target.value })}
                 placeholder="ঐচ্ছিক সিক্রেট টোকেন (যেমন: DPIB_SMS_SECRET_2026)"
-                className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm font-mono font-bold text-slate-900 outline-none focus:border-teal-700"
+                className="w-full min-h-[44px] px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm font-mono font-bold text-slate-900 outline-none focus:border-teal-700"
               />
-              <p className="text-[11px] text-slate-500">
+              <p className="text-[11px] text-slate-500 leading-relaxed">
                 নিরাপত্তার জন্য আপনার অ্যান্ড্রয়েড SMS রিডিং অ্যাপ থেকে HTTP POST পাঠানোর সময় এই সিক্রেট কী-টি{' '}
-                <code className="font-mono text-slate-800">secret</code> ফিল্ডে পাঠাতে পারবেন।
+                <code className="font-mono font-bold text-slate-800">SECRET</code> ফিল্ডে পাঠাতে পারবেন।
               </p>
             </div>
           </form>
 
-          {/* Android SMS Reading App Integration Guide */}
-          <div className="bg-slate-900 text-white rounded-3xl p-6 sm:p-8 space-y-5 shadow-md">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-teal-500/20 border border-teal-400/30 flex items-center justify-center text-teal-300">
+          {/* Android SMS Reading App Integration Guide (Mobile Overflow-Safe) */}
+          <div className="bg-slate-900 text-white rounded-3xl p-5 sm:p-8 space-y-5 shadow-md overflow-hidden">
+            <div className="flex items-start sm:items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-teal-500/20 border border-teal-400/30 flex items-center justify-center text-teal-300 shrink-0">
                 <Smartphone className="w-5 h-5" />
               </div>
-              <div>
-                <h3 className="text-base sm:text-lg font-black">
-                  অ্যান্ড্রয়েড SMS রিডিং অ্যাপ সংযোগ গাইড (Auto-Verification API)
+              <div className="min-w-0">
+                <h3 className="text-base sm:text-lg font-black leading-snug">
+                  অ্যান্ড্রয়েড SMS রিডিং অ্যাপ সংযোগ গাইড (AUTO-VERIFICATION API)
                 </h3>
-                <p className="text-xs text-slate-400">
-                  আপনার তৈরি করা বা যেকোনো অ্যান্ড্রয়েড SMS ফরোয়ার্ডার অ্যাপ নিচের API এন্ডপয়েন্টে বিকাশ/নগদ SMS পাঠালেই স্বয়ংক্রিয়ভাবে ভেরিফাই হয়ে যাবে।
+                <p className="text-xs text-slate-400 mt-0.5 leading-relaxed">
+                  আপনার অ্যান্ড্রয়েড SMS FORWARDER অ্যাপ (ZEROGIC INC.) নিচের API এন্ডপয়েন্টে বিকাশ/নগদ SMS পাঠালেই স্বয়ংক্রিয়ভাবে ভেরিফাই হয়ে যাবে।
                 </p>
               </div>
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-2 min-w-0">
               <span className="text-[11px] font-bold uppercase tracking-wider text-teal-300 font-outfit block">
                 WEBHOOK ENDPOINT URL (HTTP POST)
               </span>
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                <code className="flex-1 px-4 py-3 rounded-xl bg-slate-950 border border-slate-800 font-mono text-xs sm:text-sm text-emerald-300 break-all">
-                  {webhookUrl}
-                </code>
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 min-w-0">
+                <div className="flex-1 min-w-0 px-3.5 py-3 rounded-xl bg-slate-950 border border-slate-800 overflow-x-auto">
+                  <code className="font-mono text-xs sm:text-sm text-emerald-300 whitespace-nowrap">
+                    {webhookUrl}
+                  </code>
+                </div>
                 <button
                   type="button"
-                  onClick={handleCopyWebhookUrl}
-                  className="px-4 py-3 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
+                  onClick={() =>
+                    copyToClipboard(
+                      webhookUrl,
+                      'WEBHOOK_URL',
+                      'WEBHOOK URL সফলভাবে কপি হয়েছে!'
+                    )
+                  }
+                  className="min-h-[44px] px-4 py-3 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
                 >
-                  {copiedWebhook ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                  <span>{copiedWebhook ? 'কপি হয়েছে' : 'URL কপি করুন'}</span>
+                  {copiedKey === 'WEBHOOK_URL' ? (
+                    <Check className="w-4 h-4" />
+                  ) : (
+                    <Copy className="w-4 h-4" />
+                  )}
+                  <span>{copiedKey === 'WEBHOOK_URL' ? 'COPIED' : 'URL কপি করুন'}</span>
                 </button>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 min-w-0">
+              <div className="min-w-0 p-4 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-2 overflow-hidden">
                 <span className="text-[11px] font-bold uppercase text-slate-400 font-outfit block">
                   JSON PAYLOAD FORMAT (APPLICATION/JSON)
                 </span>
-                <pre className="text-[11px] sm:text-xs font-mono text-slate-200 overflow-x-auto leading-relaxed">
+                <pre className="w-full max-w-full text-[11px] sm:text-xs font-mono text-slate-200 overflow-x-auto leading-relaxed">
 {`{
-  "sender": "bKash",
-  "message": "%SMS_BODY%",
-  "secret": "${config.smsWebhookSecret || 'YOUR_SECRET'}"
+  "SENDER": "BKASH",
+  "MESSAGE": "%SMS_BODY%",
+  "SECRET": "${config.smsWebhookSecret || 'YOUR_SECRET'}"
 }`}
                 </pre>
               </div>
 
-              <div className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-2 text-xs text-slate-300">
+              <div className="min-w-0 p-4 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-2 text-xs text-slate-300">
                 <span className="text-[11px] font-bold uppercase text-slate-400 font-outfit block">
                   স্বয়ংক্রিয় ম্যাচিং যেভাবে কাজ করে:
                 </span>
                 <ul className="space-y-1.5 text-[11px] leading-relaxed">
-                  <li>১. সার্ভার SMS থেকে স্বয়ংক্রিয়ভাবে <strong>bKash / Nagad</strong>, <strong>টাকার পরিমাণ</strong>, <strong>TrxID / TxnId</strong>, <strong>প্রেরকের নম্বর</strong> এবং <strong>Reference</strong> আলাদা করে।</li>
-                  <li>২. ডাটাবেসে থাকা অপেক্ষমাণ (PENDING) অনুদানের <strong>TrxID</strong> বা <strong>Reference</strong>-এর সাথে মিললে তাৎক্ষণিক <strong>VERIFIED</strong> করে দেয়।</li>
-                  <li>৩. ব্যবহারকারী পেমেন্ট করার আগেই যদি SMS চলে আসে, তবে ফর্ম সাবমিটের সাথে সাথেই অটো-ভেরিফাই হয়ে যাবে!</li>
+                  <li>
+                    ১. সার্ভার SMS থেকে স্বয়ংক্রিয়ভাবে{' '}
+                    <strong className="font-outfit uppercase">BKASH / NAGAD</strong>,{' '}
+                    <strong>টাকার পরিমাণ</strong>,{' '}
+                    <strong className="font-outfit uppercase">TRXID / TXNID</strong>,{' '}
+                    <strong>প্রেরকের নম্বর</strong> এবং{' '}
+                    <strong className="font-outfit uppercase">REFERENCE</strong> আলাদা করে।
+                  </li>
+                  <li>
+                    ২. ডাটাবেসে থাকা অপেক্ষমাণ (<strong className="uppercase">PENDING</strong>) অনুদানের{' '}
+                    <strong className="uppercase">TRXID</strong> বা{' '}
+                    <strong className="uppercase">REFERENCE</strong>-এর সাথে মিললে তাৎক্ষণিক{' '}
+                    <strong className="uppercase">VERIFIED</strong> করে দেয়।
+                  </li>
+                  <li>
+                    ৩. ব্যবহারকারী পেমেন্ট করার আগেই যদি SMS চলে আসে, তবে ফর্ম সাবমিটের সাথে সাথেই অটো-ভেরিফাই হয়ে যাবে!
+                  </li>
                 </ul>
               </div>
             </div>
@@ -933,88 +1324,55 @@ export const DonationManagement: React.FC<DonationManagementProps> = ({
         </div>
       )}
 
-      {/* ================= TAB 3: LIVE SMS SIMULATOR & INCOMING LOGS ================= */}
+      {/* ================= TAB 4: LIVE SMS SIMULATOR & INCOMING LOGS ================= */}
       {activeTab === 'SIMULATOR' && (
         <div className="space-y-6">
           {/* Interactive Webhook Tester */}
-          <div className="bg-white rounded-3xl border border-slate-200/90 p-6 sm:p-8 shadow-xs space-y-5">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
-              <div>
-                <h2 className="text-lg sm:text-xl font-black text-slate-900">
-                  অটোমেটিক SMS ভেরিফিকেশন লাইভ টেস্টার
-                </h2>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  অ্যান্ড্রয়েড অ্যাপ সংযুক্ত করার আগেই আসল বিকাশ/নগদ SMS টেক্সট দিয়ে অটো-ম্যাচিং পরীক্ষা করুন।
-                </p>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSimSender('bKash');
-                    setSimMessage(
-                      'You have received Tk 100.00 from 01712345678. Ref DPIB-4829. Fee Tk 0.00. Balance Tk 1500.00. TrxID BKH9A21M4P at 05/11/2026 14:30'
-                    );
-                  }}
-                  className="px-3 py-1.5 rounded-xl bg-pink-50 hover:bg-pink-100 text-[#E2136E] text-xs font-bold cursor-pointer"
-                >
-                  স্যাম্পল বিকাশ SMS
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSimSender('NAGAD');
-                    setSimMessage(
-                      'Money Received. Amount: Tk 50.00 Sender: 01812345678 Ref: DPIB-9012 TxnId: 72A8B9C1 Balance: Tk 2200.00'
-                    );
-                  }}
-                  className="px-3 py-1.5 rounded-xl bg-orange-50 hover:bg-orange-100 text-[#EA580C] text-xs font-bold cursor-pointer"
-                >
-                  স্যাম্পল নগদ SMS
-                </button>
-              </div>
+          <div className="bg-white rounded-3xl border border-slate-200/90 p-5 sm:p-8 shadow-xs space-y-5">
+            <div className="border-b border-slate-100 pb-4 space-y-1">
+              <h2 className="text-base sm:text-xl font-black text-slate-900">
+                অটোমেটিক SMS ভেরিফিকেশন লাইভ টেস্টার
+              </h2>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                অ্যান্ড্রয়েড অ্যাপ সংযুক্ত করার আগেই আসল বিকাশ (BKASH) বা নগদ (NAGAD) SMS টেক্সট দিয়ে অটো-ম্যাচিং পরীক্ষা করুন।
+              </p>
             </div>
 
-            {/* Quick 1-Click Fill from Latest Pending Donation */}
-            {pendingDonations.length > 0 && (
-              <div className="p-4 rounded-2xl bg-amber-50/80 border border-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="text-xs text-amber-950">
-                  <strong>টিপস:</strong> বর্তমানে <strong>{toBanglaDigits(pendingDonations.length)}টি</strong> অপেক্ষমাণ অনুদান রয়েছে (সর্বশেষ:{' '}
-                  <code className="font-mono font-bold">{pendingDonations[0].transactionId}</code> • ৳
-                  {toBanglaDigits(pendingDonations[0].amount)})।
-                </div>
-                <button
-                  type="button"
-                  onClick={() => handleFillSampleFromPending(pendingDonations[0])}
-                  className="px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold cursor-pointer shrink-0"
-                >
-                  এই পেন্ডিং অনুদানের SMS তৈরি করুন
-                </button>
-              </div>
-            )}
+            {/* Digital Action Sheet Quick Template / Pending Donation Picker */}
+            <SelectTrigger
+              id="sim-template-picker-trigger"
+              label={`দ্রুত SMS টেমপ্লেট বা পেন্ডিং অনুদান নির্বাচন (${toBanglaDigits(
+                pendingDonations.length
+              )}টি PENDING)`}
+              value={simTemplateKey}
+              displayValue={simTemplateDisplayLabel}
+              icon={Sparkles}
+              onClick={() => setSimTemplateSheetOpen(true)}
+            />
 
             <form onSubmit={handleRunSmsSimulation} className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-                <div className="space-y-1.5">
-                  <label className="block text-xs font-bold text-slate-700">SMS প্রেরক (Sender)</label>
-                  <select
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
+                <div className="md:col-span-4">
+                  <SelectTrigger
+                    id="sim-sender-trigger"
+                    label="SMS প্রেরক (SENDER)"
+                    required
                     value={simSender}
-                    onChange={(e) => setSimSender(e.target.value as 'bKash' | 'NAGAD')}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-900 outline-none"
-                  >
-                    <option value="bKash">bKash</option>
-                    <option value="NAGAD">NAGAD</option>
-                  </select>
+                    displayValue={simSender === 'BKASH' ? 'বিকাশ (BKASH)' : 'নগদ (NAGAD)'}
+                    icon={Smartphone}
+                    onClick={() => setSimSenderSheetOpen(true)}
+                  />
                 </div>
 
-                <div className="sm:col-span-3 space-y-1.5">
-                  <label className="block text-xs font-bold text-slate-700">ইনকামিং SMS টেক্সট</label>
+                <div className="md:col-span-8 space-y-1">
+                  <label className="block text-xs font-bold text-slate-700 uppercase">
+                    ইনকামিং SMS টেক্সট (SMS BODY)
+                  </label>
                   <input
                     type="text"
                     value={simMessage}
                     onChange={(e) => setSimMessage(e.target.value)}
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-mono text-slate-900 outline-none focus:bg-white focus:border-teal-700"
+                    className="w-full min-h-[44px] px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-mono text-slate-900 outline-none focus:bg-white focus:border-teal-700"
                   />
                 </div>
               </div>
@@ -1022,10 +1380,10 @@ export const DonationManagement: React.FC<DonationManagementProps> = ({
               <button
                 type="submit"
                 disabled={simRunning}
-                className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                className="w-full sm:w-auto min-h-[44px] px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
               >
-                <Play className="w-4 h-4" />
-                <span>{simRunning ? 'ওয়েবহুক প্রসেস হচ্ছে...' : 'ওয়েবহুক টেস্ট রান করুন'}</span>
+                <Play className="w-4 h-4 shrink-0" />
+                <span>{simRunning ? 'WEBHOOK প্রসেস হচ্ছে...' : 'WEBHOOK টেস্ট রান করুন'}</span>
               </button>
             </form>
 
@@ -1037,18 +1395,18 @@ export const DonationManagement: React.FC<DonationManagementProps> = ({
                     : 'bg-slate-50 border-slate-200 text-slate-800'
                 }`}
               >
-                <div className="font-black text-sm">
+                <div className="font-black text-sm leading-snug">
                   {simResult.matched
                     ? `অটো-ভেরিফিকেশন সফল! ম্যাচকৃত রেফারেন্স: ${simResult.matchedReferenceCode}`
-                    : 'SMS লগ সংরক্ষিত হয়েছে (বর্তমানে কোনো পেন্ডিং অনুদানের সাথে TrxID মেলেনি)'}
+                    : 'SMS লগ সংরক্ষিত হয়েছে (বর্তমানে কোনো PENDING অনুদানের সাথে TRXID মেলেনি)'}
                 </div>
                 {simResult.parsed && (
-                  <div className="font-mono text-[11px] flex flex-wrap gap-x-4 gap-y-1">
-                    <span>Provider: {simResult.parsed.provider}</span>
-                    <span>Amount: {simResult.parsed.parsedAmount ?? 'N/A'}</span>
-                    <span>TrxID: {simResult.parsed.parsedTrxId ?? 'N/A'}</span>
-                    <span>Sender: {simResult.parsed.parsedSenderPhone ?? 'N/A'}</span>
-                    <span>Ref: {simResult.parsed.parsedReference ?? 'N/A'}</span>
+                  <div className="font-mono text-[11px] flex flex-wrap gap-x-4 gap-y-1 uppercase">
+                    <span>PROVIDER: {simResult.parsed.provider}</span>
+                    <span>AMOUNT: {simResult.parsed.parsedAmount ?? 'N/A'}</span>
+                    <span>TRXID: {simResult.parsed.parsedTrxId ?? 'N/A'}</span>
+                    <span>SENDER: {simResult.parsed.parsedSenderPhone ?? 'N/A'}</span>
+                    <span>REF: {simResult.parsed.parsedReference ?? 'N/A'}</span>
                   </div>
                 )}
               </div>
@@ -1059,44 +1417,46 @@ export const DonationManagement: React.FC<DonationManagementProps> = ({
           <div className="bg-white rounded-3xl border border-slate-200/90 shadow-xs overflow-hidden">
             <div className="p-5 sm:p-6 border-b border-slate-200/80">
               <h3 className="text-base sm:text-lg font-black text-slate-900">
-                প্রাপ্ত ইনকামিং SMS লগ (Webhook History)
+                প্রাপ্ত ইনকামিং SMS লগ (WEBHOOK HISTORY)
               </h3>
-              <p className="text-xs text-slate-500 mt-0.5">
+              <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
                 অ্যান্ড্রয়েড অ্যাপ থেকে আসা প্রতিটি SMS এখানে পার্সিং তথ্যের সাথে সংরক্ষিত থাকে।
               </p>
             </div>
 
             {smsLogs.length === 0 ? (
               <div className="p-8 text-center text-xs sm:text-sm text-slate-500">
-                এখনো কোনো ইনকামিং SMS ওয়েবহুক রিসিভ হয়নি।
+                এখনো কোনো ইনকামিং SMS WEBHOOK রিসিভ হয়নি।
               </div>
             ) : (
               <div className="divide-y divide-slate-200/70">
                 {smsLogs.map((log) => (
-                  <div key={log.id} className="p-4 sm:p-5 space-y-1.5">
+                  <div key={log.id} className="p-4 sm:p-5 space-y-2 min-w-0">
                     <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-                      <div className="flex items-center gap-2 font-mono font-bold">
+                      <div className="flex flex-wrap items-center gap-2 font-mono font-bold min-w-0">
                         <PaymentMethodLogo
                           provider={log.provider === 'NAGAD' ? 'NAGAD' : 'BKASH'}
                           size="xs"
                         />
                         <span
-                          className={`font-bengali ${
+                          className={`uppercase font-outfit ${
                             log.provider === 'BKASH' ? 'text-[#E2136E]' : 'text-[#EA580C]'
                           }`}
                         >
-                          {log.provider === 'BKASH' ? 'বিকাশ' : 'নগদ'} ({log.senderAddress})
+                          {log.provider} ({String(log.senderAddress || '').toUpperCase()})
                         </span>
                         {log.parsedTrxId && (
                           <>
                             <span className="text-slate-300">·</span>
-                            <span className="text-slate-900">আইডি: {log.parsedTrxId}</span>
+                            <span className="text-slate-900 break-all">
+                              TRXID: {log.parsedTrxId}
+                            </span>
                           </>
                         )}
                         {log.parsedAmount && (
                           <>
                             <span className="text-slate-300">·</span>
-                            <span className="text-slate-900">
+                            <span className="text-slate-900 tabular-nums">
                               ৳{toBanglaDigits(log.parsedAmount)}
                             </span>
                           </>
@@ -1104,17 +1464,17 @@ export const DonationManagement: React.FC<DonationManagementProps> = ({
                       </div>
 
                       <span
-                        className={`font-bengali text-xs font-black ${
+                        className={`font-outfit uppercase text-xs font-black ${
                           log.matchStatus === 'MATCHED' ? 'text-emerald-700' : 'text-amber-700'
                         }`}
                       >
                         {log.matchStatus === 'MATCHED'
-                          ? `ম্যাচ সম্পন্ন (${log.matchedReferenceCode || ''})`
-                          : 'অপেক্ষমাণ লগ'}
+                          ? `MATCHED (${log.matchedReferenceCode || ''})`
+                          : 'PENDING LOG'}
                       </span>
                     </div>
 
-                    <p className="text-xs font-mono text-slate-600 bg-slate-50 p-2.5 rounded-xl border border-slate-200/60 break-words">
+                    <p className="text-xs font-mono text-slate-600 bg-slate-50 p-3 rounded-xl border border-slate-200/60 break-words leading-relaxed">
                       {log.rawMessage}
                     </p>
                   </div>
@@ -1124,6 +1484,448 @@ export const DonationManagement: React.FC<DonationManagementProps> = ({
           </div>
         </div>
       )}
+
+      {/* ================= DIGITAL ACTION SHEETS (SELECTORS & ACTIONS) ================= */}
+
+      {/* 1. Mobile Navigation Module Digital Action Sheet */}
+      <SelectBottomSheet
+        isOpen={mobileTabSheetOpen}
+        onClose={() => setMobileTabSheetOpen(false)}
+        title="অনুদান ও পেমেন্ট হাব মেনু"
+        subtitle="ব্যবস্থাপনা সেকশন নির্বাচন করুন"
+        options={tabSheetOptions}
+        selectedValue={activeTab}
+        onSelect={(val) => setActiveTab(val as AdminDonationTab)}
+        searchable={false}
+      />
+
+      {/* 2. Donation Status Filter Digital Action Sheet */}
+      <SelectBottomSheet
+        isOpen={statusFilterSheetOpen}
+        onClose={() => setStatusFilterSheetOpen(false)}
+        title="অনুদান স্ট্যাটাস ফিল্টার (STATUS)"
+        subtitle="ফিল্টার করতে একটি স্ট্যাটাস নির্বাচন করুন"
+        options={statusFilterOptions}
+        selectedValue={statusFilter}
+        onSelect={(val) => setStatusFilter(val as 'ALL' | 'PENDING' | 'VERIFIED' | 'REJECTED')}
+        searchable={false}
+      />
+
+      {/* 3. Completed Transactions Provider Filter Digital Action Sheet */}
+      <SelectBottomSheet
+        isOpen={txnProviderSheetOpen}
+        onClose={() => setTxnProviderSheetOpen(false)}
+        title="পেমেন্ট মাধ্যম নির্বাচন (PROVIDER)"
+        subtitle="BKASH বা NAGAD অনুযায়ী লেনদেন ফিল্টার করুন"
+        options={txnProviderOptions}
+        selectedValue={txnProviderFilter}
+        onSelect={(val) => setTxnProviderFilter(val as 'ALL' | 'BKASH' | 'NAGAD')}
+        searchable={false}
+      />
+
+      {/* 4. BKASH Account Type Digital Action Sheet */}
+      <SelectBottomSheet
+        isOpen={bkashTypeSheetOpen}
+        onClose={() => setBkashTypeSheetOpen(false)}
+        title="বিকাশ অ্যাকাউন্টের ধরন (BKASH TYPE)"
+        subtitle="অনুদান গ্রহণের অ্যাকাউন্ট ক্যাটাগরি নির্বাচন করুন"
+        options={ACCOUNT_TYPE_OPTIONS}
+        selectedValue={config.bkashAccountType}
+        onSelect={(val) =>
+          setConfig((prev) => ({
+            ...prev,
+            bkashAccountType: val as 'PERSONAL' | 'MERCHANT' | 'AGENT',
+          }))
+        }
+        searchable={false}
+      />
+
+      {/* 5. NAGAD Account Type Digital Action Sheet */}
+      <SelectBottomSheet
+        isOpen={nagadTypeSheetOpen}
+        onClose={() => setNagadTypeSheetOpen(false)}
+        title="নগদ অ্যাকাউন্টের ধরন (NAGAD TYPE)"
+        subtitle="অনুদান গ্রহণের অ্যাকাউন্ট ক্যাটাগরি নির্বাচন করুন"
+        options={ACCOUNT_TYPE_OPTIONS}
+        selectedValue={config.nagadAccountType}
+        onSelect={(val) =>
+          setConfig((prev) => ({
+            ...prev,
+            nagadAccountType: val as 'PERSONAL' | 'MERCHANT' | 'AGENT',
+          }))
+        }
+        searchable={false}
+      />
+
+      {/* 6. SMS Simulator Sender Digital Action Sheet */}
+      <SelectBottomSheet
+        isOpen={simSenderSheetOpen}
+        onClose={() => setSimSenderSheetOpen(false)}
+        title="SMS প্রেরক মাধ্যম (SENDER)"
+        subtitle="কোন গেটওয়ের SMS টেস্ট করতে চান তা বাছাই করুন"
+        options={simSenderOptions}
+        selectedValue={simSender}
+        onSelect={(val) => setSimSender(val as 'BKASH' | 'NAGAD')}
+        searchable={false}
+      />
+
+      {/* 7. SMS Simulator Quick Template & Pending Donation Digital Action Sheet */}
+      <SelectBottomSheet
+        isOpen={simTemplateSheetOpen}
+        onClose={() => setSimTemplateSheetOpen(false)}
+        title="SMS টেমপ্লেট ও PENDING অনুদান"
+        subtitle="অটো-ফিল করতে স্যাম্পল বা অপেক্ষমাণ অনুদান নির্বাচন করুন"
+        options={simTemplateOptions}
+        selectedValue={simTemplateKey}
+        onSelect={handleSelectSimulatorTemplate}
+        searchable={simTemplateOptions.length > 5}
+      />
+
+      {/* 8. Donation Detail & Status Action Digital BottomSheet */}
+      <BottomSheet
+        isOpen={Boolean(selectedDonationSheet)}
+        onClose={() => setSelectedDonationSheet(null)}
+        title="অনুদান যাচাই ও ব্যবস্থাপনা (ACTION SHEET)"
+        subtitle={
+          selectedDonationSheet
+            ? `REF: ${selectedDonationSheet.referenceCode} · TRXID: ${selectedDonationSheet.transactionId}`
+            : undefined
+        }
+      >
+        {selectedDonationSheet && (
+          <div className="space-y-5 pb-3">
+            {/* Highlight Banner */}
+            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/90 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <PaymentMethodLogo provider={selectedDonationSheet.paymentMethod} size="md" />
+                <div>
+                  <div className="text-[11px] font-black uppercase font-outfit text-slate-500">
+                    {selectedDonationSheet.paymentMethod} PAYMENT REQUEST
+                  </div>
+                  <div className="text-xl sm:text-2xl font-black text-slate-950 tabular-nums">
+                    ৳ {toBanglaDigits(selectedDonationSheet.amount)} টাকা
+                  </div>
+                </div>
+              </div>
+
+              <span
+                className={`px-3 py-1.5 rounded-xl text-xs font-black uppercase border ${
+                  selectedDonationSheet.status === 'VERIFIED'
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                    : selectedDonationSheet.status === 'REJECTED'
+                    ? 'bg-rose-50 text-rose-700 border-rose-200'
+                    : 'bg-amber-50 text-amber-700 border-amber-200'
+                }`}
+              >
+                {selectedDonationSheet.status}
+              </span>
+            </div>
+
+            {/* Detail Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+              <div className="p-3.5 rounded-2xl bg-white border border-slate-200/80 space-y-1">
+                <div className="text-[11px] font-bold text-slate-400 uppercase flex items-center gap-1.5">
+                  <User className="w-3.5 h-3.5" />
+                  <span>দাতার নাম (DONOR)</span>
+                </div>
+                <div className="font-bold text-slate-900 text-sm">
+                  {selectedDonationSheet.donorName || 'শুভাকাঙ্ক্ষী'}
+                </div>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-white border border-slate-200/80 flex items-center justify-between gap-2">
+                <div className="min-w-0 space-y-1">
+                  <div className="text-[11px] font-bold text-slate-400 uppercase flex items-center gap-1.5">
+                    <Phone className="w-3.5 h-3.5" />
+                    <span>প্রেরকের নম্বর (SENDER)</span>
+                  </div>
+                  <div className="font-mono font-bold text-slate-900 text-sm tabular-nums truncate">
+                    {toBanglaDigits(selectedDonationSheet.senderPhone)}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    copyToClipboard(
+                      selectedDonationSheet.senderPhone,
+                      'SHEET_PHONE',
+                      'প্রেরকের মোবাইল নম্বর কপি হয়েছে!'
+                    )
+                  }
+                  className="min-h-[38px] px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-black uppercase cursor-pointer shrink-0"
+                >
+                  {copiedKey === 'SHEET_PHONE' ? 'COPIED' : 'COPY'}
+                </button>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-white border border-slate-200/80 flex items-center justify-between gap-2">
+                <div className="min-w-0 space-y-1">
+                  <div className="text-[11px] font-bold text-slate-400 uppercase flex items-center gap-1.5">
+                    <Hash className="w-3.5 h-3.5" />
+                    <span>ট্রানজেকশন আইডি (TRXID)</span>
+                  </div>
+                  <div className="font-mono font-black text-slate-900 text-sm tabular-nums break-all">
+                    {selectedDonationSheet.transactionId}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    copyToClipboard(
+                      selectedDonationSheet.transactionId,
+                      'SHEET_TRXID',
+                      'TRXID কপি হয়েছে!'
+                    )
+                  }
+                  className="min-h-[38px] px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-black uppercase cursor-pointer shrink-0"
+                >
+                  {copiedKey === 'SHEET_TRXID' ? 'COPIED' : 'COPY'}
+                </button>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-white border border-slate-200/80 space-y-1">
+                <div className="text-[11px] font-bold text-slate-400 uppercase flex items-center gap-1.5">
+                  <FileText className="w-3.5 h-3.5" />
+                  <span>অনুদানের খাত (PURPOSE)</span>
+                </div>
+                <div className="font-bold text-slate-900">
+                  {getPurposeLabel(selectedDonationSheet.purpose)}
+                </div>
+              </div>
+            </div>
+
+            {selectedDonationSheet.note && (
+              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 text-xs text-slate-700 break-words">
+                <span className="font-bold block text-slate-500 mb-0.5">মন্তব্য (NOTE):</span>
+                {selectedDonationSheet.note}
+              </div>
+            )}
+
+            {selectedDonationSheet.matchedSmsText && (
+              <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-xs font-mono text-emerald-950 break-words leading-relaxed">
+                <span className="font-black uppercase block text-emerald-700 mb-1">
+                  AUTO-MATCHED SMS PAYLOAD:
+                </span>
+                {selectedDonationSheet.matchedSmsText}
+              </div>
+            )}
+
+            {/* Digital Action Controls */}
+            <div className="space-y-2.5 pt-2 border-t border-slate-200/80">
+              <div className="text-[11px] font-black uppercase text-slate-400 tracking-wider">
+                অ্যাকশন নির্বাচন করুন (SELECT ACTION)
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {selectedDonationSheet.status !== 'VERIFIED' && (
+                  <button
+                    type="button"
+                    disabled={processingId === selectedDonationSheet.id}
+                    onClick={() => handleManualStatusUpdate(selectedDonationSheet.id, 'VERIFIED')}
+                    className="w-full min-h-[48px] px-4 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-bold flex items-center justify-center gap-2 cursor-pointer transition-all disabled:opacity-50"
+                  >
+                    <CheckCircle2 className="w-4 h-4 shrink-0" />
+                    <span>অনুমোদন করুন (VERIFY)</span>
+                  </button>
+                )}
+
+                {selectedDonationSheet.status !== 'PENDING' && (
+                  <button
+                    type="button"
+                    disabled={processingId === selectedDonationSheet.id}
+                    onClick={() => handleManualStatusUpdate(selectedDonationSheet.id, 'PENDING')}
+                    className="w-full min-h-[48px] px-4 py-3 rounded-2xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-xs sm:text-sm font-bold flex items-center justify-center gap-2 cursor-pointer transition-all disabled:opacity-50"
+                  >
+                    <Clock className="w-4 h-4 shrink-0" />
+                    <span>অপেক্ষমাণ করুন (PENDING)</span>
+                  </button>
+                )}
+
+                {selectedDonationSheet.status !== 'REJECTED' && (
+                  <button
+                    type="button"
+                    disabled={processingId === selectedDonationSheet.id}
+                    onClick={() => handleManualStatusUpdate(selectedDonationSheet.id, 'REJECTED')}
+                    className="w-full min-h-[48px] px-4 py-3 rounded-2xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs sm:text-sm font-bold flex items-center justify-center gap-2 cursor-pointer transition-all disabled:opacity-50"
+                  >
+                    <XCircle className="w-4 h-4 shrink-0" />
+                    <span>বাতিল করুন (REJECT)</span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  disabled={processingId === selectedDonationSheet.id}
+                  onClick={() => setDeleteConfirmDonation(selectedDonationSheet)}
+                  className="w-full min-h-[48px] px-4 py-3 rounded-2xl bg-slate-100 hover:bg-rose-600 text-slate-700 hover:text-white border border-slate-200 text-xs sm:text-sm font-bold flex items-center justify-center gap-2 cursor-pointer transition-all disabled:opacity-50"
+                >
+                  <Trash2 className="w-4 h-4 shrink-0" />
+                  <span>রেকর্ড মুছে ফেলুন (DELETE)</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </BottomSheet>
+
+      {/* 9. Completed Transaction Digital Receipt Sheet */}
+      <BottomSheet
+        isOpen={Boolean(selectedTxnSheet)}
+        onClose={() => setSelectedTxnSheet(null)}
+        title="সম্পন্ন লেনদেন ডিজিটাল রসিদ (TXN RECEIPT)"
+        subtitle={selectedTxnSheet ? selectedTxnSheet.transactionNumber : undefined}
+      >
+        {selectedTxnSheet && (
+          <div className="space-y-4 pb-3">
+            <div className="p-4 rounded-2xl bg-emerald-50/70 border border-emerald-200 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <PaymentMethodLogo provider={selectedTxnSheet.paymentMethod} size="md" />
+                <div>
+                  <div className="text-[11px] font-black uppercase font-outfit text-emerald-700">
+                    {selectedTxnSheet.paymentMethod} COMPLETED TXN
+                  </div>
+                  <div className="text-2xl font-black text-slate-950 tabular-nums">
+                    ৳ {toBanglaDigits(selectedTxnSheet.amount)} টাকা
+                  </div>
+                </div>
+              </div>
+              <span className="px-3 py-1.5 rounded-xl bg-emerald-600 text-white text-xs font-black uppercase">
+                SUCCESS
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+              <div className="p-3.5 rounded-2xl bg-white border border-slate-200 flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <span className="text-[11px] font-bold text-slate-400 uppercase block">
+                    TXN NUMBER
+                  </span>
+                  <span className="font-mono font-black text-slate-950 text-sm tabular-nums break-all">
+                    {selectedTxnSheet.transactionNumber}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    copyToClipboard(
+                      selectedTxnSheet.transactionNumber,
+                      'TXN_NUM',
+                      'TXN নম্বর কপি হয়েছে!'
+                    )
+                  }
+                  className="min-h-[38px] px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-black uppercase cursor-pointer shrink-0"
+                >
+                  {copiedKey === 'TXN_NUM' ? 'COPIED' : 'COPY'}
+                </button>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-white border border-slate-200 flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <span className="text-[11px] font-bold text-slate-400 uppercase block">
+                    GATEWAY TRXID
+                  </span>
+                  <span className="font-mono font-black text-slate-950 text-sm tabular-nums break-all">
+                    {selectedTxnSheet.gatewayTrxId}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    copyToClipboard(
+                      selectedTxnSheet.gatewayTrxId,
+                      'TXN_GW',
+                      'GATEWAY TRXID কপি হয়েছে!'
+                    )
+                  }
+                  className="min-h-[38px] px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-black uppercase cursor-pointer shrink-0"
+                >
+                  {copiedKey === 'TXN_GW' ? 'COPIED' : 'COPY'}
+                </button>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-white border border-slate-200">
+                <span className="text-[11px] font-bold text-slate-400 uppercase block">
+                  দাতা ও প্রেরকের নম্বর (DONOR & SENDER)
+                </span>
+                <span className="font-bold text-slate-900 block mt-0.5">
+                  {selectedTxnSheet.donorName || 'শুভাকাঙ্ক্ষী'}
+                </span>
+                <span className="font-mono text-slate-600 tabular-nums">
+                  {toBanglaDigits(selectedTxnSheet.senderPhone)}
+                </span>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-white border border-slate-200">
+                <span className="text-[11px] font-bold text-slate-400 uppercase flex items-center gap-1">
+                  <Calendar className="w-3.5 h-3.5" />
+                  <span>সম্পন্নের সময় ও খাত</span>
+                </span>
+                <span className="font-bold text-slate-900 block mt-0.5">
+                  {getPurposeLabel(selectedTxnSheet.purpose)}
+                </span>
+                <span className="text-slate-600 block">
+                  {selectedTxnSheet.completedAt > 0
+                    ? formatTransactionDateTimeBangla(selectedTxnSheet.completedAt)
+                    : 'N/A'}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+      </BottomSheet>
+
+      {/* 10. Delete Confirmation Digital Action Sheet (Replaces window.confirm) */}
+      <BottomSheet
+        isOpen={Boolean(deleteConfirmDonation)}
+        onClose={() => setDeleteConfirmDonation(null)}
+        title="অনুদান রেকর্ড মুছে ফেলবেন?"
+        subtitle={
+          deleteConfirmDonation
+            ? `REF: ${deleteConfirmDonation.referenceCode} • ৳ ${toBanglaDigits(
+                deleteConfirmDonation.amount
+              )}`
+            : undefined
+        }
+        compact={true}
+        zIndex="z-[10002]"
+      >
+        {deleteConfirmDonation && (
+          <div className="space-y-4 pb-2">
+            <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+              <div className="text-xs sm:text-sm text-rose-950 leading-relaxed">
+                আপনি কি নিশ্চিতভাবে{' '}
+                <strong className="font-mono">{deleteConfirmDonation.referenceCode}</strong> (
+                <strong>{deleteConfirmDonation.donorName || 'শুভাকাঙ্ক্ষী'}</strong> — ৳{' '}
+                {toBanglaDigits(deleteConfirmDonation.amount)}) রেকর্ডটি স্থায়ীভাবে মুছে ফেলতে চান? এই কাজটি আর ফিরিয়ে আনা যাবে না।
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmDonation(null)}
+                className="min-h-[48px] px-4 py-3 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs sm:text-sm font-bold cursor-pointer"
+              >
+                বাতিল করুন
+              </button>
+              <button
+                type="button"
+                disabled={processingId === deleteConfirmDonation.id}
+                onClick={handleConfirmDeleteRecord}
+                className="min-h-[48px] px-4 py-3 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                <Trash2 className="w-4 h-4 shrink-0" />
+                <span>
+                  {processingId === deleteConfirmDonation.id
+                    ? 'মুছে ফেলা হচ্ছে...'
+                    : 'হ্যাঁ, মুছে ফেলুন'}
+                </span>
+              </button>
+            </div>
+          </div>
+        )}
+      </BottomSheet>
     </div>
   );
 };
