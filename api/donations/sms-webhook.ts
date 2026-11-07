@@ -485,17 +485,24 @@ export default async function handler(req: any, res: any) {
       senderCandidates[0] ||
       'bKash';
 
-    const authHeader = String(headers.authorization || headers.Authorization || '');
+    const authHeader = String(headers.authorization || headers.Authorization || '').trim();
+    const cleanAuthToken = authHeader.replace(/^Bearer\s+/i, '').trim();
     const providedSecret = String(
       body.secret ||
         body.SECRET ||
         body.apiKey ||
+        body.APIKEY ||
+        body.api_key ||
         body.webhookSecret ||
         nested.secret ||
+        nested.apiKey ||
         q.secret ||
         headers['x-webhook-secret'] ||
         headers['X-Webhook-Secret'] ||
-        (authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '')
+        headers['x-api-key'] ||
+        headers['X-Api-Key'] ||
+        headers['api-key'] ||
+        cleanAuthToken
     ).trim();
 
     const isAdminSimulation = Boolean(body.adminSimulation);

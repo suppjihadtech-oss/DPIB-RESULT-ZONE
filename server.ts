@@ -756,9 +756,10 @@ app.post('/api/donations/sms-webhook', async (req, res) => {
         nested.secret ||
         q.secret ||
         req.headers['x-webhook-secret'] ||
-        (typeof req.headers.authorization === 'string' &&
-        req.headers.authorization.startsWith('Bearer ')
-          ? req.headers.authorization.slice(7)
+        req.headers['x-api-key'] ||
+        req.headers['api-key'] ||
+        (typeof req.headers.authorization === 'string'
+          ? req.headers.authorization.replace(/^Bearer\s+/i, '').trim()
           : '')
     ).trim();
     const isAdminSimulation = Boolean(body.adminSimulation);

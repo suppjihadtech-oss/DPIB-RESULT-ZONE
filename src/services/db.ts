@@ -694,13 +694,17 @@ export async function getSystemSettings(): Promise<SystemSettings> {
           enabled: data.donationConfig?.enabled ?? true,
           bkashNumber: data.donationConfig?.bkashNumber || '01700000000',
           bkashAccountType: data.donationConfig?.bkashAccountType || 'PERSONAL',
+          bkashQrImageUrl: data.donationConfig?.bkashQrImageUrl || '',
           nagadNumber: data.donationConfig?.nagadNumber || '01800000000',
           nagadAccountType: data.donationConfig?.nagadAccountType || 'PERSONAL',
+          nagadQrImageUrl: data.donationConfig?.nagadQrImageUrl || '',
+          banglaQrImageUrl: data.donationConfig?.banglaQrImageUrl || '',
           smsWebhookSecret: data.donationConfig?.smsWebhookSecret || '',
           donationTitle: data.donationConfig?.donationTitle || 'DPIB RESULT ZONE ও মানবিক কল্যাণে সহায়তা করুন',
           donationDescription:
             data.donationConfig?.donationDescription ||
             'আপনার সামান্য অনুদান (১০ টাকা থেকে শুরু করে যেকোনো পরিমাণ) এই ডিজিটাল ফলাফল প্ল্যাটফর্মের উন্নয়ন, সার্ভার রক্ষণাবেক্ষণ এবং অসহায় ও মেধাবী শিক্ষার্থীদের কল্যাণমূলক কাজে ব্যয় করা হবে।',
+          ...(data.donationConfig || {}),
         },
       };
     }
@@ -722,14 +726,126 @@ export async function getSystemSettings(): Promise<SystemSettings> {
       enabled: true,
       bkashNumber: '01700000000',
       bkashAccountType: 'PERSONAL',
+      bkashQrImageUrl: '',
       nagadNumber: '01800000000',
       nagadAccountType: 'PERSONAL',
+      nagadQrImageUrl: '',
+      banglaQrImageUrl: '',
       smsWebhookSecret: '',
       donationTitle: 'DPIB RESULT ZONE ও মানবিক কল্যাণে সহায়তা করুন',
       donationDescription:
         'আপনার সামান্য অনুদান (১০ টাকা থেকে শুরু করে যেকোনো পরিমাণ) এই ডিজিটাল ফলাফল প্ল্যাটফর্মের উন্নয়ন, সার্ভার রক্ষণাবেক্ষণ এবং অসহায় ও মেধাবী শিক্ষার্থীদের কল্যাণমূলক কাজে ব্যয় করা হবে।',
     },
   };
+}
+
+/**
+ * Real-time listener for System Settings in Firestore.
+ * Automatically keeps Admin and Public panels in instant sync.
+ */
+export function subscribeSystemSettings(
+  onChanged: (settings: SystemSettings) => void,
+  onError?: (err: Error) => void
+): Unsubscribe {
+  const docRef = doc(db, COLLECTIONS.SETTINGS, 'general');
+  return onSnapshot(
+    docRef,
+    (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        let passPct = Number(data.passMarkPercentage);
+        if (isNaN(passPct) || passPct < 1 || passPct > 100) {
+          passPct = 40;
+        }
+        const parsedSettings: SystemSettings = {
+          instituteName: data.instituteName || 'দক্ষিণবঙ্গ পলিটেকনিক ইনস্টিটিউট',
+          portalTitle: data.portalTitle || 'DPIB RESULT ZONE',
+          tagline: data.tagline || 'বীরশ্রেষ্ঠ মোস্তফা কামাল বাস স্ট্যান্ড সংলগ্ন, ভোলা সদর, ভোলা',
+          logoUrl: data.logoUrl || 'https://i.postimg.cc/mgyW32Y2/Firefly-Remove-Background.png',
+          contactEmail: data.contactEmail || undefined,
+          contactPhone: data.contactPhone || undefined,
+          noticeMarquee: data.noticeMarquee || undefined,
+          gradingRules: data.gradingRules || DEFAULT_GRADING_RULES,
+          departments: data.departments || DEFAULT_DEPARTMENTS,
+          examTypes: data.examTypes || DEFAULT_EXAM_TYPES,
+          shifts: data.shifts && data.shifts.length > 0 ? data.shifts : DEFAULT_SHIFTS,
+          passMarkPercentage: passPct,
+          donationConfig: {
+            enabled: data.donationConfig?.enabled ?? true,
+            bkashNumber: data.donationConfig?.bkashNumber || '01700000000',
+            bkashAccountType: data.donationConfig?.bkashAccountType || 'PERSONAL',
+            bkashQrImageUrl: data.donationConfig?.bkashQrImageUrl || '',
+            nagadNumber: data.donationConfig?.nagadNumber || '01800000000',
+            nagadAccountType: data.donationConfig?.nagadAccountType || 'PERSONAL',
+            nagadQrImageUrl: data.donationConfig?.nagadQrImageUrl || '',
+            banglaQrImageUrl: data.donationConfig?.banglaQrImageUrl || '',
+            smsWebhookSecret: data.donationConfig?.smsWebhookSecret || '',
+            donationTitle: data.donationConfig?.donationTitle || 'DPIB RESULT ZONE ও মানবিক কল্যাণে সহায়তা করুন',
+            donationDescription:
+              data.donationConfig?.donationDescription ||
+              'আপনার সামান্য অনুদান (১০ টাকা থেকে শুরু করে যেকোনো পরিমাণ) এই ডিজিটাল ফলাফল প্ল্যাটফর্মের উন্নয়ন, সার্ভার রক্ষণাবেক্ষণ এবং অসহায় ও মেধাবী শিক্ষার্থীদের কল্যাণমূলক কাজে ব্যয় করা হবে।',
+            ...(data.donationConfig || {}),
+          },
+        };
+        try {
+          localStorage.setItem('dpib_cached_system_settings', JSON.stringify(parsedSettings));
+        } catch {}
+        onChanged(parsedSettings);
+      }
+    },
+    (err) => {
+      console.warn('System settings subscription warning:', err);
+      if (onError) onError(err);
+    }
+  );
+}
+
+/**
+ * Client-side Canvas Image Compressor specifically optimized for QR Codes.
+ * Scales large phone photos / screenshots down to a lightweight 450x450 JPEG (~25KB)
+ * so it easily stays well within Firestore document limits and saves instantly.
+ */
+export async function compressQrImageFile(
+  file: File,
+  maxDimension = 450,
+  quality = 0.85
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+        if (width > maxDimension || height > maxDimension) {
+          if (width > height) {
+            height = Math.round((height * maxDimension) / width);
+            width = maxDimension;
+          } else {
+            width = Math.round((width * maxDimension) / height);
+            height = maxDimension;
+          }
+        }
+        canvas.width = Math.max(100, width);
+        canvas.height = Math.max(100, height);
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(e.target?.result as string);
+          return;
+        }
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        const compressedBase64 = canvas.toDataURL('image/jpeg', quality);
+        resolve(compressedBase64);
+      };
+      img.onerror = () => reject(new Error('ইমেজ ফাইলটি পড়তে সমস্যা হয়েছে।'));
+      img.src = e.target?.result as string;
+    };
+    reader.onerror = () => reject(new Error('ফাইল রিড করা সম্ভব হয়নি।'));
+    reader.readAsDataURL(file);
+  });
 }
 
 export async function saveSystemSettings(settings: Partial<SystemSettings>): Promise<void> {

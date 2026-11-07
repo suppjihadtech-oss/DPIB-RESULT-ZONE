@@ -12,6 +12,7 @@ import {
   searchAllPublicResults,
   testConnection,
   DEFAULT_DEPARTMENTS,
+  subscribeSystemSettings,
 } from './services/db';
 import {
   getCurrentApplicantSession,
@@ -348,6 +349,16 @@ export function App() {
     testConnection();
     loadPortalData();
 
+    // Real-time listener for System Settings so QR codes, numbers & configs sync instantly across admin & user
+    const unsubscribeSettings = subscribeSystemSettings(
+      (liveSettings) => {
+        setSettings(liveSettings);
+      },
+      (err) => {
+        console.warn('Live settings sync warning:', err);
+      }
+    );
+
     // Subscribe to realtime published events so countdowns & user panel update instantly
     const unsubscribeEvents = subscribeToPublishedEvents(
       (realtimeEvents) => {
@@ -359,6 +370,7 @@ export function App() {
     );
 
     return () => {
+      unsubscribeSettings();
       unsubscribeEvents();
     };
   }, [loadPortalData]);

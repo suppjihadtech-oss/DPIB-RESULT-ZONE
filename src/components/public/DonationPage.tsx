@@ -55,6 +55,7 @@ import {
   subscribeDonationById,
   subscribeTransactions,
 } from '../../services/donationService';
+import { subscribeSystemSettings } from '../../services/db';
 import { toBanglaDigits, toEnglishDigits } from '../../utils/bangla';
 import { DpibBrandTitle } from '../common/DpibBrandTitle';
 import { PaymentMethodLogo } from '../common/PaymentMethodLogo';
@@ -124,9 +125,36 @@ export const DonationPage: React.FC<DonationPageProps> = ({
   onBack,
   initialMode = 'WIZARD',
 }) => {
+  const [liveSettings, setLiveSettings] = useState<SystemSettings | null>(() => {
+    try {
+      const cached = localStorage.getItem('dpib_cached_system_settings');
+      if (cached) return JSON.parse(cached);
+    } catch {}
+    return settings;
+  });
+
+  // Subscribe to real-time System Settings so QR codes & numbers sync instantly across Admin & Public
+  useEffect(() => {
+    if (settings) {
+      setLiveSettings(settings);
+    }
+  }, [settings]);
+
+  useEffect(() => {
+    const unsub = subscribeSystemSettings(
+      (sys) => {
+        setLiveSettings(sys);
+      },
+      (err) => {
+        console.warn('DonationPage live settings sync warning:', err);
+      }
+    );
+    return () => unsub();
+  }, []);
+
   const config: DonationConfig = {
     ...DEFAULT_DONATION_CONFIG,
-    ...(settings?.donationConfig || {}),
+    ...(liveSettings?.donationConfig || settings?.donationConfig || {}),
   };
 
   const initialDraft = React.useMemo(() => loadDonationDraft(), []);
@@ -176,6 +204,7 @@ export const DonationPage: React.FC<DonationPageProps> = ({
   const [selectedQrType, setSelectedQrType] = useState<'AUTO' | 'BANGLA_QR'>(() => {
     return initialDraft?.selectedQrType || 'AUTO';
   });
+  const [isQrZoomed, setIsQrZoomed] = useState<boolean>(false);
 
   // UI Feedback & 15-Second Verification Modal States
   const [copiedNumber, setCopiedNumber] = useState(false);
@@ -1453,35 +1482,57 @@ export const DonationPage: React.FC<DonationPageProps> = ({
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2.5">
-                    <button
-                      type="button"
-                      id="btn-channel-number"
-                      onClick={() => setPaymentChannel('NUMBER')}
-                      className={`min-h-[50px] p-3 rounded-2xl border-2 text-xs sm:text-sm font-black flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                        paymentChannel === 'NUMBER'
-                          ? 'border-slate-900 bg-slate-900 text-white shadow-xs'
-                          : 'border-slate-200 bg-slate-50/70 text-slate-700 hover:bg-slate-100'
-                      }`}
-                    >
-                      <Phone className="w-4 h-4 shrink-0" />
-                      <span>নম্বর কপি করে পেমেন্ট</span>
-                    </button>
+                  {(() => {
+                    const hasMethodQr = Boolean(
+                      (paymentMethod === 'BKASH' && config.bkashQrImageUrl) ||
+                      (paymentMethod === 'NAGAD' && config.nagadQrImageUrl) ||
+                      config.banglaQrImageUrl
+                    );
 
-                    <button
-                      type="button"
-                      id="btn-channel-qr"
-                      onClick={() => setPaymentChannel('QR')}
-                      className={`min-h-[50px] p-3 rounded-2xl border-2 text-xs sm:text-sm font-black flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                        paymentChannel === 'QR'
-                          ? 'border-slate-900 bg-slate-900 text-white shadow-xs'
-                          : 'border-slate-200 bg-slate-50/70 text-slate-700 hover:bg-slate-100'
-                      }`}
-                    >
-                      <QrCode className="w-4 h-4 shrink-0" />
-                      <span>কিউআর কোড স্ক্যান</span>
-                    </button>
-                  </div>
+                    return (
+                      <div className="grid grid-cols-2 gap-2.5">
+                        <button
+                          type="button"
+                          id="btn-channel-number"
+                          onClick={() => setPaymentChannel('NUMBER')}
+                          className={`min-h-[50px] p-3 rounded-2xl border-2 text-xs sm:text-sm font-black flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                            paymentChannel === 'NUMBER'
+                              ? 'border-slate-900 bg-slate-900 text-white shadow-xs'
+                              : 'border-slate-200 bg-slate-50/70 text-slate-700 hover:bg-slate-100'
+                          }`}
+                        >
+                          <Phone className="w-4 h-4 shrink-0" />
+                          <span>নম্বর কপি করে পেমেন্ট</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          id="btn-channel-qr"
+                          onClick={() => setPaymentChannel('QR')}
+                          className={`min-h-[50px] p-3 rounded-2xl border-2 text-xs sm:text-sm font-black flex items-center justify-center gap-2 transition-all cursor-pointer relative ${
+                            paymentChannel === 'QR'
+                              ? 'border-slate-900 bg-slate-900 text-white shadow-xs'
+                              : 'border-slate-200 bg-slate-50/70 text-slate-700 hover:bg-slate-100'
+                          }`}
+                        >
+                          <QrCode className="w-4 h-4 shrink-0" />
+                          <span>কিউআর কোড স্ক্যান</span>
+                          {hasMethodQr && (
+                            <span
+                              className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-black uppercase shrink-0 ${
+                                paymentChannel === 'QR'
+                                  ? 'bg-emerald-500 text-white'
+                                  : 'bg-emerald-100 text-emerald-800'
+                              }`}
+                            >
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                              সক্রিয়
+                            </span>
+                          )}
+                        </button>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {/* ================= OPTION A: NUMBER COPY CARD ================= */}
@@ -1619,13 +1670,23 @@ export const DonationPage: React.FC<DonationPageProps> = ({
                         <div className="flex flex-col md:flex-row items-center gap-5 sm:gap-6 bg-white p-5 sm:p-6 rounded-2xl border border-slate-200/80 shadow-2xs">
                           {/* Left: QR Image with Badge */}
                           <div className="relative shrink-0 flex flex-col items-center">
-                            <div className="w-48 h-48 sm:w-52 sm:h-52 p-3 bg-white rounded-2xl border-2 border-slate-200/90 shadow-md flex items-center justify-center relative overflow-hidden group">
+                            <div
+                              onClick={() => activeQrUrl && setIsQrZoomed(true)}
+                              className={`w-48 h-48 sm:w-52 sm:h-52 p-3 bg-white rounded-2xl border-2 border-slate-200/90 shadow-md flex items-center justify-center relative overflow-hidden group ${
+                                activeQrUrl ? 'cursor-pointer hover:border-slate-400 transition-colors' : ''
+                              }`}
+                            >
                               {activeQrUrl ? (
-                                <img
-                                  src={activeQrUrl}
-                                  alt="PAYMENT QR CODE"
-                                  className="w-full h-full object-contain select-none"
-                                />
+                                <>
+                                  <img
+                                    src={activeQrUrl}
+                                    alt="PAYMENT QR CODE"
+                                    className="w-full h-full object-contain select-none transition-transform group-hover:scale-105"
+                                  />
+                                  <span className="absolute bottom-2 right-2 px-2 py-0.5 rounded-lg bg-black/60 text-white text-[9px] font-bold opacity-0 group-hover:opacity-100 transition-opacity">
+                                    ট্যাপ করে বড় করুন
+                                  </span>
+                                </>
                               ) : (
                                 <div className="text-center p-3 space-y-2">
                                   <QrCode className="w-12 h-12 text-slate-300 mx-auto" />
@@ -1641,16 +1702,87 @@ export const DonationPage: React.FC<DonationPageProps> = ({
 
                             {activeQrUrl && (
                               <div className="mt-2.5 flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setIsQrZoomed(true)}
+                                  className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-[11px] font-bold inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+                                >
+                                  <QrCode className="w-3.5 h-3.5" />
+                                  <span>বড় করুন</span>
+                                </button>
                                 <a
                                   href={activeQrUrl}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   download={`DPIB_${paymentMethod}_QR.png`}
-                                  className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-[11px] font-bold inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+                                  className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-bold inline-flex items-center gap-1.5 transition-colors cursor-pointer"
                                 >
                                   <Download className="w-3.5 h-3.5" />
-                                  <span>কিউআর সেভ করুন</span>
+                                  <span>ডাউনলোড</span>
                                 </a>
+                              </div>
+                            )}
+
+                            {/* Click to Zoom Lightbox Modal */}
+                            {isQrZoomed && activeQrUrl && (
+                              <div
+                                className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 cursor-pointer"
+                                onClick={() => setIsQrZoomed(false)}
+                              >
+                                <div
+                                  className="bg-white p-5 sm:p-6 rounded-3xl max-w-sm w-full space-y-4 text-center cursor-default shadow-2xl relative"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                                    <div className="flex items-center gap-2">
+                                      <PaymentMethodLogo provider={paymentMethod} size="sm" />
+                                      <span className="text-sm font-black text-slate-900">
+                                        {isBanglaQr
+                                          ? 'বাংলা কিউআর (BANGLA QR)'
+                                          : `${paymentMethod === 'BKASH' ? 'বিকাশ' : 'নগদ'} কিউআর কোড`}
+                                      </span>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => setIsQrZoomed(false)}
+                                      className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center text-xs font-bold cursor-pointer"
+                                    >
+                                      ✕
+                                    </button>
+                                  </div>
+
+                                  <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100">
+                                    <img
+                                      src={activeQrUrl}
+                                      alt="ZOOMED QR CODE"
+                                      className="w-full max-h-[55vh] object-contain rounded-xl mx-auto"
+                                    />
+                                  </div>
+
+                                  <p className="text-[11px] text-slate-500 leading-tight">
+                                    অ্যাপ থেকে সরাসরি এই কিউআর কোড স্ক্যান করে অনুদান প্রদান করুন।
+                                  </p>
+
+                                  <div className="flex items-center justify-center gap-2.5 pt-1">
+                                    <a
+                                      href={activeQrUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      download={`DPIB_${paymentMethod}_QR.png`}
+                                      className="flex-1 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold inline-flex items-center justify-center gap-2 cursor-pointer shadow-xs"
+                                    >
+                                      <Download className="w-3.5 h-3.5" />
+                                      <span>ডাউনলোড করুন</span>
+                                    </a>
+                                    <button
+                                      type="button"
+                                      onClick={() => setIsQrZoomed(false)}
+                                      className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold cursor-pointer"
+                                    >
+                                      বন্ধ করুন
+                                    </button>
+                                  </div>
+                                </div>
                               </div>
                             )}
                           </div>

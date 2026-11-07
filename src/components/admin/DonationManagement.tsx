@@ -52,7 +52,12 @@ import {
   subscribeTransactions,
   updateDonationStatusManually,
 } from '../../services/donationService';
-import { getSystemSettings, saveSystemSettings } from '../../services/db';
+import {
+  getSystemSettings,
+  saveSystemSettings,
+  subscribeSystemSettings,
+  compressQrImageFile,
+} from '../../services/db';
 import { toBanglaDigits, toEnglishDigits } from '../../utils/bangla';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { PaymentMethodLogo } from '../common/PaymentMethodLogo';
@@ -188,20 +193,27 @@ export const DonationManagement: React.FC<DonationManagementProps> = ({
       }
     );
 
-    getSystemSettings().then((sys) => {
-      setFullSettings(sys);
-      if (sys.donationConfig) {
-        setConfig({
-          ...DEFAULT_DONATION_CONFIG,
-          ...sys.donationConfig,
-        });
+    const unsubSettings = subscribeSystemSettings(
+      (sys) => {
+        setFullSettings(sys);
+        if (sys.donationConfig) {
+          setConfig((prev) => ({
+            ...DEFAULT_DONATION_CONFIG,
+            ...prev,
+            ...sys.donationConfig,
+          }));
+        }
+      },
+      (err) => {
+        console.warn('SETTINGS SUBSCRIPTION WARNING:', err);
       }
-    });
+    );
 
     return () => {
       unsubDonations();
       unsubTransactions();
       unsubSms();
+      unsubSettings();
     };
   }, []);
 
@@ -253,12 +265,15 @@ export const DonationManagement: React.FC<DonationManagementProps> = ({
     e.preventDefault();
     setSavingConfig(true);
     try {
+      try {
+        localStorage.setItem('dpib_cached_donation_config', JSON.stringify(config));
+      } catch {}
       await saveSystemSettings({
         ...(fullSettings || {}),
         donationConfig: config,
         updatedAt: Date.now(),
       });
-      showBanner('success', 'বিকাশ, নগদ ও অটো-SMS WEBHOOK সেটিংস সফলভাবে সংরক্ষিত হয়েছে!');
+      showBanner('success', 'বিকাশ, নগদ ও কিউআর কোড সেটিংস সফলভাবে ক্লাউডে সংরক্ষিত হয়েছে!');
       if (onRefreshSettings) onRefreshSettings();
     } catch (err: any) {
       showBanner('error', `সেটিংস সংরক্ষণে ত্রুটি: ${err?.message || 'UNKNOWN ERROR'}`);
@@ -1185,22 +1200,17 @@ export const DonationManagement: React.FC<DonationManagementProps> = ({
                           type="file"
                           accept="image/*"
                           className="hidden"
-                          onChange={(e) => {
+                          onChange={async (e) => {
                             const file = e.target.files?.[0];
                             if (file) {
-                              if (file.size > 2 * 1024 * 1024) {
-                                setBannerFeedback({
-                                  type: 'error',
-                                  text: 'ইমেজ সাইজ ২ মেগাবাইট (2MB)-এর কম হতে হবে।',
-                                });
-                                return;
+                              try {
+                                showBanner('success', 'কিউআর ছবি অপ্টিমাইজ হচ্ছে...');
+                                const compressed = await compressQrImageFile(file);
+                                setConfig((prev) => ({ ...prev, bkashQrImageUrl: compressed }));
+                                showBanner('success', 'বিকাশ কিউআর ছবি প্রস্তুত হয়েছে — সংরক্ষণ করতে উপরে "সেটিংস সংরক্ষণ করুন" বাটনে চাপ দিন।');
+                              } catch (err: any) {
+                                showBanner('error', err.message || 'ছবি প্রসেস করতে ব্যর্থ হয়েছে।');
                               }
-                              const reader = new FileReader();
-                              reader.onload = (ev) => {
-                                const base64 = ev.target?.result as string;
-                                setConfig((prev) => ({ ...prev, bkashQrImageUrl: base64 }));
-                              };
-                              reader.readAsDataURL(file);
                             }
                           }}
                         />
@@ -1299,22 +1309,17 @@ export const DonationManagement: React.FC<DonationManagementProps> = ({
                           type="file"
                           accept="image/*"
                           className="hidden"
-                          onChange={(e) => {
+                          onChange={async (e) => {
                             const file = e.target.files?.[0];
                             if (file) {
-                              if (file.size > 2 * 1024 * 1024) {
-                                setBannerFeedback({
-                                  type: 'error',
-                                  text: 'ইমেজ সাইজ ২ মেগাবাইট (2MB)-এর কম হতে হবে।',
-                                });
-                                return;
+                              try {
+                                showBanner('success', 'কিউআর ছবি অপ্টিমাইজ হচ্ছে...');
+                                const compressed = await compressQrImageFile(file);
+                                setConfig((prev) => ({ ...prev, nagadQrImageUrl: compressed }));
+                                showBanner('success', 'নগদ কিউআর ছবি প্রস্তুত হয়েছে — সংরক্ষণ করতে উপরে "সেটিংস সংরক্ষণ করুন" বাটনে চাপ দিন।');
+                              } catch (err: any) {
+                                showBanner('error', err.message || 'ছবি প্রসেস করতে ব্যর্থ হয়েছে।');
                               }
-                              const reader = new FileReader();
-                              reader.onload = (ev) => {
-                                const base64 = ev.target?.result as string;
-                                setConfig((prev) => ({ ...prev, nagadQrImageUrl: base64 }));
-                              };
-                              reader.readAsDataURL(file);
                             }
                           }}
                         />
@@ -1391,22 +1396,17 @@ export const DonationManagement: React.FC<DonationManagementProps> = ({
                       type="file"
                       accept="image/*"
                       className="hidden"
-                      onChange={(e) => {
+                      onChange={async (e) => {
                         const file = e.target.files?.[0];
                         if (file) {
-                          if (file.size > 2 * 1024 * 1024) {
-                            setBannerFeedback({
-                              type: 'error',
-                              text: 'ইমেজ সাইজ ২ মেগাবাইট (2MB)-এর কম হতে হবে।',
-                            });
-                            return;
+                          try {
+                            showBanner('success', 'বাংলা কিউআর ছবি অপ্টিমাইজ হচ্ছে...');
+                            const compressed = await compressQrImageFile(file);
+                            setConfig((prev) => ({ ...prev, banglaQrImageUrl: compressed }));
+                            showBanner('success', 'বাংলা কিউআর ছবি প্রস্তুত হয়েছে — সংরক্ষণ করতে উপরে "সেটিংস সংরক্ষণ করুন" বাটনে চাপ দিন।');
+                          } catch (err: any) {
+                            showBanner('error', err.message || 'ছবি প্রসেস করতে ব্যর্থ হয়েছে।');
                           }
-                          const reader = new FileReader();
-                          reader.onload = (ev) => {
-                            const base64 = ev.target?.result as string;
-                            setConfig((prev) => ({ ...prev, banglaQrImageUrl: base64 }));
-                          };
-                          reader.readAsDataURL(file);
                         }
                       }}
                     />
