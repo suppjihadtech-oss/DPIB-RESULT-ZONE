@@ -37,12 +37,13 @@ import {
   Info,
 } from 'lucide-react';
 import { Exam, StudentResult, SubjectResult, SystemSettings, SemesterId } from '../../types';
-import { getResults, getExams } from '../../services/db';
+import { getResults, getExams, getCachedPublishedResults } from '../../services/db';
 import { printElementById } from '../../utils/printHelper';
 import { toBanglaDigits, toBanglaNumber, toBanglaOrdinal, SEMESTER_MAP } from '../../utils/bangla';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { EmptyState } from '../common/EmptyState';
 import { BottomSheet } from '../common/BottomSheet';
+
 
 interface AcademicAnalysisPageProps {
   exams: Exam[];
@@ -97,11 +98,18 @@ export const AcademicAnalysisPage: React.FC<AcademicAnalysisPageProps> = ({
   onNavigateTab,
 }) => {
   // -------------------------------------------------------------
-  // DATA STATES
   // -------------------------------------------------------------
-  const [allResults, setAllResults] = useState<StudentResult[]>([]);
-  const [loading, setLoading] = useState(true);
+  // DATA STATES (INSTANT ZERO-DELAY CACHE INITIALIZATION)
+  // -------------------------------------------------------------
+  const [allResults, setAllResults] = useState<StudentResult[]>(() => {
+    return getCachedPublishedResults() || [];
+  });
+  const [loading, setLoading] = useState<boolean>(() => {
+    const cached = getCachedPublishedResults();
+    return !cached || cached.length === 0;
+  });
   const [activeTab, setActiveTab] = useState<ActiveAnalysisTab>('overview');
+  const [studentLimit, setStudentLimit] = useState<number>(30);
 
   // -------------------------------------------------------------
   // FILTER STATES
@@ -119,11 +127,14 @@ export const AcademicAnalysisPage: React.FC<AcademicAnalysisPageProps> = ({
   const [filterSearchQuery, setFilterSearchQuery] = useState('');
 
   // -------------------------------------------------------------
-  // FETCH RESULTS FROM FIRESTORE
+  // FETCH RESULTS (SILENT SWR IF CACHE EXISTS, SKELETON IF EMPTY)
   // -------------------------------------------------------------
   useEffect(() => {
     let isMounted = true;
-    setLoading(true);
+    const cached = getCachedPublishedResults();
+    if (!cached || cached.length === 0) {
+      setLoading(true);
+    }
 
     getResults({ status: 'PUBLISHED' })
       .then((data) => {
@@ -141,6 +152,7 @@ export const AcademicAnalysisPage: React.FC<AcademicAnalysisPageProps> = ({
       isMounted = false;
     };
   }, []);
+
 
   // -------------------------------------------------------------
   // DYNAMIC FILTER OPTIONS EXTRACTION
@@ -669,13 +681,68 @@ export const AcademicAnalysisPage: React.FC<AcademicAnalysisPageProps> = ({
     });
   };
 
-  if (loading) {
-    return (
-      <div className="py-24 text-center max-w-md mx-auto px-4 font-bengali">
-        <LoadingSpinner size="lg" message="একাডেমিক ফলাফল এনালাইসিস লোড হচ্ছে..." />
+const AnalysisPageSkeleton: React.FC = () => {
+  return (
+    <div className="max-w-7xl mx-auto px-3.5 sm:px-6 lg:px-8 py-6 sm:py-10 font-bengali space-y-8 animate-pulse">
+      {/* Header Skeleton */}
+      <div className="relative bg-gradient-to-br from-blue-700 via-sky-700 to-blue-800 text-white rounded-3xl p-6 sm:p-10 shadow-lg overflow-hidden border border-blue-400/30">
+        <div className="w-48 h-6 bg-white/20 rounded-full mb-4" />
+        <div className="w-72 sm:w-96 h-10 bg-white/20 rounded-2xl mb-3" />
+        <div className="w-full max-w-lg h-4 bg-white/15 rounded-lg" />
       </div>
-    );
+
+      {/* Filter Bar Skeleton */}
+      <div className="bg-white rounded-2xl sm:rounded-3xl border border-slate-200/90 p-4 flex flex-col lg:flex-row gap-3 justify-between items-center">
+        <div className="w-40 h-8 bg-slate-100 rounded-xl" />
+        <div className="flex gap-2 w-full lg:w-auto">
+          <div className="flex-1 lg:w-28 h-9 bg-slate-100 rounded-xl" />
+          <div className="flex-1 lg:w-28 h-9 bg-slate-100 rounded-xl" />
+          <div className="flex-1 lg:w-28 h-9 bg-slate-100 rounded-xl" />
+        </div>
+      </div>
+
+      {/* 8 Metric KPIs Skeleton */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
+        {[...Array(8)].map((_, i) => (
+          <div key={i} className="p-4 sm:p-5 bg-white rounded-2xl sm:rounded-3xl border border-slate-200/90 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="w-10 h-10 rounded-xl bg-slate-100" />
+              <div className="w-12 h-3 bg-slate-100 rounded" />
+            </div>
+            <div className="w-20 h-3 bg-slate-100 rounded" />
+            <div className="w-24 h-6 bg-slate-200 rounded" />
+          </div>
+        ))}
+      </div>
+
+      {/* Overview Chart Skeleton */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 bg-white rounded-3xl border border-slate-200 p-6 sm:p-7 h-80 space-y-4">
+          <div className="w-48 h-5 bg-slate-200 rounded" />
+          <div className="space-y-3 pt-4">
+            {[...Array(6)].map((_, idx) => (
+              <div key={idx} className="flex items-center gap-3">
+                <div className="w-12 h-4 bg-slate-100 rounded" />
+                <div className="flex-1 h-5 bg-slate-100 rounded-full" />
+                <div className="w-16 h-4 bg-slate-100 rounded" />
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="bg-white rounded-3xl border border-slate-200 p-6 sm:p-7 h-80 flex flex-col justify-between">
+          <div className="w-40 h-5 bg-slate-200 rounded" />
+          <div className="w-28 h-28 rounded-full bg-slate-100 mx-auto" />
+          <div className="w-full h-8 bg-slate-100 rounded-xl" />
+        </div>
+      </div>
+    </div>
+  );
+};
+
+  if (loading && allResults.length === 0) {
+    return <AnalysisPageSkeleton />;
   }
+
 
   return (
     <div id="printable-academic-analysis-report" className="max-w-7xl mx-auto px-3.5 sm:px-6 lg:px-8 py-6 sm:py-10 font-bengali text-slate-800 space-y-8">
@@ -1176,13 +1243,12 @@ export const AcademicAnalysisPage: React.FC<AcademicAnalysisPageProps> = ({
                           </div>
 
                           <div className="flex-1 bg-slate-100 h-5 rounded-full overflow-hidden relative">
-                            <motion.div
-                              initial={{ width: 0 }}
-                              animate={{ width: `${pct}%` }}
-                              transition={{ duration: 0.8, ease: 'easeOut' }}
-                              className={`h-full ${gItem.color} rounded-full`}
+                            <div
+                              style={{ width: `${pct}%`, willChange: 'width' }}
+                              className={`h-full ${gItem.color} rounded-full transition-all duration-700 ease-out`}
                             />
                           </div>
+
 
                           <div className="w-24 text-right">
                             <span className="text-xs font-black text-slate-800">
@@ -1629,7 +1695,7 @@ export const AcademicAnalysisPage: React.FC<AcademicAnalysisPageProps> = ({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 font-medium">
-                      {topStudents.map((res, idx) => {
+                      {topStudents.slice(0, studentLimit).map((res, idx) => {
                         const rank = idx + 1;
                         return (
                           <tr key={res.id || idx} className="hover:bg-slate-50/80 transition-colors">
@@ -1689,271 +1755,302 @@ export const AcademicAnalysisPage: React.FC<AcademicAnalysisPageProps> = ({
                   </table>
                 </div>
               )}
+
+              {topStudents.length > studentLimit && (
+                <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-4 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setStudentLimit((prev) => prev + 30)}
+                    className="w-full sm:w-auto px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-all cursor-pointer"
+                  >
+                    আরও ৩০ জন দেখুন (অবশিষ্ট {toBanglaDigits(topStudents.length - studentLimit)} জন)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStudentLimit(topStudents.length)}
+                    className="w-full sm:w-auto px-5 py-2.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold rounded-xl transition-all cursor-pointer border border-blue-200"
+                  >
+                    সকল {toBanglaDigits(topStudents.length)} জন দেখুন
+                  </button>
+                </div>
+              )}
             </div>
+
           )}
         </>
       )}
 
       {/* ================= BOTTOM SLIDING SHEETS FOR FILTERS ================= */}
       {/* 1. EXAM SELECTOR SHEET */}
-      <BottomSheet
-        isOpen={filterSheetType === 'exam'}
-        onClose={() => setFilterSheetType(null)}
-        title="পরীক্ষা নির্বাচন করুন"
-        subtitle="নির্দিষ্ট পরীক্ষার ফলাফল এনালাইসিস ফিল্টার"
-      >
-        <div className="space-y-2 pb-6 font-bengali">
-          <button
-            type="button"
-            onClick={() => {
-              setSelectedExamId('ALL');
-              setFilterSheetType(null);
-            }}
-            className={`w-full p-4 rounded-2xl border text-left flex items-center justify-between font-bold text-xs sm:text-sm cursor-pointer transition-all ${
-              selectedExamId === 'ALL'
-                ? 'bg-blue-50 text-blue-700 border-blue-300 ring-1 ring-blue-300'
-                : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-800'
-            }`}
-          >
-            <span>সকল পরীক্ষা (সম্মিলিত এনালাইসিস)</span>
-            {selectedExamId === 'ALL' && <CheckCircle2 className="w-4 h-4 text-blue-600" />}
-          </button>
-
-          {publishedExams.map((exam) => (
+      {filterSheetType === 'exam' && (
+        <BottomSheet
+          isOpen={true}
+          onClose={() => setFilterSheetType(null)}
+          title="পরীক্ষা নির্বাচন করুন"
+          subtitle="নির্দিষ্ট পরীক্ষার ফলাফল এনালাইসিস ফিল্টার"
+        >
+          <div className="space-y-2 pb-6 font-bengali">
             <button
-              key={exam.id}
               type="button"
               onClick={() => {
-                setSelectedExamId(exam.id);
+                setSelectedExamId('ALL');
                 setFilterSheetType(null);
               }}
               className={`w-full p-4 rounded-2xl border text-left flex items-center justify-between font-bold text-xs sm:text-sm cursor-pointer transition-all ${
-                selectedExamId === exam.id
+                selectedExamId === 'ALL'
                   ? 'bg-blue-50 text-blue-700 border-blue-300 ring-1 ring-blue-300'
                   : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-800'
               }`}
             >
-              <div>
-                <p className="text-slate-900">{exam.title}</p>
-                <p className="text-[11px] text-slate-500 mt-0.5">
-                  {exam.departmentName} | {SEMESTER_MAP[exam.semesterId] || exam.semesterId}
-                </p>
-              </div>
-              {selectedExamId === exam.id && <CheckCircle2 className="w-4 h-4 text-blue-600" />}
+              <span>সকল পরীক্ষা (সম্মিলিত এনালাইসিস)</span>
+              {selectedExamId === 'ALL' && <CheckCircle2 className="w-4 h-4 text-blue-600" />}
             </button>
-          ))}
-        </div>
-      </BottomSheet>
+
+            {publishedExams.map((exam) => (
+              <button
+                key={exam.id}
+                type="button"
+                onClick={() => {
+                  setSelectedExamId(exam.id);
+                  setFilterSheetType(null);
+                }}
+                className={`w-full p-4 rounded-2xl border text-left flex items-center justify-between font-bold text-xs sm:text-sm cursor-pointer transition-all ${
+                  selectedExamId === exam.id
+                    ? 'bg-blue-50 text-blue-700 border-blue-300 ring-1 ring-blue-300'
+                    : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-800'
+                }`}
+              >
+                <div>
+                  <p className="text-slate-900">{exam.title}</p>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    {exam.departmentName} | {SEMESTER_MAP[exam.semesterId] || exam.semesterId}
+                  </p>
+                </div>
+                {selectedExamId === exam.id && <CheckCircle2 className="w-4 h-4 text-blue-600" />}
+              </button>
+            ))}
+          </div>
+        </BottomSheet>
+      )}
 
       {/* 2. YEAR SELECTOR SHEET */}
-      <BottomSheet
-        isOpen={filterSheetType === 'year'}
-        onClose={() => setFilterSheetType(null)}
-        title="শিক্ষাবর্ষ নির্বাচন করুন"
-        subtitle="পরীক্ষার বছরভিত্তিক ফিল্টার"
-      >
-        <div className="space-y-2 pb-6 font-bengali">
-          <button
-            type="button"
-            onClick={() => {
-              setSelectedYear('ALL');
-              setFilterSheetType(null);
-            }}
-            className={`w-full p-4 rounded-2xl border text-left flex items-center justify-between font-bold text-xs sm:text-sm cursor-pointer transition-all ${
-              selectedYear === 'ALL'
-                ? 'bg-blue-50 text-blue-700 border-blue-300 ring-1 ring-blue-300'
-                : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-800'
-            }`}
-          >
-            <span>সকল শিক্ষাবর্ষ</span>
-            {selectedYear === 'ALL' && <CheckCircle2 className="w-4 h-4 text-blue-600" />}
-          </button>
-
-          {availableYears.map((yr) => (
+      {filterSheetType === 'year' && (
+        <BottomSheet
+          isOpen={true}
+          onClose={() => setFilterSheetType(null)}
+          title="শিক্ষাবর্ষ নির্বাচন করুন"
+          subtitle="পরীক্ষার বছরভিত্তিক ফিল্টার"
+        >
+          <div className="space-y-2 pb-6 font-bengali">
             <button
-              key={yr}
               type="button"
               onClick={() => {
-                setSelectedYear(yr);
+                setSelectedYear('ALL');
                 setFilterSheetType(null);
               }}
               className={`w-full p-4 rounded-2xl border text-left flex items-center justify-between font-bold text-xs sm:text-sm cursor-pointer transition-all ${
-                selectedYear === yr
+                selectedYear === 'ALL'
                   ? 'bg-blue-50 text-blue-700 border-blue-300 ring-1 ring-blue-300'
                   : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-800'
               }`}
             >
-              <span>{toBanglaDigits(yr)} শিক্ষাবর্ষ</span>
-              {selectedYear === yr && <CheckCircle2 className="w-4 h-4 text-blue-600" />}
+              <span>সকল শিক্ষাবর্ষ</span>
+              {selectedYear === 'ALL' && <CheckCircle2 className="w-4 h-4 text-blue-600" />}
             </button>
-          ))}
-        </div>
-      </BottomSheet>
+
+            {availableYears.map((yr) => (
+              <button
+                key={yr}
+                type="button"
+                onClick={() => {
+                  setSelectedYear(yr);
+                  setFilterSheetType(null);
+                }}
+                className={`w-full p-4 rounded-2xl border text-left flex items-center justify-between font-bold text-xs sm:text-sm cursor-pointer transition-all ${
+                  selectedYear === yr
+                    ? 'bg-blue-50 text-blue-700 border-blue-300 ring-1 ring-blue-300'
+                    : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-800'
+                }`}
+              >
+                <span>{toBanglaDigits(yr)} শিক্ষাবর্ষ</span>
+                {selectedYear === yr && <CheckCircle2 className="w-4 h-4 text-blue-600" />}
+              </button>
+            ))}
+          </div>
+        </BottomSheet>
+      )}
 
       {/* 3. SEMESTER SELECTOR SHEET */}
-      <BottomSheet
-        isOpen={filterSheetType === 'semester'}
-        onClose={() => setFilterSheetType(null)}
-        title="সেমিস্টার নির্বাচন করুন"
-        subtitle="১ম থেকে ৮ম সেমিস্টার ফিল্টার"
-      >
-        <div className="space-y-2 pb-6 font-bengali">
-          <button
-            type="button"
-            onClick={() => {
-              setSelectedSemester('ALL');
-              setFilterSheetType(null);
-            }}
-            className={`w-full p-4 rounded-2xl border text-left flex items-center justify-between font-bold text-xs sm:text-sm cursor-pointer transition-all ${
-              selectedSemester === 'ALL'
-                ? 'bg-blue-50 text-blue-700 border-blue-300 ring-1 ring-blue-300'
-                : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-800'
-            }`}
-          >
-            <span>সকল সেমিস্টার</span>
-            {selectedSemester === 'ALL' && <CheckCircle2 className="w-4 h-4 text-blue-600" />}
-          </button>
-
-          {(['1', '2', '3', '4', '5', '6', '7', '8'] as SemesterId[]).map((sId) => (
+      {filterSheetType === 'semester' && (
+        <BottomSheet
+          isOpen={true}
+          onClose={() => setFilterSheetType(null)}
+          title="সেমিস্টার নির্বাচন করুন"
+          subtitle="১ম থেকে ৮ম সেমিস্টার ফিল্টার"
+        >
+          <div className="space-y-2 pb-6 font-bengali">
             <button
-              key={sId}
               type="button"
               onClick={() => {
-                setSelectedSemester(sId);
+                setSelectedSemester('ALL');
                 setFilterSheetType(null);
               }}
               className={`w-full p-4 rounded-2xl border text-left flex items-center justify-between font-bold text-xs sm:text-sm cursor-pointer transition-all ${
-                selectedSemester === sId
+                selectedSemester === 'ALL'
                   ? 'bg-blue-50 text-blue-700 border-blue-300 ring-1 ring-blue-300'
                   : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-800'
               }`}
             >
-              <span>{SEMESTER_MAP[sId]}</span>
-              {selectedSemester === sId && <CheckCircle2 className="w-4 h-4 text-blue-600" />}
+              <span>সকল সেমিস্টার</span>
+              {selectedSemester === 'ALL' && <CheckCircle2 className="w-4 h-4 text-blue-600" />}
             </button>
-          ))}
-        </div>
-      </BottomSheet>
+
+            {(['1', '2', '3', '4', '5', '6', '7', '8'] as SemesterId[]).map((sId) => (
+              <button
+                key={sId}
+                type="button"
+                onClick={() => {
+                  setSelectedSemester(sId);
+                  setFilterSheetType(null);
+                }}
+                className={`w-full p-4 rounded-2xl border text-left flex items-center justify-between font-bold text-xs sm:text-sm cursor-pointer transition-all ${
+                  selectedSemester === sId
+                    ? 'bg-blue-50 text-blue-700 border-blue-300 ring-1 ring-blue-300'
+                    : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-800'
+                }`}
+              >
+                <span>{SEMESTER_MAP[sId]}</span>
+                {selectedSemester === sId && <CheckCircle2 className="w-4 h-4 text-blue-600" />}
+              </button>
+            ))}
+          </div>
+        </BottomSheet>
+      )}
 
       {/* 4. DEPARTMENT SELECTOR SHEET */}
-      <BottomSheet
-        isOpen={filterSheetType === 'department'}
-        onClose={() => setFilterSheetType(null)}
-        title="টেকনোলজি নির্বাচন করুন"
-        subtitle="ডিপার্টমেন্টভিত্তিক ফিল্টার"
-      >
-        <div className="space-y-2 pb-6 font-bengali">
-          <button
-            type="button"
-            onClick={() => {
-              setSelectedDepartment('ALL');
-              setFilterSheetType(null);
-            }}
-            className={`w-full p-4 rounded-2xl border text-left flex items-center justify-between font-bold text-xs sm:text-sm cursor-pointer transition-all ${
-              selectedDepartment === 'ALL'
-                ? 'bg-blue-50 text-blue-700 border-blue-300 ring-1 ring-blue-300'
-                : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-800'
-            }`}
-          >
-            <span>সকল টেকনোলজি</span>
-            {selectedDepartment === 'ALL' && <CheckCircle2 className="w-4 h-4 text-blue-600" />}
-          </button>
-
-          {availableDepartments.map((dept) => (
+      {filterSheetType === 'department' && (
+        <BottomSheet
+          isOpen={true}
+          onClose={() => setFilterSheetType(null)}
+          title="টেকনোলজি নির্বাচন করুন"
+          subtitle="ডিপার্টমেন্টভিত্তিক ফিল্টার"
+        >
+          <div className="space-y-2 pb-6 font-bengali">
             <button
-              key={dept.id}
               type="button"
               onClick={() => {
-                setSelectedDepartment(dept.id);
+                setSelectedDepartment('ALL');
                 setFilterSheetType(null);
               }}
               className={`w-full p-4 rounded-2xl border text-left flex items-center justify-between font-bold text-xs sm:text-sm cursor-pointer transition-all ${
-                selectedDepartment === dept.id
+                selectedDepartment === 'ALL'
                   ? 'bg-blue-50 text-blue-700 border-blue-300 ring-1 ring-blue-300'
                   : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-800'
               }`}
             >
-              <div>
-                <p className="text-slate-900">{dept.name}</p>
-                <p className="text-[11px] text-slate-500 font-outfit uppercase">{dept.code}</p>
-              </div>
-              {selectedDepartment === dept.id && <CheckCircle2 className="w-4 h-4 text-blue-600" />}
+              <span>সকল টেকনোলজি</span>
+              {selectedDepartment === 'ALL' && <CheckCircle2 className="w-4 h-4 text-blue-600" />}
             </button>
-          ))}
-        </div>
-      </BottomSheet>
+
+            {availableDepartments.map((dept) => (
+              <button
+                key={dept.id}
+                type="button"
+                onClick={() => {
+                  setSelectedDepartment(dept.id);
+                  setFilterSheetType(null);
+                }}
+                className={`w-full p-4 rounded-2xl border text-left flex items-center justify-between font-bold text-xs sm:text-sm cursor-pointer transition-all ${
+                  selectedDepartment === dept.id
+                    ? 'bg-blue-50 text-blue-700 border-blue-300 ring-1 ring-blue-300'
+                    : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-800'
+                }`}
+              >
+                <div>
+                  <p className="text-slate-900">{dept.name}</p>
+                  <p className="text-[11px] text-slate-500 font-outfit uppercase">{dept.code}</p>
+                </div>
+                {selectedDepartment === dept.id && <CheckCircle2 className="w-4 h-4 text-blue-600" />}
+              </button>
+            ))}
+          </div>
+        </BottomSheet>
+      )}
 
       {/* 5. SUBJECT SELECTOR SHEET */}
-      <BottomSheet
-        isOpen={filterSheetType === 'subject'}
-        onClose={() => setFilterSheetType(null)}
-        title="বিষয় নির্বাচন করুন"
-        subtitle="বিষয়ভিত্তিক বিশ্লেষণ ফিল্টার"
-      >
-        <div className="space-y-3 pb-6 font-bengali">
-          {/* Quick Search */}
-          <div className="relative">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              placeholder="বিষয়ের নাম বা কোড খুঁজুন..."
-              value={filterSearchQuery}
-              onChange={(e) => setFilterSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
+      {filterSheetType === 'subject' && (
+        <BottomSheet
+          isOpen={true}
+          onClose={() => setFilterSheetType(null)}
+          title="বিষয় নির্বাচন করুন"
+          subtitle="বিষয়ভিত্তিক বিশ্লেষণ ফিল্টার"
+        >
+          <div className="space-y-3 pb-6 font-bengali">
+            {/* Quick Search */}
+            <div className="relative">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="বিষয়ের নাম বা কোড খুঁজুন..."
+                value={filterSearchQuery}
+                onChange={(e) => setFilterSearchQuery(e.target.value)}
+                className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
 
-          <div className="max-h-72 overflow-y-auto space-y-2 pr-1">
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedSubjectCode('ALL');
-                setFilterSheetType(null);
-              }}
-              className={`w-full p-3.5 rounded-2xl border text-left flex items-center justify-between font-bold text-xs cursor-pointer transition-all ${
-                selectedSubjectCode === 'ALL'
-                  ? 'bg-blue-50 text-blue-700 border-blue-300'
-                  : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-800'
-              }`}
-            >
-              <span>সকল বিষয়</span>
-              {selectedSubjectCode === 'ALL' && <CheckCircle2 className="w-4 h-4 text-blue-600" />}
-            </button>
+            <div className="max-h-72 overflow-y-auto space-y-2 pr-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedSubjectCode('ALL');
+                  setFilterSheetType(null);
+                }}
+                className={`w-full p-3.5 rounded-2xl border text-left flex items-center justify-between font-bold text-xs cursor-pointer transition-all ${
+                  selectedSubjectCode === 'ALL'
+                    ? 'bg-blue-50 text-blue-700 border-blue-300'
+                    : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-800'
+                }`}
+              >
+                <span>সকল বিষয়</span>
+                {selectedSubjectCode === 'ALL' && <CheckCircle2 className="w-4 h-4 text-blue-600" />}
+              </button>
 
-            {availableSubjects
-              .filter((s) => {
-                if (!filterSearchQuery) return true;
-                const q = filterSearchQuery.toLowerCase();
-                return s.name.toLowerCase().includes(q) || s.code.toLowerCase().includes(q);
-              })
-              .map((sub) => (
-                <button
-                  key={sub.code}
-                  type="button"
-                  onClick={() => {
-                    setSelectedSubjectCode(sub.code);
-                    setFilterSheetType(null);
-                  }}
-                  className={`w-full p-3.5 rounded-2xl border text-left flex items-center justify-between font-bold text-xs cursor-pointer transition-all ${
-                    selectedSubjectCode === sub.code
-                      ? 'bg-blue-50 text-blue-700 border-blue-300'
-                      : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-800'
-                  }`}
-                >
-                  <div>
-                    <span className="text-slate-900">{sub.name}</span>
-                    <span className="text-[10px] text-slate-400 font-outfit uppercase ml-2">
-                      ({sub.code})
-                    </span>
-                  </div>
-                  {selectedSubjectCode === sub.code && (
-                    <CheckCircle2 className="w-4 h-4 text-blue-600" />
-                  )}
-                </button>
-              ))}
+              {availableSubjects
+                .filter((s) => {
+                  if (!filterSearchQuery) return true;
+                  const q = filterSearchQuery.toLowerCase();
+                  return s.name.toLowerCase().includes(q) || s.code.toLowerCase().includes(q);
+                })
+                .map((sub) => (
+                  <button
+                    key={sub.code}
+                    type="button"
+                    onClick={() => {
+                      setSelectedSubjectCode(sub.code);
+                      setFilterSheetType(null);
+                    }}
+                    className={`w-full p-3.5 rounded-2xl border text-left flex items-center justify-between font-bold text-xs cursor-pointer transition-all ${
+                      selectedSubjectCode === sub.code
+                        ? 'bg-blue-50 text-blue-700 border-blue-300'
+                        : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-800'
+                    }`}
+                  >
+                    <div>
+                      <span className="text-slate-900">{sub.name}</span>
+                      <span className="text-[10px] text-slate-400 font-outfit uppercase ml-2">
+                        ({sub.code})
+                      </span>
+                    </div>
+                    {selectedSubjectCode === sub.code && (
+                      <CheckCircle2 className="w-4 h-4 text-blue-600" />
+                    )}
+                  </button>
+                ))}
+            </div>
           </div>
-        </div>
-      </BottomSheet>
+        </BottomSheet>
+      )}
+
     </div>
   );
 };

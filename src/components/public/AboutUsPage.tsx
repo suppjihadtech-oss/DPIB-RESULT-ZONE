@@ -17,6 +17,7 @@ import {
   Compass,
   Code2,
   Wrench,
+  UserCheck2,
 } from 'lucide-react';
 import { DpibBrandTitle } from '../common/DpibBrandTitle';
 
@@ -249,19 +250,16 @@ export const AboutUsPage: React.FC<AboutUsPageProps> = ({ onBack, onNavigateTab 
           <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-transparent via-violet-500/70 to-transparent" />
 
           <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6 sm:gap-8">
-            {/* Developer Circular Profile Photo */}
-            <div className="relative shrink-0">
-              <div className="w-28 h-28 sm:w-32 sm:h-32 rounded-full overflow-hidden ring-4 ring-violet-200/80 shadow-md border-2 border-white bg-slate-100 flex items-center justify-center">
-                <img
-                  src="/assets/aistudio/1769429789676_88504b83.jpg"
-                  alt="মোঃ জিহাদ - সফটওয়্যার ডেভেলপার"
-                  className="w-full h-full object-cover object-top"
-                  referrerPolicy="no-referrer"
-                  onError={(e) => {
-                    // Fallback gracefully without showing any fake person image
-                    (e.target as HTMLElement).style.display = 'none';
-                  }}
-                />
+            {/* Developer Circular Profile Icon (Replacing real photo) */}
+            <div className="relative shrink-0 group">
+              <div className="w-28 h-28 sm:w-32 sm:h-32 rounded-3xl overflow-hidden ring-4 ring-violet-200/80 shadow-md border-2 border-white bg-gradient-to-br from-violet-600 via-purple-600 to-indigo-700 flex items-center justify-center text-white relative">
+                {/* Subtle internal shine */}
+                <div className="absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-white/25 pointer-events-none" />
+                <UserCheck2 className="w-14 h-14 sm:w-16 sm:h-16 text-white drop-shadow-md relative z-10 transition-transform duration-300 group-hover:scale-110" />
+              </div>
+              <div className="absolute -bottom-1 -right-1 px-2.5 py-0.5 rounded-full bg-violet-700 text-white text-[10px] font-bold shadow-xs flex items-center gap-1 border-2 border-white">
+                <Code2 className="w-3 h-3" />
+                <span>DEV</span>
               </div>
             </div>
 

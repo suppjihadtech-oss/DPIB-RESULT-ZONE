@@ -1385,23 +1385,100 @@ export async function verifyResultByCode(verificationCode: string): Promise<Stud
   }
 }
 
-export async function getResults(filters?: {
-  examId?: string;
-  semesterId?: string;
-  departmentId?: string;
-  status?: 'PUBLISHED' | 'DRAFT' | 'REVIEW' | 'ALL';
-  search?: string;
-}): Promise<StudentResult[]> {
+// -------------------------------------------------------------
+// RESULTS IN-MEMORY & SWR CACHE
+// -------------------------------------------------------------
+let _resultsCache: {
+  list: StudentResult[];
+  timestamp: number;
+} | null = null;
+const RESULTS_CACHE_TTL_MS = 2.5 * 60 * 1000; // 2.5 minutes TTL
+
+export function invalidateResultsCache(): void {
+  _resultsCache = null;
   try {
-    const ref = collection(db, COLLECTIONS.RESULTS);
-    const snap = await getDocs(ref);
-    let rawList: any[] = [];
+    sessionStorage.removeItem('dpib_results_cache_v1');
+  } catch (_) {}
+}
 
-    snap.forEach((docSnap) => {
-      rawList.push({ id: docSnap.id, ...docSnap.data() });
-    });
+export function getCachedPublishedResults(): StudentResult[] | null {
+  if (_resultsCache && Date.now() - _resultsCache.timestamp < RESULTS_CACHE_TTL_MS) {
+    return _resultsCache.list.filter((r) => r.status === 'PUBLISHED');
+  }
+  try {
+    const raw = sessionStorage.getItem('dpib_results_cache_v1');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && Array.isArray(parsed.list) && Date.now() - parsed.timestamp < RESULTS_CACHE_TTL_MS) {
+        _resultsCache = parsed;
+        return parsed.list.filter((r: StudentResult) => r.status === 'PUBLISHED');
+      }
+    }
+  } catch (_) {}
+  return null;
+}
 
-    let list: StudentResult[] = consolidateStudentResults(rawList);
+export async function getResults(
+  filters?: {
+    examId?: string;
+    semesterId?: string;
+    departmentId?: string;
+    status?: 'PUBLISHED' | 'DRAFT' | 'REVIEW' | 'ALL';
+    search?: string;
+  },
+  forceRefresh = false
+): Promise<StudentResult[]> {
+  try {
+    let consolidatedAll: StudentResult[];
+
+    const isCacheValid =
+      !forceRefresh &&
+      _resultsCache !== null &&
+      Date.now() - _resultsCache.timestamp < RESULTS_CACHE_TTL_MS;
+
+    if (isCacheValid && _resultsCache) {
+      consolidatedAll = _resultsCache.list;
+    } else {
+      let foundInSession = false;
+      if (!forceRefresh) {
+        try {
+          const raw = sessionStorage.getItem('dpib_results_cache_v1');
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (parsed && Array.isArray(parsed.list) && Date.now() - parsed.timestamp < RESULTS_CACHE_TTL_MS) {
+              _resultsCache = parsed;
+              consolidatedAll = parsed.list;
+              foundInSession = true;
+            }
+          }
+        } catch (_) {}
+      }
+
+      if (!foundInSession) {
+        const ref = collection(db, COLLECTIONS.RESULTS);
+        const snap = await getDocs(ref);
+        let rawList: any[] = [];
+
+        snap.forEach((docSnap) => {
+          rawList.push({ id: docSnap.id, ...docSnap.data() });
+        });
+
+        consolidatedAll = consolidateStudentResults(rawList);
+        _resultsCache = {
+          list: consolidatedAll,
+          timestamp: Date.now(),
+        };
+
+        try {
+          sessionStorage.setItem(
+            'dpib_results_cache_v1',
+            JSON.stringify({ list: consolidatedAll, timestamp: Date.now() })
+          );
+        } catch (_) {}
+      }
+    }
+
+    let list: StudentResult[] = [...consolidatedAll!];
 
     if (filters) {
       if (filters.examId && filters.examId !== 'ALL') {
@@ -1434,6 +1511,7 @@ export async function getResults(filters?: {
     return [];
   }
 }
+
 
 export async function saveSingleResult(result: Omit<StudentResult, 'id'>, id?: string): Promise<string> {
   const roll = toEnglishDigits(String(result.roll || (result as any).studentRoll || (result as any).rollNumber || '').trim());
@@ -1471,6 +1549,7 @@ export async function saveSingleResult(result: Omit<StudentResult, 'id'>, id?: s
 
   const docRef = doc(db, COLLECTIONS.RESULTS, docId);
   await setDoc(docRef, cleanResult, { merge: true });
+  invalidateResultsCache();
   return docId;
 }
 
@@ -1554,6 +1633,7 @@ export async function batchSaveResults(
 
       await Promise.race([commitPromise, timeoutPromise]);
     }
+    invalidateResultsCache();
     return { successCount, errors };
   } catch (error: any) {
     console.error('Batch save error:', error);
@@ -1569,11 +1649,13 @@ export async function updateResultStatus(id: string, status: 'PUBLISHED' | 'DRAF
     updatedAt: Date.now(),
   });
   await updateDoc(docRef, payload);
+  invalidateResultsCache();
 }
 
 export async function deleteResult(id: string): Promise<void> {
   try {
     await deleteDoc(doc(db, COLLECTIONS.RESULTS, id));
+    invalidateResultsCache();
   } catch (err) {
     console.error('Delete result error:', err);
     throw err;
@@ -1604,7 +1686,9 @@ export async function deleteAllResults(examId?: string): Promise<number> {
       await batch.commit();
     }
 
+    invalidateResultsCache();
     return deletedCount;
+
   } catch (err) {
     console.error('Delete all results error:', err);
     throw err;

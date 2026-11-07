@@ -16,6 +16,11 @@ import {
   Wallet,
   History,
   Receipt,
+  QrCode,
+  Phone,
+  Download,
+  ExternalLink,
+  Sparkles,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
@@ -36,6 +41,13 @@ import {
   getDonationRecordForTransaction,
   getPurposeLabel,
   getSavedUserDonationIds,
+  saveUserDonationId,
+  getSavedUserPhones,
+  saveUserPhone,
+  getSavedUserTrxIds,
+  saveUserTrxId,
+  getOrCreateDeviceToken,
+  linkTransactionIdentifierToDevice,
   lookupDonations,
   maskPhoneNumberBangla,
   normalizeBdPhone,
@@ -63,6 +75,50 @@ const WIZARD_STEPS: { step: WizardStep; shortTitle: string; fullTitle: string }[
   { step: 4, shortTitle: 'ডিজিটাল রসিদ', fullTitle: 'ডিজিটাল অনুদান রসিদ' },
 ];
 
+const LOCAL_DONATION_DRAFT_KEY = 'dpib_donation_draft_v1';
+
+interface DonationDraftState {
+  currentStep: WizardStep;
+  amount: number;
+  customAmountInput: string;
+  purpose: DonationPurpose;
+  paymentMethod: DonationPaymentMethod;
+  paymentChannel: 'NUMBER' | 'QR';
+  selectedQrType: 'AUTO' | 'BANGLA_QR';
+  referenceCode: string;
+  senderPhone: string;
+  transactionId: string;
+  donorName: string;
+  note: string;
+  savedAt: number;
+}
+
+function loadDonationDraft(): DonationDraftState | null {
+  try {
+    const raw = localStorage.getItem(LOCAL_DONATION_DRAFT_KEY);
+    if (!raw) return null;
+    const parsed: DonationDraftState = JSON.parse(raw);
+    if (!parsed || !parsed.currentStep || parsed.currentStep >= 4) {
+      localStorage.removeItem(LOCAL_DONATION_DRAFT_KEY);
+      return null;
+    }
+    // Expire draft after 24 hours
+    if (Date.now() - (parsed.savedAt || 0) > 24 * 60 * 60 * 1000) {
+      localStorage.removeItem(LOCAL_DONATION_DRAFT_KEY);
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function clearDonationDraft(): void {
+  try {
+    localStorage.removeItem(LOCAL_DONATION_DRAFT_KEY);
+  } catch {}
+}
+
 export const DonationPage: React.FC<DonationPageProps> = ({
   settings,
   onBack,
@@ -73,22 +129,55 @@ export const DonationPage: React.FC<DonationPageProps> = ({
     ...(settings?.donationConfig || {}),
   };
 
+  const initialDraft = React.useMemo(() => loadDonationDraft(), []);
+
   // Top-level mode: Multi-step Wizard ('WIZARD'), Transaction History ('HISTORY'), or Lookup ('LOOKUP')
   const [pageMode, setPageMode] = useState<'WIZARD' | 'HISTORY' | 'LOOKUP'>(initialMode);
-  const [currentStep, setCurrentStep] = useState<WizardStep>(1);
+  const [currentStep, setCurrentStep] = useState<WizardStep>(() => {
+    return initialDraft?.currentStep ? initialDraft.currentStep : 1;
+  });
+  const [isDraftRestored, setIsDraftRestored] = useState<boolean>(() => {
+    return !!(initialDraft && initialDraft.currentStep >= 2);
+  });
 
-  // Form States
-  const [amount, setAmount] = useState<number>(50);
-  const [customAmountInput, setCustomAmountInput] = useState<string>('50');
-  const [purpose, setPurpose] = useState<DonationPurpose>('APP_DEVELOPMENT');
-  const [paymentMethod, setPaymentMethod] = useState<DonationPaymentMethod>('BKASH');
-  const [referenceCode, setReferenceCode] = useState<string>(() => generateDonationReference());
-  const [senderPhone, setSenderPhone] = useState<string>('');
-  const [transactionId, setTransactionId] = useState<string>('');
-  const [donorName, setDonorName] = useState<string>('');
-  const [note, setNote] = useState<string>('');
+  // Form States - Default amount is 10 Taka (Requirement 1)
+  const [amount, setAmount] = useState<number>(() => {
+    return initialDraft?.amount && initialDraft.amount >= 10 ? initialDraft.amount : 10;
+  });
+  const [customAmountInput, setCustomAmountInput] = useState<string>(() => {
+    return initialDraft?.customAmountInput || (initialDraft?.amount ? String(initialDraft.amount) : '10');
+  });
+  const [purpose, setPurpose] = useState<DonationPurpose>(() => {
+    return initialDraft?.purpose || 'APP_DEVELOPMENT';
+  });
+  const [paymentMethod, setPaymentMethod] = useState<DonationPaymentMethod>(() => {
+    return initialDraft?.paymentMethod || 'BKASH';
+  });
+  const [referenceCode, setReferenceCode] = useState<string>(() => {
+    return initialDraft?.referenceCode || generateDonationReference();
+  });
+  const [senderPhone, setSenderPhone] = useState<string>(() => {
+    return initialDraft?.senderPhone || '';
+  });
+  const [transactionId, setTransactionId] = useState<string>(() => {
+    return initialDraft?.transactionId || '';
+  });
+  const [donorName, setDonorName] = useState<string>(() => {
+    return initialDraft?.donorName || '';
+  });
+  const [note, setNote] = useState<string>(() => {
+    return initialDraft?.note || '';
+  });
 
-  // UI Feedback & 30-Second Verification Modal States
+  // Payment Channel: Number Copy vs QR Code Scan
+  const [paymentChannel, setPaymentChannel] = useState<'NUMBER' | 'QR'>(() => {
+    return initialDraft?.paymentChannel || 'NUMBER';
+  });
+  const [selectedQrType, setSelectedQrType] = useState<'AUTO' | 'BANGLA_QR'>(() => {
+    return initialDraft?.selectedQrType || 'AUTO';
+  });
+
+  // UI Feedback & 15-Second Verification Modal States
   const [copiedNumber, setCopiedNumber] = useState(false);
   const [copiedRef, setCopiedRef] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -113,13 +202,22 @@ export const DonationPage: React.FC<DonationPageProps> = ({
   const [lookupResults, setLookupResults] = useState<DonationRecord[]>([]);
   const [lookupSearched, setLookupSearched] = useState<boolean>(false);
 
-  // Real-time Auto-Generated Transaction History States
+  // Real-time Auto-Generated Transaction History States (Requirement 3: Default to 'MINE')
   const [transactions, setTransactions] = useState<TransactionRecord[]>([]);
   const [transactionsLoading, setTransactionsLoading] = useState<boolean>(true);
-  const [historyFilter, setHistoryFilter] = useState<'ALL' | 'MINE' | 'BKASH' | 'NAGAD'>('ALL');
+  const [historyFilter, setHistoryFilter] = useState<'MINE' | 'ALL' | 'BKASH' | 'NAGAD'>('MINE');
   const [historySearch, setHistorySearch] = useState<string>('');
   const [loadingReceiptTxnId, setLoadingReceiptTxnId] = useState<string | null>(null);
+
+  // User Device Identity & Saved Transaction Identifiers
   const [myDonationIds, setMyDonationIds] = useState<string[]>(() => getSavedUserDonationIds());
+  const [myPhones, setMyPhones] = useState<string[]>(() => getSavedUserPhones());
+  const [myTrxIds, setMyTrxIds] = useState<string[]>(() => getSavedUserTrxIds());
+  const [deviceToken] = useState<string>(() => getOrCreateDeviceToken());
+
+  // Link previous payment tool state
+  const [linkInput, setLinkInput] = useState<string>('');
+  const [linkFeedback, setLinkFeedback] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
   useEffect(() => {
     setPageMode(initialMode);
@@ -132,6 +230,8 @@ export const DonationPage: React.FC<DonationPageProps> = ({
         setTransactions(items);
         setTransactionsLoading(false);
         setMyDonationIds(getSavedUserDonationIds());
+        setMyPhones(getSavedUserPhones());
+        setMyTrxIds(getSavedUserTrxIds());
       },
       (err) => {
         console.warn('Transactions subscription warning:', err.message);
@@ -140,6 +240,48 @@ export const DonationPage: React.FC<DonationPageProps> = ({
     );
     return () => unsub();
   }, []);
+
+  // Auto-persist draft so user doesn't lose progress on call, tab exit, or app switch (Requirement 2)
+  useEffect(() => {
+    if (pageMode !== 'WIZARD') return;
+    if (currentStep >= 4) {
+      clearDonationDraft();
+      return;
+    }
+    try {
+      const draft: DonationDraftState = {
+        currentStep,
+        amount,
+        customAmountInput,
+        purpose,
+        paymentMethod,
+        paymentChannel,
+        selectedQrType,
+        referenceCode,
+        senderPhone,
+        transactionId,
+        donorName,
+        note,
+        savedAt: Date.now(),
+      };
+      localStorage.setItem(LOCAL_DONATION_DRAFT_KEY, JSON.stringify(draft));
+    } catch {}
+  }, [
+    pageMode,
+    currentStep,
+    amount,
+    customAmountInput,
+    purpose,
+    paymentMethod,
+    paymentChannel,
+    selectedQrType,
+    referenceCode,
+    senderPhone,
+    transactionId,
+    donorName,
+    note,
+  ]);
+
 
   // Real-time Firestore listener so the receipt flips from অপেক্ষমাণ -> সম্পন্ন automatically
   // when the Android SMS Reading App webhook or Admin verifies the payment
@@ -315,15 +457,51 @@ export const DonationPage: React.FC<DonationPageProps> = ({
     }
   };
 
-  const myTransactionsCount = transactions.filter((t) =>
-    myDonationIds.includes(t.donationId)
-  ).length;
+  const isMyTransaction = (t: TransactionRecord): boolean => {
+    if (myDonationIds.includes(t.donationId) || myDonationIds.includes(t.id)) return true;
+    const cleanTrx = normalizeTrxId(t.gatewayTrxId);
+    if (cleanTrx && myTrxIds.includes(cleanTrx)) return true;
+    const cleanPhone = normalizeBdPhone(t.senderPhone);
+    if (cleanPhone && myPhones.includes(cleanPhone)) return true;
+    return false;
+  };
+
+  const myTransactions = transactions.filter(isMyTransaction);
+  const myTransactionsCount = myTransactions.length;
+  const myTotalAmount = myTransactions.reduce((sum, t) => sum + Number(t.amount || 0), 0);
   const totalCompletedAmount = transactions.reduce(
     (sum, t) => sum + Number(t.amount || 0),
     0
   );
+
+  const handleLinkTransaction = (e: React.FormEvent) => {
+    e.preventDefault();
+    setLinkFeedback(null);
+    const clean = linkInput.trim();
+    if (!clean) return;
+
+    const result = linkTransactionIdentifierToDevice(clean, transactions);
+    if (result.matchedCount > 0) {
+      setMyDonationIds(getSavedUserDonationIds());
+      setMyPhones(getSavedUserPhones());
+      setMyTrxIds(getSavedUserTrxIds());
+      setHistoryFilter('MINE');
+      setLinkFeedback({
+        type: 'success',
+        message: `অভিনন্দন! আপনার ${toBanglaDigits(result.matchedCount)}টি সম্পন্ন লেনদেন সফলভাবে এই ডিভাইসে যুক্ত করা হয়েছে।`,
+      });
+      setLinkInput('');
+    } else {
+      setLinkFeedback({
+        type: 'error',
+        message:
+          'প্রদত্ত তথ্য দিয়ে কোনো নিশ্চিত লেনদেন পাওয়া যায়নি। অনুগ্রহ করে আপনার বিকাশ বা নগদ এসএমএস-এর সঠিক TrxID অথবা ১১ সংখ্যার মোবাইল নম্বর লিখুন।',
+      });
+    }
+  };
+
   const filteredTransactions = transactions.filter((t) => {
-    if (historyFilter === 'MINE' && !myDonationIds.includes(t.donationId)) return false;
+    if (historyFilter === 'MINE' && !isMyTransaction(t)) return false;
     if (historyFilter === 'BKASH' && t.paymentMethod !== 'BKASH') return false;
     if (historyFilter === 'NAGAD' && t.paymentMethod !== 'NAGAD') return false;
     if (!historySearch.trim()) return true;
@@ -384,8 +562,8 @@ export const DonationPage: React.FC<DonationPageProps> = ({
           >
             <History className="w-3.5 h-3.5 shrink-0" />
             <span>
-              লেনদেন হিস্ট্রি
-              {transactions.length > 0 ? ` (${toBanglaDigits(transactions.length)})` : ''}
+              আমার হিস্ট্রি
+              {myTransactionsCount > 0 ? ` (${toBanglaDigits(myTransactionsCount)})` : ''}
             </span>
           </button>
           <button
@@ -413,43 +591,47 @@ export const DonationPage: React.FC<DonationPageProps> = ({
           transition={{ duration: 0.2 }}
           className="space-y-5"
         >
-          {/* Summary Stats Row */}
+          {/* Summary Stats Row (Personalized for User) */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
             <div className="bg-white rounded-3xl border border-slate-200/90 p-5 shadow-2xs">
-              <span className="text-xs font-bold text-slate-500 block">মোট সম্পন্ন লেনদেন</span>
+              <span className="text-xs font-bold text-slate-500 block">
+                {historyFilter === 'MINE' ? 'আপনার সম্পন্ন লেনদেন' : 'মোট সম্পন্ন লেনদেন'}
+              </span>
               <span className="text-2xl font-black text-slate-950 tabular-nums mt-1 block">
-                {toBanglaDigits(transactions.length)} টি
+                {toBanglaDigits(historyFilter === 'MINE' ? myTransactionsCount : transactions.length)} টি
               </span>
               <span className="text-[11px] text-emerald-700 font-semibold mt-0.5 block">
-                প্রতিটি নিশ্চিত পেমেন্টের অটো রেকর্ড
+                {historyFilter === 'MINE'
+                  ? 'এই ডিভাইসে সংরক্ষিত আপনার ডিজিটাল রসিদ'
+                  : 'সকল নিশ্চিত পেমেন্টের অটো রেকর্ড'}
               </span>
             </div>
 
             <div className="bg-white rounded-3xl border border-slate-200/90 p-5 shadow-2xs">
-              <span className="text-xs font-bold text-slate-500 block">মোট সংগৃহীত তহবিল</span>
+              <span className="text-xs font-bold text-slate-500 block">
+                {historyFilter === 'MINE' ? 'আপনার মোট অনুদান' : 'মোট সংগৃহীত তহবিল'}
+              </span>
               <span className="text-2xl font-black text-emerald-700 tabular-nums mt-1 block">
-                ৳ {toBanglaDigits(totalCompletedAmount)} টাকা
+                ৳ {toBanglaDigits(historyFilter === 'MINE' ? myTotalAmount : totalCompletedAmount)} টাকা
               </span>
               <span className="text-[11px] text-slate-500 font-medium mt-0.5 block">
-                অ্যাপ উন্নয়ন ও মানবিক কল্যাণ খাত
+                {historyFilter === 'MINE' ? 'আপনার ব্যক্তিগত অবদান' : 'অ্যাপ উন্নয়ন ও কল্যাণ তহবিল'}
               </span>
             </div>
 
             <div className="bg-white rounded-3xl border border-slate-200/90 p-5 shadow-2xs flex flex-col justify-between">
-              <span className="text-xs font-bold text-slate-500 block">অনুমোদিত পেমেন্ট মাধ্যম</span>
-              <div className="flex items-center gap-3 mt-2">
-                <div className="flex items-center gap-1.5">
-                  <PaymentMethodLogo provider="BKASH" size="xs" />
-                  <span className="text-xs font-black text-[#E2136E]">বিকাশ</span>
-                </div>
-                <span className="text-slate-300">·</span>
-                <div className="flex items-center gap-1.5">
-                  <PaymentMethodLogo provider="NAGAD" size="xs" />
-                  <span className="text-xs font-black text-[#EA580C]">নগদ</span>
-                </div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-500 block">ডিভাইস নিরাপত্তা আইডি</span>
+                <span className="inline-flex items-center gap-1 text-[10px] font-black text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200">
+                  <ShieldCheck className="w-3 h-3 text-blue-600" />
+                  সক্রিয়
+                </span>
               </div>
+              <span className="text-xs font-mono font-bold text-slate-800 tracking-wider truncate mt-1">
+                {deviceToken}
+              </span>
               <span className="text-[11px] text-slate-500 font-medium mt-1 block">
-                তাৎক্ষণিক ডিজিটাল লেনদেন রসিদ
+                শুধুমাত্র আপনার ডিভাইস থেকে দেখা যাবে
               </span>
             </div>
           </div>
@@ -460,10 +642,12 @@ export const DonationPage: React.FC<DonationPageProps> = ({
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
                   <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
-                    নিশ্চিতকৃত লেনদেন হিস্ট্রি
+                    {historyFilter === 'MINE' ? 'আমার লেনদেন হিস্ট্রি' : 'প্রতিষ্ঠানিক লেনদেন হিস্ট্রি'}
                   </h2>
                   <p className="text-xs sm:text-sm text-slate-500 mt-0.5 leading-relaxed">
-                    পেমেন্ট নিশ্চিত হওয়া মাত্রই স্বয়ংক্রিয়ভাবে একটি লেনদেন তৈরি হয় এবং এখানে যুক্ত হয়।
+                    {historyFilter === 'MINE'
+                      ? 'শুধুমাত্র আপনার এই ডিভাইসে সম্পন্ন নিশ্চিত অনুদানের তালিকা ও ডিজিটাল রসিদ।'
+                      : 'প্রতিষ্ঠানিক স্বচ্ছতার জন্য নিশ্চিত হওয়া সকল লেনদেনের সার্বজনীন তালিকা।'}
                   </p>
                 </div>
 
@@ -474,7 +658,7 @@ export const DonationPage: React.FC<DonationPageProps> = ({
                     setPageMode('WIZARD');
                     scrollToTopSmooth();
                   }}
-                  className="min-h-[44px] px-4 py-2.5 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold inline-flex items-center gap-2 cursor-pointer self-start sm:self-center shrink-0 transition-all"
+                  className="min-h-[44px] px-4 py-2.5 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold inline-flex items-center gap-2 cursor-pointer self-start sm:self-center shrink-0 transition-all shadow-2xs"
                 >
                   <HeartHandshake className="w-4 h-4 shrink-0" />
                   <span>নতুন অনুদান প্রদান করুন</span>
@@ -486,8 +670,8 @@ export const DonationPage: React.FC<DonationPageProps> = ({
                 <div className="flex flex-wrap items-center gap-1.5">
                   {(
                     [
-                      { id: 'ALL', label: `সকল (${toBanglaDigits(transactions.length)})` },
                       { id: 'MINE', label: `আমার লেনদেন (${toBanglaDigits(myTransactionsCount)})` },
+                      { id: 'ALL', label: `সকল সাধারণ অনুদান (${toBanglaDigits(transactions.length)})` },
                       { id: 'BKASH', label: 'বিকাশ' },
                       { id: 'NAGAD', label: 'নগদ' },
                     ] as const
@@ -498,7 +682,7 @@ export const DonationPage: React.FC<DonationPageProps> = ({
                       onClick={() => setHistoryFilter(f.id)}
                       className={`min-h-[38px] px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
                         historyFilter === f.id
-                          ? 'bg-slate-900 text-white border-slate-900'
+                          ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
                           : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
                       }`}
                     >
@@ -518,6 +702,47 @@ export const DonationPage: React.FC<DonationPageProps> = ({
                   <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                 </div>
               </div>
+
+              {/* Quick Link Previous Transactions by Phone or TrxID */}
+              <form
+                onSubmit={handleLinkTransaction}
+                className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 p-3 rounded-2xl bg-blue-50/50 border border-blue-200/70"
+              >
+                <div className="relative flex-1 min-w-0">
+                  <input
+                    type="text"
+                    value={linkInput}
+                    onChange={(e) => setLinkInput(e.target.value)}
+                    placeholder="পূর্বে অন্য ডিভাইসে পেমেন্ট করে থাকলে বিকাশ/নগদ নম্বর বা TrxID দিন..."
+                    className="w-full min-h-[38px] px-3.5 py-1.5 bg-white border border-blue-200 rounded-xl text-xs font-semibold text-slate-900 placeholder:text-slate-400 focus:border-blue-600 outline-none transition-all font-mono"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  className="min-h-[38px] px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all cursor-pointer shrink-0 shadow-2xs whitespace-nowrap"
+                >
+                  আমার হিস্ট্রিতে লিঙ্ক করুন
+                </button>
+              </form>
+
+              {linkFeedback && (
+                <div
+                  className={`p-3 rounded-xl text-xs font-bold flex items-center justify-between gap-2 ${
+                    linkFeedback.type === 'success'
+                      ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                      : 'bg-rose-50 text-rose-800 border border-rose-200'
+                  }`}
+                >
+                  <span>{linkFeedback.message}</span>
+                  <button
+                    type="button"
+                    onClick={() => setLinkFeedback(null)}
+                    className="text-slate-400 hover:text-slate-600 text-xs font-black cursor-pointer"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
             </div>
 
             {transactionsLoading ? (
@@ -525,37 +750,50 @@ export const DonationPage: React.FC<DonationPageProps> = ({
                 লেনদেন হিস্ট্রি লোড হচ্ছে...
               </div>
             ) : filteredTransactions.length === 0 ? (
-              <div className="p-10 text-center space-y-3">
-                <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center mx-auto">
-                  <Receipt className="w-6 h-6" />
+              <div className="p-10 text-center space-y-4">
+                <div className="w-14 h-14 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto border border-blue-100">
+                  <Receipt className="w-7 h-7" />
                 </div>
-                <div className="space-y-1">
-                  <h3 className="text-base font-black text-slate-800">
+                <div className="space-y-1.5 max-w-md mx-auto">
+                  <h3 className="text-base sm:text-lg font-black text-slate-900">
                     {historyFilter === 'MINE'
-                      ? 'আপনার ব্রাউজার থেকে এখনো কোনো সম্পন্ন লেনদেন পাওয়া যায়নি'
+                      ? 'আপনার এই ডিভাইসে কোনো লেনদেনের রেকর্ড পাওয়া যায়নি'
                       : 'কোনো সম্পন্ন লেনদেন পাওয়া যায়নি'}
                   </h3>
-                  <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
-                    অনুদান পেমেন্ট নিশ্চিত হওয়া মাত্রই স্বয়ংক্রিয়ভাবে লেনদেন নম্বর তৈরি হয়ে এই তালিকায় যুক্ত হবে।
+                  <p className="text-xs text-slate-500 leading-relaxed">
+                    {historyFilter === 'MINE'
+                      ? 'আপনি এই ডিভাইসে অনুদান সম্পন্ন করলে স্বয়ংক্রিয়ভাবে লেনদেন নম্বর তৈরি হয়ে শুধুমাত্র আপনার জন্য এখানে প্রদর্শিত হবে।'
+                      : 'অনুদান পেমেন্ট নিশ্চিত হওয়া মাত্রই স্বয়ংক্রিয়ভাবে লেনদেন নম্বর তৈরি হয়ে এই তালিকায় যুক্ত হবে।'}
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setCurrentStep(1);
-                    setPageMode('WIZARD');
-                    scrollToTopSmooth();
-                  }}
-                  className="min-h-[44px] px-5 py-2.5 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold cursor-pointer inline-flex items-center gap-2"
-                >
-                  <span>এখনই অনুদান প্রদান করুন</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </button>
+                <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCurrentStep(1);
+                      setPageMode('WIZARD');
+                      scrollToTopSmooth();
+                    }}
+                    className="min-h-[44px] px-5 py-2.5 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold cursor-pointer inline-flex items-center gap-2 shadow-2xs"
+                  >
+                    <span>এখনই অনুদান প্রদান করুন</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                  {historyFilter === 'MINE' && transactions.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setHistoryFilter('ALL')}
+                      className="min-h-[44px] px-4 py-2.5 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold cursor-pointer inline-flex items-center gap-1.5"
+                    >
+                      <span>সকল সাধারণ অনুদান দেখুন</span>
+                    </button>
+                  )}
+                </div>
               </div>
             ) : (
               <div className="divide-y divide-slate-200/80">
                 {filteredTransactions.map((txn) => {
-                  const isMine = myDonationIds.includes(txn.donationId);
+                  const isMine = isMyTransaction(txn);
                   return (
                     <div
                       key={txn.id}
@@ -639,10 +877,8 @@ export const DonationPage: React.FC<DonationPageProps> = ({
                           onClick={() => handleOpenReceiptFromTransaction(txn)}
                           className="min-h-[44px] px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-900 text-xs font-bold transition-all cursor-pointer inline-flex items-center gap-1.5 disabled:opacity-50"
                         >
-                          <Receipt className="w-3.5 h-3.5" />
-                          <span>
-                            {loadingReceiptTxnId === txn.id ? 'খুলছে...' : 'রসিদ দেখুন'}
-                          </span>
+                          <Receipt className="w-3.5 h-3.5 text-slate-600" />
+                          <span>রসিদ দেখুন</span>
                         </button>
                       </div>
                     </div>
@@ -780,6 +1016,45 @@ export const DonationPage: React.FC<DonationPageProps> = ({
       {/* ================= VIEW B: MULTI-PAGE STEP-BY-STEP WIZARD ================= */}
       {pageMode === 'WIZARD' && (
         <div className="space-y-5">
+          {/* Draft Restored Alert Banner if user returned after phone call or app switch */}
+          {isDraftRestored && currentStep >= 2 && currentStep < 4 && (
+            <motion.div
+              initial={{ opacity: 0, y: -6 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-amber-50/95 border border-amber-200/90 rounded-2xl p-3.5 sm:p-4 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs"
+            >
+              <div className="flex items-start gap-2.5">
+                <span className="w-5 h-5 rounded-full bg-amber-500 text-white flex items-center justify-center shrink-0 mt-0.5 text-[11px] font-black">
+                  ✓
+                </span>
+                <div>
+                  <p className="font-bold text-amber-950">
+                    পূর্ববর্তী অসম্পূর্ণ পেমেন্ট ধাপ পুনরুদ্ধার করা হয়েছে
+                  </p>
+                  <p className="text-[11px] text-amber-800 mt-0.5">
+                    ফোন কল বা অ্যাপ পরিবর্তনের কারণে বিঘ্ন ঘটলেও আপনার তথ্য সংরক্ষিত রয়েছে (ধাপ {toBanglaDigits(currentStep)}: {WIZARD_STEPS[currentStep - 1]?.shortTitle})।
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  clearDonationDraft();
+                  setIsDraftRestored(false);
+                  setCurrentStep(1);
+                  setAmount(10);
+                  setCustomAmountInput('10');
+                  setSenderPhone('');
+                  setTransactionId('');
+                  setReferenceCode(generateDonationReference());
+                }}
+                className="self-end sm:self-center px-3 py-1.5 rounded-xl bg-white hover:bg-amber-100 border border-amber-300 text-amber-900 font-bold text-[11px] transition-colors cursor-pointer shrink-0"
+              >
+                নতুন করে শুরু করুন
+              </button>
+            </motion.div>
+          )}
+
           {/* 4-Step Visual Progress Stepper */}
           <div className="no-print bg-white rounded-3xl border border-slate-200/90 p-3.5 sm:p-5 shadow-2xs">
             <div className="grid grid-cols-4 gap-1.5 sm:gap-3">
@@ -1167,87 +1442,272 @@ export const DonationPage: React.FC<DonationPageProps> = ({
                   </div>
                 </div>
 
-                {/* Active Payment Number & Reference Card */}
-                <div
-                  className={`p-5 sm:p-6 rounded-2xl border space-y-5 ${
-                    paymentMethod === 'BKASH'
-                      ? 'bg-pink-50/45 border-[#E2136E]/25'
-                      : 'bg-orange-50/45 border-[#EA580C]/25'
-                  }`}
-                >
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                    <div className="flex items-center gap-3.5">
-                      <PaymentMethodLogo provider={paymentMethod} size="md" />
-                      <div>
-                        <span className="text-xs font-bold text-slate-600 block">
-                          অফিসিয়াল {paymentMethod === 'BKASH' ? 'বিকাশ' : 'নগদ'} নম্বর (
-                          {getAccountTypeBangla(activeAccountType)}):
-                        </span>
-                        <div className="text-2xl sm:text-3xl font-black text-slate-950 font-mono tracking-wider tabular-nums mt-1">
-                          {activeAccountNumber}
-                        </div>
-                      </div>
-                    </div>
+                {/* ================= PAYMENT CHANNEL SELECTOR: NUMBER COPY VS QR CODE ================= */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-slate-700 uppercase">
+                      পেমেন্ট পদ্ধতি নির্বাচন করুন (PAYMENT CHANNEL)
+                    </label>
+                    <span className="text-[11px] font-bold text-slate-500">
+                      আপনার সুবিধাজনক পদ্ধতিটি বেছে নিন
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <button
+                      type="button"
+                      id="btn-channel-number"
+                      onClick={() => setPaymentChannel('NUMBER')}
+                      className={`min-h-[50px] p-3 rounded-2xl border-2 text-xs sm:text-sm font-black flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                        paymentChannel === 'NUMBER'
+                          ? 'border-slate-900 bg-slate-900 text-white shadow-xs'
+                          : 'border-slate-200 bg-slate-50/70 text-slate-700 hover:bg-slate-100'
+                      }`}
+                    >
+                      <Phone className="w-4 h-4 shrink-0" />
+                      <span>নম্বর কপি করে পেমেন্ট</span>
+                    </button>
 
                     <button
                       type="button"
-                      id="btn-copy-payment-number"
-                      onClick={() => handleCopyText(activeAccountNumber, 'NUMBER')}
-                      className={`min-h-[44px] inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-extrabold text-white transition-all active:scale-95 cursor-pointer shrink-0 ${
-                        paymentMethod === 'BKASH'
-                          ? 'bg-[#E2136E] hover:bg-[#c81060]'
-                          : 'bg-[#EA580C] hover:bg-[#d14906]'
+                      id="btn-channel-qr"
+                      onClick={() => setPaymentChannel('QR')}
+                      className={`min-h-[50px] p-3 rounded-2xl border-2 text-xs sm:text-sm font-black flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                        paymentChannel === 'QR'
+                          ? 'border-slate-900 bg-slate-900 text-white shadow-xs'
+                          : 'border-slate-200 bg-slate-50/70 text-slate-700 hover:bg-slate-100'
                       }`}
                     >
-                      {copiedNumber ? (
-                        <>
-                          <Check className="w-4 h-4" />
-                          <span>নম্বর কপি হয়েছে</span>
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="w-4 h-4" />
-                          <span>নম্বর কপি করুন</span>
-                        </>
-                      )}
+                      <QrCode className="w-4 h-4 shrink-0" />
+                      <span>কিউআর কোড স্ক্যান</span>
                     </button>
                   </div>
+                </div>
 
-                  {/* Unique Reference Code Row */}
-                  <div className="pt-4 border-t border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div>
-                      <span className="text-xs font-bold text-slate-800 block">
-                        আপনার ইউনিক রেফারেন্স কোড:
-                      </span>
-                      <p className="text-[11px] text-slate-600 mt-0.5 leading-relaxed">
-                        অ্যাপে <strong>৳ {toBanglaDigits(amount)} টাকা</strong> পাঠানোর সময় রেফারেন্স ঘরে নিচের কোডটি ব্যবহার করলে দ্রুত যাচাই হবে:
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className="px-3.5 py-2 rounded-xl bg-white border border-slate-200 font-mono text-sm font-black text-slate-900 tabular-nums">
-                        {referenceCode}
-                      </span>
+                {/* ================= OPTION A: NUMBER COPY CARD ================= */}
+                {paymentChannel === 'NUMBER' && (
+                  <motion.div
+                    key="channel-number-box"
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.18 }}
+                    className={`p-5 sm:p-6 rounded-2xl border space-y-5 ${
+                      paymentMethod === 'BKASH'
+                        ? 'bg-pink-50/45 border-[#E2136E]/25'
+                        : 'bg-orange-50/45 border-[#EA580C]/25'
+                    }`}
+                  >
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                      <div className="flex items-center gap-3.5">
+                        <PaymentMethodLogo provider={paymentMethod} size="md" />
+                        <div>
+                          <span className="text-xs font-bold text-slate-600 block">
+                            অফিসিয়াল {paymentMethod === 'BKASH' ? 'বিকাশ' : 'নগদ'} নম্বর (
+                            {getAccountTypeBangla(activeAccountType)}):
+                          </span>
+                          <div className="text-2xl sm:text-3xl font-black text-slate-950 font-mono tracking-wider tabular-nums mt-1">
+                            {activeAccountNumber}
+                          </div>
+                        </div>
+                      </div>
+
                       <button
                         type="button"
-                        onClick={() => handleCopyText(referenceCode, 'REF')}
-                        className="min-h-[40px] px-3.5 py-2 rounded-xl bg-white hover:bg-slate-100 border border-slate-200 text-xs font-bold text-slate-800 inline-flex items-center gap-1.5 cursor-pointer"
+                        id="btn-copy-payment-number"
+                        onClick={() => handleCopyText(activeAccountNumber, 'NUMBER')}
+                        className={`min-h-[44px] inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-extrabold text-white transition-all active:scale-95 cursor-pointer shrink-0 ${
+                          paymentMethod === 'BKASH'
+                            ? 'bg-[#E2136E] hover:bg-[#c81060]'
+                            : 'bg-[#EA580C] hover:bg-[#d14906]'
+                        }`}
                       >
-                        {copiedRef ? (
-                          <Check className="w-3.5 h-3.5 text-emerald-600" />
+                        {copiedNumber ? (
+                          <>
+                            <Check className="w-4 h-4" />
+                            <span>নম্বর কপি হয়েছে</span>
+                          </>
                         ) : (
-                          <Copy className="w-3.5 h-3.5" />
+                          <>
+                            <Copy className="w-4 h-4" />
+                            <span>নম্বর কপি করুন</span>
+                          </>
                         )}
-                        <span>{copiedRef ? 'কপি হয়েছে' : 'কপি করুন'}</span>
                       </button>
                     </div>
-                  </div>
-                </div>
+
+                    {/* Unique Reference Code Row */}
+                    <div className="pt-4 border-t border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div>
+                        <span className="text-xs font-bold text-slate-800 block">
+                          আপনার ইউনিক রেফারেন্স কোড:
+                        </span>
+                        <p className="text-[11px] text-slate-600 mt-0.5 leading-relaxed">
+                          অ্যাপে <strong>৳ {toBanglaDigits(amount)} টাকা</strong> পাঠানোর সময় রেফারেন্স ঘরে নিচের কোডটি ব্যবহার করলে দ্রুত যাচাই হবে:
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="px-3.5 py-2 rounded-xl bg-white border border-slate-200 font-mono text-sm font-black text-slate-900 tabular-nums">
+                          {referenceCode}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleCopyText(referenceCode, 'REF')}
+                          className="min-h-[40px] px-3.5 py-2 rounded-xl bg-white hover:bg-slate-100 border border-slate-200 text-xs font-bold text-slate-800 inline-flex items-center gap-1.5 cursor-pointer"
+                        >
+                          {copiedRef ? (
+                            <Check className="w-3.5 h-3.5 text-emerald-600" />
+                          ) : (
+                            <Copy className="w-3.5 h-3.5" />
+                          )}
+                          <span>{copiedRef ? 'কপি হয়েছে' : 'কপি করুন'}</span>
+                        </button>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+
+                {/* ================= OPTION B: QR CODE SCAN CARD ================= */}
+                {paymentChannel === 'QR' && (
+                  <motion.div
+                    key="channel-qr-box"
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.18 }}
+                    className="p-5 sm:p-6 rounded-3xl bg-slate-50 border border-slate-200/90 space-y-5"
+                  >
+                    {/* QR Code Tab Selector if Bangla QR is also configured */}
+                    {Boolean(config.banglaQrImageUrl) && (
+                      <div className="flex items-center gap-2 p-1 bg-white rounded-2xl border border-slate-200/80">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedQrType('AUTO')}
+                          className={`flex-1 min-h-[40px] px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                            selectedQrType === 'AUTO'
+                              ? paymentMethod === 'BKASH'
+                                ? 'bg-[#E2136E] text-white shadow-2xs'
+                                : 'bg-[#EA580C] text-white shadow-2xs'
+                              : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                        >
+                          {paymentMethod === 'BKASH' ? 'বিকাশ কিউআর' : 'নগদ কিউআর'}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setSelectedQrType('BANGLA_QR')}
+                          className={`flex-1 min-h-[40px] px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                            selectedQrType === 'BANGLA_QR'
+                              ? 'bg-emerald-700 text-white shadow-2xs'
+                              : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                        >
+                          বাংলা কিউআর (BANGLA QR)
+                        </button>
+                      </div>
+                    )}
+
+                    {/* QR Showcase Frame */}
+                    {(() => {
+                      const isBanglaQr = selectedQrType === 'BANGLA_QR' && Boolean(config.banglaQrImageUrl);
+                      const activeQrUrl = isBanglaQr
+                        ? config.banglaQrImageUrl
+                        : paymentMethod === 'BKASH'
+                        ? config.bkashQrImageUrl
+                        : config.nagadQrImageUrl;
+
+                      return (
+                        <div className="flex flex-col md:flex-row items-center gap-5 sm:gap-6 bg-white p-5 sm:p-6 rounded-2xl border border-slate-200/80 shadow-2xs">
+                          {/* Left: QR Image with Badge */}
+                          <div className="relative shrink-0 flex flex-col items-center">
+                            <div className="w-48 h-48 sm:w-52 sm:h-52 p-3 bg-white rounded-2xl border-2 border-slate-200/90 shadow-md flex items-center justify-center relative overflow-hidden group">
+                              {activeQrUrl ? (
+                                <img
+                                  src={activeQrUrl}
+                                  alt="PAYMENT QR CODE"
+                                  className="w-full h-full object-contain select-none"
+                                />
+                              ) : (
+                                <div className="text-center p-3 space-y-2">
+                                  <QrCode className="w-12 h-12 text-slate-300 mx-auto" />
+                                  <span className="text-[11px] font-bold text-slate-500 block leading-tight">
+                                    অ্যাডমিন প্যানেল থেকে {paymentMethod === 'BKASH' ? 'বিকাশ' : 'নগদ'}-এর কিউআর কোড যুক্ত করুন।
+                                  </span>
+                                  <span className="text-[10px] text-slate-400 block font-mono">
+                                    অথবা উপরের &quot;নম্বর কপি করে পেমেন্ট&quot; অপশন ব্যবহার করুন
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+
+                            {activeQrUrl && (
+                              <div className="mt-2.5 flex items-center gap-2">
+                                <a
+                                  href={activeQrUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  download={`DPIB_${paymentMethod}_QR.png`}
+                                  className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-[11px] font-bold inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+                                >
+                                  <Download className="w-3.5 h-3.5" />
+                                  <span>কিউআর সেভ করুন</span>
+                                </a>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Right: Scan Instructions & Reference */}
+                          <div className="space-y-3.5 flex-1 min-w-0 text-left">
+                            <div className="space-y-1">
+                              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 text-slate-800 text-xs font-black">
+                                <QrCode className="w-3.5 h-3.5 text-slate-700" />
+                                <span>
+                                  {isBanglaQr
+                                    ? 'সর্বজনীন বাংলা কিউআর স্ক্যান'
+                                    : `${paymentMethod === 'BKASH' ? 'বিকাশ' : 'নগদ'} কিউআর কোড স্ক্যান`}
+                                </span>
+                              </div>
+                              <h3 className="text-base sm:text-lg font-black text-slate-900 leading-snug">
+                                {isBanglaQr
+                                  ? 'যেকোনো মোবাইল অ্যাপ (বিকাশ, নগদ, রকেট, ব্যাংক) দিয়ে স্ক্যান করুন'
+                                  : `আপনার ${paymentMethod === 'BKASH' ? 'বিকাশ' : 'নগদ'} অ্যাপ খুলে কিউআর স্ক্যান করুন`}
+                              </h3>
+                              <p className="text-xs text-slate-500 leading-relaxed">
+                                {isBanglaQr
+                                  ? 'বাংলাদেশ ব্যাংক সমর্থিত বাংলা কিউআর — যেকোনো ব্যাংকিং বা MFS অ্যাপের কিউআর রিডার দিয়ে সরাসরি অনুদান প্রদান করতে পারবেন।'
+                                  : `অ্যাপে গিয়ে "স্ক্যান QR" বাটন চেপে কোডটি স্ক্যান করলেই স্বয়ংক্রিয়ভাবে নম্বর চলে আসবে।`}
+                              </p>
+                            </div>
+
+                            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 space-y-1">
+                              <div className="flex items-center justify-between text-xs font-bold text-slate-700">
+                                <span>অনুদানের পরিমাণ:</span>
+                                <span className="text-sm font-black text-slate-950 tabular-nums">
+                                  ৳ {toBanglaDigits(amount)} টাকা
+                                </span>
+                              </div>
+                              <div className="flex items-center justify-between text-xs font-bold text-slate-700 pt-1 border-t border-slate-200/60">
+                                <span>রেফারেন্স কোড:</span>
+                                <span className="font-mono text-xs font-black text-slate-900 tabular-nums">
+                                  {referenceCode}
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="text-[11px] text-slate-500 leading-relaxed">
+                              স্ক্যান করে টাকা পাঠানো সম্পন্ন হলে SMS থেকে পাওয়া <strong>TRXID</strong> দিয়ে নিচের <strong>পরবর্তী ধাপ</strong> বাটনে ক্লিক করুন।
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </motion.div>
+                )}
 
                 {/* Clear Step-by-Step Guide */}
                 <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 text-xs text-slate-700 space-y-1.5 leading-relaxed">
                   <p className="font-black text-slate-900">টাকা পাঠানোর সহজ নিয়ম:</p>
                   <p>
-                    ১. উপরের কপি করা নম্বরে আপনার{' '}
+                    ১. উপরের নম্বর কপি করে অথবা কিউআর কোড স্ক্যান করে আপনার{' '}
                     <strong>{paymentMethod === 'BKASH' ? 'বিকাশ' : 'নগদ'}</strong> অ্যাপ থেকে{' '}
                     <strong>৳ {toBanglaDigits(amount)} টাকা</strong> পাঠান।
                   </p>
@@ -1700,6 +2160,20 @@ export const DonationPage: React.FC<DonationPageProps> = ({
           setPendingVerificationPayload(null);
           setErrorMsg(null);
           setSubmittedDonation(verifiedRecord);
+          clearDonationDraft();
+          setIsDraftRestored(false);
+          if (verifiedRecord.id) {
+            saveUserDonationId(verifiedRecord.id);
+          }
+          if (verifiedRecord.senderPhone) {
+            saveUserPhone(verifiedRecord.senderPhone);
+          }
+          if (verifiedRecord.transactionId) {
+            saveUserTrxId(verifiedRecord.transactionId);
+          }
+          setMyDonationIds(getSavedUserDonationIds());
+          setMyPhones(getSavedUserPhones());
+          setMyTrxIds(getSavedUserTrxIds());
           setCurrentStep(4);
           setPageMode('WIZARD');
           scrollToTopSmooth();

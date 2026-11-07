@@ -200,8 +200,11 @@ export interface DonationConfig {
   enabled: boolean;
   bkashNumber: string;
   bkashAccountType: 'PERSONAL' | 'MERCHANT' | 'AGENT';
+  bkashQrImageUrl?: string;
   nagadNumber: string;
   nagadAccountType: 'PERSONAL' | 'MERCHANT' | 'AGENT';
+  nagadQrImageUrl?: string;
+  banglaQrImageUrl?: string;
   smsWebhookSecret?: string;
   donationTitle?: string;
   donationDescription?: string;

@@ -11,6 +11,7 @@ import {
   Copy,
   Heart,
   Laptop,
+  UserCheck2,
 } from 'lucide-react';
 import { DpibBrandTitle } from './DpibBrandTitle';
 
@@ -65,19 +66,12 @@ export const DeveloperProfileModal: React.FC<DeveloperProfileModalProps> = ({ is
         <div className="p-6 sm:p-8 space-y-6">
           {/* Developer Header Profile Block */}
           <div className="flex flex-col sm:flex-row items-center sm:items-start gap-5 text-center sm:text-left">
-            {/* Developer Photo */}
+            {/* Premium Developer Avatar Icon (Replacing real photo) */}
             <div className="relative shrink-0 group">
-              <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-2xl overflow-hidden ring-4 ring-violet-200/90 shadow-md border-2 border-white bg-slate-100">
-                <img
-                  src="/assets/aistudio/1769429789676_88504b83.jpg"
-                  alt="মোহাম্মদ জিহাদ - সফটওয়্যার ডেভেলপার"
-                  className="w-full h-full object-cover object-top transition-transform duration-300 group-hover:scale-105"
-                  referrerPolicy="no-referrer"
-                  onError={(e) => {
-                    // Fallback to placeholder if path not resolved
-                    (e.target as HTMLElement).style.display = 'none';
-                  }}
-                />
+              <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-3xl overflow-hidden ring-4 ring-violet-200/90 shadow-lg border-2 border-white bg-gradient-to-br from-violet-600 via-purple-600 to-indigo-700 flex items-center justify-center text-white relative">
+                {/* Subtle internal shine */}
+                <div className="absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-white/20 pointer-events-none" />
+                <UserCheck2 className="w-12 h-12 sm:w-14 sm:h-14 text-white drop-shadow-md relative z-10 transition-transform duration-300 group-hover:scale-110" />
               </div>
               {/* Verified Developer Badge */}
               <div className="absolute -bottom-1.5 -right-1.5 px-2 py-0.5 rounded-full bg-violet-600 text-white text-[10px] font-bold shadow-xs flex items-center gap-1 border border-white">

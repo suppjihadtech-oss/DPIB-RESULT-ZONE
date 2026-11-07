@@ -28,6 +28,11 @@ import {
   Hash,
   Calendar,
   AlertTriangle,
+  QrCode,
+  Upload,
+  Image,
+  ExternalLink,
+  Eye,
 } from 'lucide-react';
 import {
   DonationConfig,
@@ -1144,6 +1149,86 @@ export const DonationManagement: React.FC<DonationManagementProps> = ({
                   icon={CreditCard}
                   onClick={() => setBkashTypeSheetOpen(true)}
                 />
+
+                {/* bKash QR Code (Image URL / File Upload) */}
+                <div className="pt-3 border-t border-[#E2136E]/15 space-y-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                      <QrCode className="w-3.5 h-3.5 text-[#E2136E]" />
+                      <span>বিকাশ কিউআর কোড (BKASH QR CODE)</span>
+                    </label>
+                    {config.bkashQrImageUrl && (
+                      <button
+                        type="button"
+                        onClick={() => setConfig({ ...config, bkashQrImageUrl: '' })}
+                        className="text-[11px] font-bold text-rose-600 hover:text-rose-700 cursor-pointer"
+                      >
+                        মুছে ফেলুন
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <input
+                      type="url"
+                      value={config.bkashQrImageUrl || ''}
+                      onChange={(e) => setConfig({ ...config, bkashQrImageUrl: e.target.value })}
+                      placeholder="কিউআর ইমেজ লিঙ্ক (URL) দিন... (https://...)"
+                      className="w-full min-h-[42px] px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-900 outline-none focus:border-[#E2136E]"
+                    />
+
+                    <div className="flex items-center gap-2">
+                      <label className="flex-1 min-h-[38px] px-3 py-1.5 rounded-xl border border-dashed border-[#E2136E]/40 hover:border-[#E2136E] bg-white text-xs font-bold text-slate-700 flex items-center justify-center gap-1.5 cursor-pointer hover:bg-pink-50/50 transition-colors">
+                        <Upload className="w-3.5 h-3.5 text-[#E2136E]" />
+                        <span>ডিভাইস থেকে কিউআর ছবি আপলোড করুন</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              if (file.size > 2 * 1024 * 1024) {
+                                setBannerFeedback({
+                                  type: 'error',
+                                  text: 'ইমেজ সাইজ ২ মেগাবাইট (2MB)-এর কম হতে হবে।',
+                                });
+                                return;
+                              }
+                              const reader = new FileReader();
+                              reader.onload = (ev) => {
+                                const base64 = ev.target?.result as string;
+                                setConfig((prev) => ({ ...prev, bkashQrImageUrl: base64 }));
+                              };
+                              reader.readAsDataURL(file);
+                            }
+                          }}
+                        />
+                      </label>
+                    </div>
+
+                    {config.bkashQrImageUrl && (
+                      <div className="p-2.5 rounded-xl bg-white border border-slate-200/90 flex items-center gap-3">
+                        <img
+                          src={config.bkashQrImageUrl}
+                          alt="BKASH QR PREVIEW"
+                          className="w-14 h-14 rounded-lg object-contain border border-slate-100 bg-white shrink-0"
+                          onError={(e) => {
+                            (e.target as HTMLElement).style.display = 'none';
+                          }}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <span className="text-[11px] font-bold text-emerald-700 block">
+                            কিউআর কোড যুক্ত হয়েছে
+                          </span>
+                          <p className="text-[10px] text-slate-500 truncate mt-0.5">
+                            ব্যবহারকারী কিউআর কোড স্ক্যান করে সরাসরি পেমেন্ট করতে পারবেন।
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
 
               {/* NAGAD Config Box */}
@@ -1178,6 +1263,182 @@ export const DonationManagement: React.FC<DonationManagementProps> = ({
                   icon={CreditCard}
                   onClick={() => setNagadTypeSheetOpen(true)}
                 />
+
+                {/* Nagad QR Code (Image URL / File Upload) */}
+                <div className="pt-3 border-t border-[#EA580C]/15 space-y-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                      <QrCode className="w-3.5 h-3.5 text-[#EA580C]" />
+                      <span>নগদ কিউআর কোড (NAGAD QR CODE)</span>
+                    </label>
+                    {config.nagadQrImageUrl && (
+                      <button
+                        type="button"
+                        onClick={() => setConfig({ ...config, nagadQrImageUrl: '' })}
+                        className="text-[11px] font-bold text-rose-600 hover:text-rose-700 cursor-pointer"
+                      >
+                        মুছে ফেলুন
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <input
+                      type="url"
+                      value={config.nagadQrImageUrl || ''}
+                      onChange={(e) => setConfig({ ...config, nagadQrImageUrl: e.target.value })}
+                      placeholder="কিউআর ইমেজ লিঙ্ক (URL) দিন... (https://...)"
+                      className="w-full min-h-[42px] px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-900 outline-none focus:border-[#EA580C]"
+                    />
+
+                    <div className="flex items-center gap-2">
+                      <label className="flex-1 min-h-[38px] px-3 py-1.5 rounded-xl border border-dashed border-[#EA580C]/40 hover:border-[#EA580C] bg-white text-xs font-bold text-slate-700 flex items-center justify-center gap-1.5 cursor-pointer hover:bg-orange-50/50 transition-colors">
+                        <Upload className="w-3.5 h-3.5 text-[#EA580C]" />
+                        <span>ডিভাইস থেকে কিউআর ছবি আপলোড করুন</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              if (file.size > 2 * 1024 * 1024) {
+                                setBannerFeedback({
+                                  type: 'error',
+                                  text: 'ইমেজ সাইজ ২ মেগাবাইট (2MB)-এর কম হতে হবে।',
+                                });
+                                return;
+                              }
+                              const reader = new FileReader();
+                              reader.onload = (ev) => {
+                                const base64 = ev.target?.result as string;
+                                setConfig((prev) => ({ ...prev, nagadQrImageUrl: base64 }));
+                              };
+                              reader.readAsDataURL(file);
+                            }
+                          }}
+                        />
+                      </label>
+                    </div>
+
+                    {config.nagadQrImageUrl && (
+                      <div className="p-2.5 rounded-xl bg-white border border-slate-200/90 flex items-center gap-3">
+                        <img
+                          src={config.nagadQrImageUrl}
+                          alt="NAGAD QR PREVIEW"
+                          className="w-14 h-14 rounded-lg object-contain border border-slate-100 bg-white shrink-0"
+                          onError={(e) => {
+                            (e.target as HTMLElement).style.display = 'none';
+                          }}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <span className="text-[11px] font-bold text-emerald-700 block">
+                            কিউআর কোড যুক্ত হয়েছে
+                          </span>
+                          <p className="text-[10px] text-slate-500 truncate mt-0.5">
+                            ব্যবহারকারী কিউআর কোড স্ক্যান করে সরাসরি পেমেন্ট করতে পারবেন।
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Universal BANGLA QR Card */}
+            <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-emerald-50/80 via-teal-50/50 to-sky-50/80 border border-emerald-200/80 space-y-3.5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-2xs font-bold">
+                    <QrCode className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm sm:text-base font-black text-slate-900 leading-tight">
+                      সর্বজনীন বাংলা কিউআর (BANGLA QR CODE)
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      বাংলাদেশ ব্যাংক অনুমোদিত সর্বজনীন বাংলা কিউআর — যেকোনো ব্যাংকিং বা MFS অ্যাপ (বিকাশ, নগদ, রকেট, উপায়, কার্ড ইত্যাদি) দিয়ে স্ক্যানযোগ্য।
+                    </p>
+                  </div>
+                </div>
+
+                {config.banglaQrImageUrl && (
+                  <button
+                    type="button"
+                    onClick={() => setConfig({ ...config, banglaQrImageUrl: '' })}
+                    className="text-xs font-bold text-rose-600 hover:text-rose-700 cursor-pointer self-start sm:self-center shrink-0"
+                  >
+                    কিউআর মুছে ফেলুন
+                  </button>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5 items-start">
+                <div className="md:col-span-8 space-y-2">
+                  <input
+                    type="url"
+                    value={config.banglaQrImageUrl || ''}
+                    onChange={(e) => setConfig({ ...config, banglaQrImageUrl: e.target.value })}
+                    placeholder="বাংলা কিউআর ইমেজ লিঙ্ক (URL) দিন... (যেমন: https://...)"
+                    className="w-full min-h-[44px] px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm font-medium text-slate-900 outline-none focus:border-emerald-600"
+                  />
+
+                  <label className="w-full min-h-[40px] px-3.5 py-2 rounded-xl border border-dashed border-emerald-400 bg-white text-xs font-bold text-emerald-800 flex items-center justify-center gap-2 cursor-pointer hover:bg-emerald-50/60 transition-colors">
+                    <Upload className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>ডিভাইস থেকে বাংলা কিউআর ছবি আপলোড করুন</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          if (file.size > 2 * 1024 * 1024) {
+                            setBannerFeedback({
+                              type: 'error',
+                              text: 'ইমেজ সাইজ ২ মেগাবাইট (2MB)-এর কম হতে হবে।',
+                            });
+                            return;
+                          }
+                          const reader = new FileReader();
+                          reader.onload = (ev) => {
+                            const base64 = ev.target?.result as string;
+                            setConfig((prev) => ({ ...prev, banglaQrImageUrl: base64 }));
+                          };
+                          reader.readAsDataURL(file);
+                        }
+                      }}
+                    />
+                  </label>
+                </div>
+
+                <div className="md:col-span-4">
+                  {config.banglaQrImageUrl ? (
+                    <div className="p-3 rounded-2xl bg-white border border-emerald-200 flex items-center gap-3">
+                      <img
+                        src={config.banglaQrImageUrl}
+                        alt="BANGLA QR PREVIEW"
+                        className="w-16 h-16 rounded-xl object-contain border border-slate-100 bg-white shrink-0"
+                        onError={(e) => {
+                          (e.target as HTMLElement).style.display = 'none';
+                        }}
+                      />
+                      <div className="min-w-0">
+                        <span className="text-xs font-black text-emerald-800 block">
+                          বাংলা কিউআর সক্রিয়
+                        </span>
+                        <span className="text-[11px] text-slate-500 block leading-tight mt-0.5">
+                          ইউজার প্যানেলে সরাসরি প্রদর্শিত হবে
+                        </span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-3.5 rounded-2xl bg-white/70 border border-slate-200/80 text-[11px] text-slate-500 text-center leading-relaxed">
+                      বাংলা কিউআর লিঙ্ক বা ছবি দিলে ব্যবহারকারী যেকোনো মোবাইল অ্যাপ থেকে সহজে স্ক্যান করতে পারবেন।
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 

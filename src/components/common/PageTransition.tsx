@@ -9,16 +9,21 @@ interface PageTransitionProps extends HTMLMotionProps<'div'> {
 export const PageTransition: React.FC<PageTransitionProps> = ({
   children,
   className = 'w-full max-w-full min-w-0',
+  style,
   ...props
 }) => {
   return (
     <motion.div
-      initial={{ opacity: 0, y: 12 }}
+      initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -10 }}
+      exit={{ opacity: 0 }}
       transition={{
-        duration: 0.24,
+        duration: 0.18,
         ease: [0.16, 1, 0.3, 1],
+      }}
+      style={{
+        willChange: 'opacity, transform',
+        ...style,
       }}
       className={className}
       {...props}
@@ -31,16 +36,21 @@ export const PageTransition: React.FC<PageTransitionProps> = ({
 export const SubSectionTransition: React.FC<PageTransitionProps> = ({
   children,
   className = 'w-full max-w-full min-w-0',
+  style,
   ...props
 }) => {
   return (
     <motion.div
-      initial={{ opacity: 0, scale: 0.98, y: 8 }}
+      initial={{ opacity: 0, scale: 0.99, y: 6 }}
       animate={{ opacity: 1, scale: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.98, y: -6 }}
+      exit={{ opacity: 0 }}
       transition={{
-        duration: 0.2,
+        duration: 0.15,
         ease: [0.16, 1, 0.3, 1],
+      }}
+      style={{
+        willChange: 'opacity, transform',
+        ...style,
       }}
       className={className}
       {...props}
@@ -49,3 +59,4 @@ export const SubSectionTransition: React.FC<PageTransitionProps> = ({
     </motion.div>
   );
 };
+

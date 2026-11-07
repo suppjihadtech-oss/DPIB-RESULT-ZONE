@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { DeveloperProfileModal } from './DeveloperProfileModal';
-import { Sparkles } from 'lucide-react';
+import { Sparkles, User } from 'lucide-react';
 
 interface CompactAttributionProps {
   className?: string;
@@ -68,14 +68,9 @@ export const CompactAttribution: React.FC<CompactAttributionProps> = ({
             title="আমাদের সম্পর্কে ও ডেভেলপার পরিচিতি দেখুন"
             className="group inline-flex items-center justify-center gap-2 px-3.5 py-1 rounded-full bg-violet-50/80 hover:bg-violet-100/90 border border-violet-200/90 hover:border-violet-300 backdrop-blur-md shadow-2xs transition-all duration-200 cursor-pointer active:scale-95"
           >
-            {/* Mini Avatar Thumbnail */}
-            <span className="w-5 h-5 rounded-full overflow-hidden border border-violet-300 shrink-0 bg-violet-100">
-              <img
-                src="/assets/aistudio/1769429789676_88504b83.jpg"
-                alt="MD JIHAD"
-                className="w-full h-full object-cover object-top"
-                referrerPolicy="no-referrer"
-              />
+            {/* Mini Avatar Icon (Replacing real photo) */}
+            <span className="w-5 h-5 rounded-full overflow-hidden border border-violet-300 shrink-0 bg-gradient-to-br from-violet-600 to-indigo-600 flex items-center justify-center text-white shadow-2xs">
+              <User className="w-3 h-3 text-white" />
             </span>
 
             {/* Violet Multi-Color Gradient Highlighted Name */}

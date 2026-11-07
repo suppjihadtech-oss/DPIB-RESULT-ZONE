@@ -86,8 +86,11 @@ export const DEFAULT_DONATION_CONFIG: DonationConfig = {
   enabled: true,
   bkashNumber: '01700000000',
   bkashAccountType: 'PERSONAL',
+  bkashQrImageUrl: '',
   nagadNumber: '01800000000',
   nagadAccountType: 'PERSONAL',
+  nagadQrImageUrl: '',
+  banglaQrImageUrl: '',
   smsWebhookSecret: '',
   donationTitle: 'DPIB RESULT ZONE ও মানবিক কল্যাণে সহায়তা করুন',
   donationDescription:
@@ -255,6 +258,27 @@ export function formatTransactionDateTimeBangla(timestamp: number): string {
   }
 }
 
+const LOCAL_MY_PHONES_KEY = 'dpib_my_phones';
+const LOCAL_MY_TRX_IDS_KEY = 'dpib_my_trx_ids';
+const LOCAL_DEVICE_TOKEN_KEY = 'dpib_device_token';
+
+export function getOrCreateDeviceToken(): string {
+  try {
+    let token = localStorage.getItem(LOCAL_DEVICE_TOKEN_KEY);
+    if (!token) {
+      token =
+        'DEV-' +
+        Date.now().toString(36).toUpperCase() +
+        '-' +
+        Math.random().toString(36).substring(2, 6).toUpperCase();
+      localStorage.setItem(LOCAL_DEVICE_TOKEN_KEY, token);
+    }
+    return token;
+  } catch {
+    return 'DEV-LOCAL';
+  }
+}
+
 export function getSavedUserDonationIds(): string[] {
   try {
     const raw = localStorage.getItem(LOCAL_MY_DONATION_IDS_KEY);
@@ -278,6 +302,91 @@ export function saveUserDonationId(donationId: string): void {
     // Ignore storage quota issues
   }
 }
+
+export function getSavedUserPhones(): string[] {
+  try {
+    const raw = localStorage.getItem(LOCAL_MY_PHONES_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((x) => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveUserPhone(phone: string): void {
+  const clean = normalizeBdPhone(phone);
+  if (!clean || clean.length < 11) return;
+  try {
+    const existing = getSavedUserPhones();
+    if (!existing.includes(clean)) {
+      const updated = [clean, ...existing].slice(0, 20);
+      localStorage.setItem(LOCAL_MY_PHONES_KEY, JSON.stringify(updated));
+    }
+  } catch {
+    // Ignore storage quota issues
+  }
+}
+
+export function getSavedUserTrxIds(): string[] {
+  try {
+    const raw = localStorage.getItem(LOCAL_MY_TRX_IDS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((x) => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveUserTrxId(trxId: string): void {
+  const clean = normalizeTrxId(trxId);
+  if (!clean || clean.length < 5) return;
+  try {
+    const existing = getSavedUserTrxIds();
+    if (!existing.includes(clean)) {
+      const updated = [clean, ...existing].slice(0, 50);
+      localStorage.setItem(LOCAL_MY_TRX_IDS_KEY, JSON.stringify(updated));
+    }
+  } catch {
+    // Ignore storage quota issues
+  }
+}
+
+export function linkTransactionIdentifierToDevice(
+  identifier: string,
+  transactions: TransactionRecord[]
+): {
+  matchedCount: number;
+  matchedTxns: TransactionRecord[];
+} {
+  const raw = identifier.trim();
+  if (!raw) return { matchedCount: 0, matchedTxns: [] };
+
+  const phone = normalizeBdPhone(raw);
+  const trx = normalizeTrxId(raw);
+  const upper = raw.toUpperCase();
+
+  const matched = transactions.filter((t) => {
+    if (phone && phone.length >= 11 && normalizeBdPhone(t.senderPhone) === phone) return true;
+    if (trx && trx.length >= 5 && normalizeTrxId(t.gatewayTrxId) === trx) return true;
+    if (t.transactionNumber.toUpperCase() === upper) return true;
+    if (t.referenceCode.toUpperCase() === upper) return true;
+    return false;
+  });
+
+  matched.forEach((t) => {
+    saveUserDonationId(t.donationId);
+    saveUserPhone(t.senderPhone);
+    saveUserTrxId(t.gatewayTrxId);
+  });
+
+  return {
+    matchedCount: matched.length,
+    matchedTxns: matched,
+  };
+}
+
 
 export interface ParsedMobileBankingSms {
   provider: DonationPaymentMethod;
@@ -538,11 +647,14 @@ export async function submitDonation(input: SubmitDonationInput): Promise<Donati
 
     await setDoc(doc(db, DONATIONS_COLLECTION, docId), record);
     saveUserDonationId(docId);
+    saveUserPhone(record.senderPhone);
+    saveUserTrxId(record.transactionId);
 
     // If immediately verified via matched SMS, automatically generate Transaction in /transactions
     if (record.status === 'VERIFIED') {
       await ensureTransactionForDonation(record);
     }
+
 
     return record;
   } catch (error) {
@@ -861,7 +973,10 @@ export async function finalizeVerifiedDonationFromSms(
 
     await setDoc(doc(db, DONATIONS_COLLECTION, docId), record);
     saveUserDonationId(docId);
+    saveUserPhone(record.senderPhone);
+    saveUserTrxId(record.transactionId);
     await ensureTransactionForDonation(record);
+
 
     return record;
   } catch (error) {
