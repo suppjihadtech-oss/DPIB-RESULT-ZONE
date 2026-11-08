@@ -434,7 +434,7 @@ function isUnexpandedTemplatePlaceholderServer(rawText?: string): boolean {
   const cleaned = stripInvisibleUnicodeServer(rawText || '').trim();
   if (!cleaned) return true;
   if (
-    /^(?:\$\{?\s*[a-z0-9_.\s-]+\s*\}?|\{\s*[a-z0-9_.\s-]+\s*\}|%\s*[a-z0-9_.\s-]+\s*%?)$/i.test(
+    /^(?:\$\{?\s*[a-z0-9_.\s-]+\s*\}?|\{\s*[a-z0-9_.\s-]+\s*\}|\[\s*[a-z0-9_.\s-]+\s*\]|%\s*[a-z0-9_.\s-]+\s*%?)$/i.test(
       cleaned
     )
   ) {
@@ -450,6 +450,13 @@ function isUnexpandedTemplatePlaceholderServer(rawText?: string): boolean {
     '{msg}',
     '{text}',
     '{body}',
+    '[message]',
+    '[msg]',
+    '[text]',
+    '[body]',
+    '[sms]',
+    '[sender]',
+    '[from]',
     '%sms_body%',
     '%msg%',
     '%message%',

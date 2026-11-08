@@ -14,6 +14,7 @@ import {
   Loader2,
   X,
   BellRing,
+  Clock,
 } from 'lucide-react';
 import {
   DonationPaymentMethod,
@@ -25,6 +26,7 @@ import {
   finalizeVerifiedDonationFromSms,
   generateTransactionNumber,
   subscribeSmsLogsForVerification,
+  submitDonation,
 } from '../../services/donationService';
 import { toBanglaDigits } from '../../utils/bangla';
 import { playFailSound, playPassSound } from '../../utils/resultAudio';
@@ -479,6 +481,29 @@ export const PaymentVerificationModal: React.FC<PaymentVerificationModalProps> =
   const [finalizing, setFinalizing] = useState<boolean>(false);
   const [notifEnabled, setNotifEnabled] = useState<boolean>(() => isNotificationSystemActive());
   const [notifEnabling, setNotifEnabling] = useState<boolean>(false);
+  const [submittingPending, setSubmittingPending] = useState<boolean>(false);
+
+  const handleSubmitAsPending = async () => {
+    if (!paymentData || submittingPending) return;
+    setSubmittingPending(true);
+    try {
+      const record = await submitDonation({
+        paymentMethod: paymentData.paymentMethod,
+        amount: paymentData.amount,
+        senderPhone: paymentData.senderPhone,
+        transactionId: paymentData.transactionId,
+        referenceCode: paymentData.referenceCode,
+        donorName: paymentData.donorName,
+        purpose: paymentData.purpose,
+        note: paymentData.note,
+      });
+      onSuccess(record);
+    } catch (err: any) {
+      setErrorMessage(err?.message || 'পেন্ডিং অনুদান জমা দিতে সমস্যা হয়েছে।');
+    } finally {
+      setSubmittingPending(false);
+    }
+  };
 
   // Refs to hold latest DB check outcome and callback across the 15-second verification window
   const matchedSmsRef = useRef<DonationSmsLog | null>(null);
@@ -1094,6 +1119,25 @@ export const PaymentVerificationModal: React.FC<PaymentVerificationModalProps> =
                       >
                         <RefreshCw className="w-4 h-4 shrink-0" />
                         <span>পুনরায় ১৫ সেকেন্ড যাচাই করুন</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        id="btn-submit-pending-fallback"
+                        disabled={submittingPending}
+                        onClick={handleSubmitAsPending}
+                        className="w-full min-h-[48px] px-6 py-3 rounded-2xl bg-amber-500 hover:bg-amber-600 text-white text-xs sm:text-sm font-black shadow-xs transition-all inline-flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        {submittingPending ? (
+                          <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                        ) : (
+                          <Clock className="w-4 h-4 shrink-0" />
+                        )}
+                        <span>
+                          {submittingPending
+                            ? 'জমা দেওয়া হচ্ছে...'
+                            : 'অপেক্ষমান (PENDING) হিসেবে জমা দিন'}
+                        </span>
                       </button>
 
                       <button

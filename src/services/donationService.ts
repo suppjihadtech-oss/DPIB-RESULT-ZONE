@@ -154,7 +154,7 @@ export function isUnexpandedSmsPlaceholder(rawText?: string): boolean {
   const cleaned = stripInvisibleUnicode(rawText || '').trim();
   if (!cleaned) return true;
   if (
-    /^(?:\$\{?\s*[a-z0-9_.\s-]+\s*\}?|\{\s*[a-z0-9_.\s-]+\s*\}|%\s*[a-z0-9_.\s-]+\s*%?)$/i.test(
+    /^(?:\$\{?\s*[a-z0-9_.\s-]+\s*\}?|\{\s*[a-z0-9_.\s-]+\s*\}|\[\s*[a-z0-9_.\s-]+\s*\]|%\s*[a-z0-9_.\s-]+\s*%?)$/i.test(
       cleaned
     )
   ) {
@@ -170,6 +170,13 @@ export function isUnexpandedSmsPlaceholder(rawText?: string): boolean {
     '{msg}',
     '{text}',
     '{body}',
+    '[message]',
+    '[msg]',
+    '[text]',
+    '[body]',
+    '[sms]',
+    '[sender]',
+    '[from]',
     '%sms_body%',
     '%msg%',
     '%message%',

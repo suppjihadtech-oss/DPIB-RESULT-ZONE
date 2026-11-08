@@ -1892,7 +1892,7 @@ export const DonationManagement: React.FC<DonationManagementProps> = ({
                   </div>
 
                   <p className="text-[11px] text-slate-500 leading-relaxed">
-                    অ্যাপের <strong className="text-slate-700">JSON পে-লোড টেমপ্লেট</strong> বক্সে এই কোডটি পেস্ট করুন।
+                    অ্যাপের <strong className="text-slate-700">JSON পে-লোড টেমপ্লেট</strong> বক্সে পেস্ট করুন। বিশেষ দ্রষ্টব্য: আপনার অ্যাপে চলক হিসেবে <code className="font-mono font-bold text-teal-800">[MESSAGE]</code> অথবা <code className="font-mono font-bold text-teal-800">{"{msg}"}</code> যেটি সাপোর্ট করে তা দিন যাতে অ্যাপটি আসল SMS বার্তা পাঠায়।
                   </p>
 
                   <pre className="w-full text-[11px] font-mono text-slate-800 bg-slate-50 border border-slate-200 p-2.5 rounded-xl overflow-x-auto whitespace-pre leading-relaxed select-all">
