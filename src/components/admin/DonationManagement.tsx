@@ -35,16 +35,6 @@ import {
   Eye,
   Code2,
   Globe,
-  Server,
-  Filter,
-  ArrowRight,
-  Lock,
-  Shield,
-  Share2,
-  HelpCircle,
-  CheckCheck,
-  Zap,
-  Radio,
 } from 'lucide-react';
 import {
   DonationConfig,
@@ -112,120 +102,10 @@ const ACCOUNT_TYPE_LABELS: Record<'PERSONAL' | 'MERCHANT' | 'AGENT', string> = {
   AGENT: 'এজেন্ট (CASH OUT)',
 };
 
-interface IndividualParamCardProps {
-  id: string;
-  title: string;
-  badge?: string;
-  badgeColor?: 'teal' | 'emerald' | 'rose' | 'amber' | 'blue' | 'purple' | 'slate';
-  value: string;
-  displayValue?: string;
-  note?: string;
-  icon?: React.ElementType;
-  isMultiLine?: boolean;
-  copyText?: string;
-  successMessage?: string;
-  onCopy: (text: string, id: string, msg: string) => void;
-  isCopied: boolean;
-  extraAction?: React.ReactNode;
-}
-
-const IndividualParamCard: React.FC<IndividualParamCardProps> = ({
-  id,
-  title,
-  badge,
-  badgeColor = 'teal',
-  value,
-  displayValue,
-  note,
-  icon: Icon,
-  isMultiLine = false,
-  copyText,
-  successMessage,
-  onCopy,
-  isCopied,
-  extraAction,
-}) => {
-  const badgeColors = {
-    teal: 'bg-teal-50 text-teal-800 border-teal-200',
-    emerald: 'bg-emerald-50 text-emerald-800 border-emerald-200',
-    rose: 'bg-pink-50 text-[#E2136E] border-pink-200',
-    amber: 'bg-amber-50 text-amber-800 border-amber-200',
-    blue: 'bg-blue-50 text-blue-800 border-blue-200',
-    purple: 'bg-purple-50 text-purple-800 border-purple-200',
-    slate: 'bg-slate-100 text-slate-800 border-slate-200',
-  };
-  const badgeClass = badgeColors[badgeColor] || badgeColors.teal;
-  const targetCopy = copyText !== undefined ? copyText : value;
-
-  return (
-    <div className="bg-white rounded-2xl border border-slate-200/90 p-4 sm:p-5 shadow-2xs hover:shadow-xs transition-shadow flex flex-col justify-between gap-3 min-w-0">
-      <div className="space-y-2 min-w-0">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 min-w-0">
-            {Icon && (
-              <div className="w-7 h-7 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center shrink-0">
-                <Icon className="w-3.5 h-3.5" />
-              </div>
-            )}
-            <h4 className="text-xs sm:text-sm font-black text-slate-900 leading-snug truncate">
-              {title}
-            </h4>
-          </div>
-          {badge && (
-            <span
-              className={`text-[10px] font-black uppercase font-outfit px-2 py-0.5 rounded-md border shrink-0 ${badgeClass}`}
-            >
-              {badge}
-            </span>
-          )}
-        </div>
-
-        {note && <p className="text-[11px] text-slate-500 leading-relaxed">{note}</p>}
-
-        <div className="relative min-w-0">
-          {isMultiLine ? (
-            <pre className="w-full text-xs font-mono text-slate-800 bg-slate-50 border border-slate-200 p-3 rounded-xl overflow-x-auto whitespace-pre leading-relaxed">
-              {displayValue || value}
-            </pre>
-          ) : (
-            <div className="w-full min-h-[42px] px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-mono font-bold text-slate-900 flex items-center overflow-x-auto whitespace-nowrap">
-              {displayValue || value}
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100 min-w-0">
-        <div className="text-[11px] text-slate-400 font-medium truncate">
-          {isCopied ? 'ক্লিপবোর্ডে সংরক্ষিত!' : 'এক ক্লিকে কপি করুন'}
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          {extraAction}
-          <button
-            type="button"
-            onClick={() => onCopy(targetCopy, id, successMessage || `${title} কপি হয়েছে!`)}
-            className={`min-h-[36px] px-3.5 py-1.5 rounded-xl text-xs font-black uppercase font-outfit flex items-center gap-1.5 cursor-pointer transition-all ${
-              isCopied
-                ? 'bg-emerald-600 text-white shadow-2xs'
-                : 'bg-slate-900 hover:bg-slate-800 text-white shadow-2xs'
-            }`}
-          >
-            {isCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-            <span>{isCopied ? 'COPIED' : 'কপি করুন'}</span>
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
 export const DonationManagement: React.FC<DonationManagementProps> = ({
   onRefreshSettings,
 }) => {
   const [activeTab, setActiveTab] = useState<AdminDonationTab>('DONATIONS');
-  const [settingsSubTab, setSettingsSubTab] = useState<
-    'ALL' | 'DESTINATION' | 'FILTERS' | 'PAYLOAD' | 'TOOLS'
-  >('ALL');
 
   // Data States
   const [donations, setDonations] = useState<DonationRecord[]>([]);
@@ -375,36 +255,6 @@ export const DonationManagement: React.FC<DonationManagementProps> = ({
     }, 2000);
   };
 
-  const handleCopyAllConfig = () => {
-    const summary = `=== DPIB SMS WEBHOOK সম্পূর্ণ কনফিগারেশন ===
-১. গন্তব্য সেটিংস (DESTINATION):
-- গন্তব্যের ধরন: WEBHOOK
-- গন্তব্যের নাম: DPIB PAYMENT
-- লাইভ প্রোডাকশন URL: ${liveVercelUrl}
-- লোকাল প্রিভিউ URL: ${webhookUrl}
-- HTTP মেথড: POST
-- টাইমআউট: 15s
-- সিক্রেট কী: ${config.smsWebhookSecret || 'DPIB_SMS_FUYTU9B2F5ZRK77F'}
-- অথেনটিকেশন হেডার: Bearer ${config.smsWebhookSecret || 'DPIB_SMS_FUYTU9B2F5ZRK77F'}
-- কাস্টম হেডার: X-Webhook-Secret: ${config.smsWebhookSecret || 'DPIB_SMS_FUYTU9B2F5ZRK77F'}
-
-২. JSON পে-লোড টেমপ্লেট:
-{
-  "sender": "[SENDER]",
-  "message": "[MESSAGE]",
-  "timestamp": [TIMESTAMP],
-  "category": "[CATEGORY]"
-}
-
-৩. ফিল্টারিং নিয়মাবলী (FILTERS):
-- নিয়মের নাম: বিকাশ ও নগদ পেমেন্ট ফরওয়ার্ড
-- প্রেরক শর্ত: হুবহু মিল (EXACT MATCH)
-- প্রেরক তালিকা: bKash,NAGAD
-- বার্তার বিষয়বস্তু শর্ত: যেকোনো বার্তা
-- ক্যাটাগরি: আর্থিক লেনদেন
-- ফরোয়ার্ডের গন্তব্য: DPIB PAYMENT`;
-    copyToClipboard(summary, 'ALL_CONFIG_TEXT', 'সম্পূর্ণ কনফিগারেশন বিবরণী এক ক্লিকে কপি হয়েছে!');
-  };
 
   const handleGenerateSecret = () => {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -1900,448 +1750,186 @@ export const DonationManagement: React.FC<DonationManagementProps> = ({
             </div>
           </form>
 
-          {/* ================= ANDROID SMS FORWARDER COMPLETE PARAMETERS & COPY HUB ================= */}
-          <div className="bg-slate-900 text-white rounded-3xl p-5 sm:p-8 space-y-6 shadow-md overflow-hidden">
-            {/* Header Banner & Master All-In-One Copy Button */}
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-800 pb-5">
-              <div className="flex items-start sm:items-center gap-3.5 min-w-0">
-                <div className="w-12 h-12 rounded-2xl bg-teal-500/20 border border-teal-400/30 flex items-center justify-center text-teal-300 shrink-0">
-                  <Smartphone className="w-6 h-6" />
-                </div>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <h3 className="text-base sm:text-xl font-black leading-snug">
-                      অ্যান্ড্রয়েড SMS ফরওয়ার্ডার অ্যাপ প্যারামিটার ও সংযোগ কেন্দ্র
-                    </h3>
-                    <span className="hidden sm:inline-block text-[10px] font-black uppercase font-outfit px-2 py-0.5 rounded-md bg-teal-500/20 text-teal-300 border border-teal-500/30">
-                      INDIVIDUAL PARAMETERS
+          {/* ================= ANDROID SMS WEBHOOK 3 CORE CARDS ================= */}
+          <div className="space-y-4 pt-2">
+            <div className="border-b border-slate-200/80 pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <h3 className="text-sm sm:text-base font-black text-slate-900 leading-tight">
+                  SMS ফরোয়ার্ডার ওয়েবহুক কনফিগারেশন (WEBHOOK SETUP)
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  আপনার অ্যান্ড্রয়েড SMS ফরোয়ার্ডার অ্যাপ সংযোগ করতে নিচের ৩টি তথ্য আলাদা কার্ডে সাজিয়ে দেওয়া হলো:
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* CARD 1: WEBHOOK URL */}
+              <div className="bg-white rounded-2xl border border-slate-200/90 p-4 sm:p-5 shadow-2xs hover:shadow-xs transition-shadow flex flex-col justify-between gap-4">
+                <div className="space-y-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="w-8 h-8 rounded-xl bg-teal-50 border border-teal-200 text-teal-800 flex items-center justify-center shrink-0">
+                        <Globe className="w-4 h-4" />
+                      </div>
+                      <h4 className="text-xs sm:text-sm font-black text-slate-900 truncate">
+                        ১. ওয়েবহুক URL (WEBHOOK URL)
+                      </h4>
+                    </div>
+                    <span className="text-[10px] font-black uppercase font-outfit px-2 py-0.5 rounded-md bg-teal-50 text-teal-800 border border-teal-200 shrink-0">
+                      POST
                     </span>
                   </div>
-                  <p className="text-xs text-slate-400 mt-1 leading-relaxed">
-                    আপনার মোবাইলের SMS ফরওয়ার্ডার অ্যাপের প্রতিটি ফিল্ডের জন্য নিচে আলাদা আলাদা প্যারামিটার ও এক-ক্লিকে কপি বাটন দেওয়া হলো।
+
+                  <p className="text-[11px] text-slate-500 leading-relaxed">
+                    অ্যাপের <strong className="text-slate-700">URL (HTTPS)</strong> ফিল্ডে এই লিঙ্কটি পেস্ট করুন।
                   </p>
-                </div>
-              </div>
 
-              <div className="flex flex-wrap items-center gap-2 shrink-0">
-                <button
-                  type="button"
-                  onClick={handleCopyAllConfig}
-                  className="min-h-[44px] px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-black uppercase font-outfit flex items-center justify-center gap-2 cursor-pointer shadow-sm transition-all"
-                >
-                  {copiedKey === 'ALL_CONFIG_TEXT' ? (
-                    <Check className="w-4 h-4 text-emerald-300" />
-                  ) : (
-                    <Share2 className="w-4 h-4" />
-                  )}
-                  <span>
-                    {copiedKey === 'ALL_CONFIG_TEXT' ? 'সবগুলো কপি হয়েছে!' : 'এক ক্লিকে সম্পূর্ণ সেটআপ কপি'}
+                  <div className="w-full min-h-[42px] px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-teal-900 break-all select-all flex items-center">
+                    {liveVercelUrl}
+                  </div>
+                </div>
+
+                <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                  <span className="text-[11px] text-slate-400 font-medium">
+                    {copiedKey === 'CARD_WEBHOOK_URL' ? 'কপি সম্পন্ন!' : 'এক ক্লিকে কপি'}
                   </span>
-                </button>
-              </div>
-            </div>
-
-            {/* Sub-Category Filter Navigation Tabs */}
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 max-w-full">
-              {[
-                { id: 'ALL', label: 'সব প্যারামিটার (ALL)' },
-                { id: 'DESTINATION', label: '১. গন্তব্য সেটিংস (DESTINATION)' },
-                { id: 'FILTERS', label: '২. ফিল্টার ও নিয়ম (FILTERS)' },
-                { id: 'PAYLOAD', label: '৩. JSON পে-লোড (PAYLOAD)' },
-                { id: 'TOOLS', label: '৪. টেস্ট কমান্ড ও চেকলিস্ট (TOOLS)' },
-              ].map((tab) => (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => setSettingsSubTab(tab.id as any)}
-                  className={`min-h-[38px] px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-colors cursor-pointer shrink-0 ${
-                    settingsSubTab === tab.id
-                      ? 'bg-white text-slate-900 shadow-xs'
-                      : 'bg-slate-800/80 hover:bg-slate-800 text-slate-300 hover:text-white'
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-
-            {/* SECTION 1: গন্তব্য কনফিগারেশন (DESTINATION SETTINGS) */}
-            {(settingsSubTab === 'ALL' || settingsSubTab === 'DESTINATION') && (
-              <div className="space-y-3.5 pt-2">
-                <div className="flex items-center gap-2">
-                  <Server className="w-4 h-4 text-teal-400 shrink-0" />
-                  <h4 className="text-sm font-black text-teal-300 uppercase tracking-wider font-outfit">
-                    ১. গন্তব্য কনফিগারেশন (DESTINATION SETTINGS — আপনার অ্যাপের ১ম ধাপ)
-                  </h4>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
-                  <IndividualParamCard
-                    id="PARAM_DEST_TYPE"
-                    title="গন্তব্যের ধরন (DESTINATION TYPE)"
-                    badge="SELECT OPTION"
-                    badgeColor="teal"
-                    value="WEBHOOK"
-                    note="আপনার অ্যান্ড্রয়েড অ্যাপে [WEBHOOK] বাটনে চাপ দিয়ে নির্বাচন করুন।"
-                    icon={Radio}
-                    onCopy={copyToClipboard}
-                    isCopied={copiedKey === 'PARAM_DEST_TYPE'}
-                    successMessage="গন্তব্যের ধরন 'WEBHOOK' কপি হয়েছে!"
-                  />
-
-                  <IndividualParamCard
-                    id="PARAM_DEST_NAME"
-                    title="গন্তব্যের নাম (RULE / DESTINATION NAME)"
-                    badge="APP IDENTIFIER"
-                    badgeColor="slate"
-                    value="DPIB PAYMENT"
-                    note="অ্যাপের মধ্যে সহজে চেনার জন্য এই নামটি ব্যবহার করুন।"
-                    icon={FileText}
-                    onCopy={copyToClipboard}
-                    isCopied={copiedKey === 'PARAM_DEST_NAME'}
-                    successMessage="গন্তব্যের নাম 'DPIB PAYMENT' কপি হয়েছে!"
-                  />
-
-                  <IndividualParamCard
-                    id="PARAM_LIVE_URL"
-                    title="লাইভ প্রোডাকশন URL (LIVE HTTPS URL)"
-                    badge="LIVE 200 OK"
-                    badgeColor="emerald"
-                    value={liveVercelUrl}
-                    note="আপনার মূল Vercel ওয়েবসাইটের আসল লাইভ API লিঙ্ক। 'ওয়েবহুক URL (HTTPS) *' ফিল্ডে এটি দিন।"
-                    icon={Globe}
-                    onCopy={copyToClipboard}
-                    isCopied={copiedKey === 'PARAM_LIVE_URL'}
-                    successMessage="লাইভ Vercel ওয়েবহুক URL কপি হয়েছে!"
-                  />
-
-                  <IndividualParamCard
-                    id="PARAM_DEV_URL"
-                    title="বর্তমান প্রিভিউ URL (CURRENT ENVIRONMENT)"
-                    badge="ACTIVE PREVIEW"
-                    badgeColor="blue"
-                    value={webhookUrl}
-                    note="সরাসরি বর্তমান ডেভেলপমেন্ট প্রিভিউ পরিবেশের ওয়েবহুক লিঙ্ক।"
-                    icon={Server}
-                    onCopy={copyToClipboard}
-                    isCopied={copiedKey === 'PARAM_DEV_URL'}
-                    successMessage="প্রিভিউ ওয়েবহুক URL কপি হয়েছে!"
-                  />
-
-                  <IndividualParamCard
-                    id="PARAM_HTTP_METHOD"
-                    title="HTTP মেথড (HTTP METHOD)"
-                    badge="POST METHOD"
-                    badgeColor="amber"
-                    value="POST"
-                    note="অ্যাপে সর্বদা HTTP মেথড হিসেবে 'POST' নির্বাচন বা লিখুন।"
-                    icon={Zap}
-                    onCopy={copyToClipboard}
-                    isCopied={copiedKey === 'PARAM_HTTP_METHOD'}
-                    successMessage="HTTP মেথড 'POST' কপি হয়েছে!"
-                  />
-
-                  <IndividualParamCard
-                    id="PARAM_TIMEOUT"
-                    title="রিকোয়েস্ট টাইমআউট (REQUEST TIMEOUT)"
-                    badge="15 SECONDS"
-                    badgeColor="purple"
-                    value="15s"
-                    copyText="15"
-                    note="মোবাইল ইন্টারনেটে কোনো ড্রপ বা লেগ না হওয়ার জন্য স্লাইডারে 15s বা 30s সেট করুন।"
-                    icon={Clock}
-                    onCopy={copyToClipboard}
-                    isCopied={copiedKey === 'PARAM_TIMEOUT'}
-                    successMessage="টাইমআউট '15' কপি হয়েছে!"
-                  />
-
-                  <IndividualParamCard
-                    id="PARAM_AUTH_TOKEN"
-                    title="সুরক্ষিত AUTH TOKEN বা API KEY"
-                    badge="SECRET KEY"
-                    badgeColor="rose"
-                    value={config.smsWebhookSecret || 'DPIB_SMS_FUYTU9B2F5ZRK77F'}
-                    note="অ্যাপের 'সুরক্ষিত AUTH TOKEN বা API KEY (ঐচ্ছিক)' বক্সে পেস্ট করুন।"
-                    icon={KeyRound}
-                    onCopy={copyToClipboard}
-                    isCopied={copiedKey === 'PARAM_AUTH_TOKEN'}
-                    successMessage="সিক্রেট টোকেন কপি হয়েছে!"
-                  />
-
-                  <IndividualParamCard
-                    id="PARAM_BEARER_HEADER"
-                    title="অথেনটিকেশন হেডার (BEARER TOKEN FORMAT)"
-                    badge="AUTHORIZATION"
-                    badgeColor="teal"
-                    value={`Bearer ${config.smsWebhookSecret || 'DPIB_SMS_FUYTU9B2F5ZRK77F'}`}
-                    note="যদি অ্যাপে Authorization হেডার ফিল্ড থাকে, তবে এটি দিতে পারেন।"
-                    icon={Lock}
-                    onCopy={copyToClipboard}
-                    isCopied={copiedKey === 'PARAM_BEARER_HEADER'}
-                    successMessage="Bearer হেডার মান কপি হয়েছে!"
-                  />
-
-                  <IndividualParamCard
-                    id="PARAM_CUSTOM_HEADER"
-                    title="কাস্টম হেডার ফরম্যাট (CUSTOM API KEY)"
-                    badge="CUSTOM HEADER"
-                    badgeColor="slate"
-                    value={`X-Webhook-Secret: ${config.smsWebhookSecret || 'DPIB_SMS_FUYTU9B2F5ZRK77F'}`}
-                    note="কাস্টম হেডার হিসেবে পাঠানোর অল্টারনেটিভ ফরম্যাট।"
-                    icon={Shield}
-                    onCopy={copyToClipboard}
-                    isCopied={copiedKey === 'PARAM_CUSTOM_HEADER'}
-                    successMessage="কাস্টম হেডার ফরম্যাট কপি হয়েছে!"
-                  />
+                  <button
+                    type="button"
+                    onClick={() =>
+                      copyToClipboard(liveVercelUrl, 'CARD_WEBHOOK_URL', 'ওয়েবহুক URL সফলভাবে কপি হয়েছে!')
+                    }
+                    className={`min-h-[36px] px-3.5 py-1.5 rounded-xl text-xs font-black uppercase font-outfit flex items-center gap-1.5 cursor-pointer transition-all ${
+                      copiedKey === 'CARD_WEBHOOK_URL'
+                        ? 'bg-emerald-600 text-white shadow-2xs'
+                        : 'bg-teal-800 hover:bg-teal-900 text-white shadow-2xs'
+                    }`}
+                  >
+                    {copiedKey === 'CARD_WEBHOOK_URL' ? (
+                      <Check className="w-3.5 h-3.5" />
+                    ) : (
+                      <Copy className="w-3.5 h-3.5" />
+                    )}
+                    <span>{copiedKey === 'CARD_WEBHOOK_URL' ? 'COPIED' : 'URL কপি করুন'}</span>
+                  </button>
                 </div>
               </div>
-            )}
 
-            {/* SECTION 2: ফিল্টারিং নিয়মাবলী (FILTER & RULES SETTINGS) */}
-            {(settingsSubTab === 'ALL' || settingsSubTab === 'FILTERS') && (
-              <div className="space-y-3.5 pt-4 border-t border-slate-800">
-                <div className="flex items-center gap-2">
-                  <Filter className="w-4 h-4 text-amber-400 shrink-0" />
-                  <h4 className="text-sm font-black text-amber-300 uppercase tracking-wider font-outfit">
-                    ২. ফিল্টারিং নিয়মাবলী (FILTER & RULES SETTINGS — আপনার অ্যাপের ২য় ধাপ)
-                  </h4>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3.5">
-                  <IndividualParamCard
-                    id="PARAM_FILTER_RULE_NAME"
-                    title="নিয়মের নাম (RULE NAME)"
-                    badge="RULE NAME"
-                    badgeColor="slate"
-                    value="বিকাশ ও নগদ পেমেন্ট ফরওয়ার্ড"
-                    note="অ্যাপের ফিল্টার নিয়মের শিরোনাম।"
-                    icon={FileText}
-                    onCopy={copyToClipboard}
-                    isCopied={copiedKey === 'PARAM_FILTER_RULE_NAME'}
-                    successMessage="নিয়মের নাম কপি হয়েছে!"
-                  />
-
-                  <IndividualParamCard
-                    id="PARAM_FILTER_CONDITION"
-                    title="প্রেরক ফিল্টার শর্ত (SENDER CONDITION)"
-                    badge="EXACT MATCH"
-                    badgeColor="teal"
-                    value="হুবহু মিল"
-                    note="অ্যাপের প্রেরক শর্ত অপশনে [হুবহু মিল] অথবা [শব্দ বা নম্বর ধারণ করে] চাপ দিন।"
-                    icon={SlidersHorizontal}
-                    onCopy={copyToClipboard}
-                    isCopied={copiedKey === 'PARAM_FILTER_CONDITION'}
-                    successMessage="ফিল্টার শর্ত 'হুবহু মিল' কপি হয়েছে!"
-                  />
-
-                  <IndividualParamCard
-                    id="PARAM_FILTER_SENDERS_BOTH"
-                    title="প্রেরক তালিকা — উভয় (bKash ও NAGAD)"
-                    badge="RECOMMENDED"
-                    badgeColor="emerald"
-                    value="bKash,NAGAD"
-                    note="কমা (,) দিয়ে একসাথে দিলে বিকাশ ও নগদ উভয়ের SMS এই একটি নিয়মেই চলে আসবে।"
-                    icon={Smartphone}
-                    onCopy={copyToClipboard}
-                    isCopied={copiedKey === 'PARAM_FILTER_SENDERS_BOTH'}
-                    successMessage="'bKash,NAGAD' প্রেরক কিওয়ার্ড কপি হয়েছে!"
-                  />
-
-                  <IndividualParamCard
-                    id="PARAM_FILTER_SENDER_BKASH"
-                    title="প্রেরক — শুধুমাত্র বিকাশ (BKASH ONLY)"
-                    badge="BKASH ONLY"
-                    badgeColor="rose"
-                    value="bKash"
-                    note="আলাদা আলাদা রুলস তৈরি করতে চাইলে শুধুমাত্র বিকাশ প্রেরক।"
-                    icon={Smartphone}
-                    onCopy={copyToClipboard}
-                    isCopied={copiedKey === 'PARAM_FILTER_SENDER_BKASH'}
-                    successMessage="'bKash' প্রেরক নাম কপি হয়েছে!"
-                  />
-
-                  <IndividualParamCard
-                    id="PARAM_FILTER_SENDER_NAGAD"
-                    title="প্রেরক — শুধুমাত্র নগদ (NAGAD ONLY)"
-                    badge="NAGAD ONLY"
-                    badgeColor="amber"
-                    value="NAGAD"
-                    note="আলাদা আলাদা রুলস তৈরি করতে চাইলে শুধুমাত্র নগদ প্রেরক।"
-                    icon={Smartphone}
-                    onCopy={copyToClipboard}
-                    isCopied={copiedKey === 'PARAM_FILTER_SENDER_NAGAD'}
-                    successMessage="'NAGAD' প্রেরক নাম কপি হয়েছে!"
-                  />
-
-                  <IndividualParamCard
-                    id="PARAM_FILTER_MSG_CONDITION"
-                    title="বার্তার বিষয়বস্তু শর্ত (MESSAGE CONDITION)"
-                    badge="ANY MESSAGE"
-                    badgeColor="blue"
-                    value="যেকোনো বার্তা"
-                    note="মেসেজের ভেতর কোনো নির্দিষ্ট শব্দ না খুঁজে [যেকোনো বার্তা] নির্বাচন করুন।"
-                    icon={Sparkles}
-                    onCopy={copyToClipboard}
-                    isCopied={copiedKey === 'PARAM_FILTER_MSG_CONDITION'}
-                    successMessage="'যেকোনো বার্তা' শর্ত কপি হয়েছে!"
-                  />
-
-                  <IndividualParamCard
-                    id="PARAM_FILTER_CATEGORY"
-                    title="ক্যাটাগরি নির্বাচন (CATEGORY)"
-                    badge="FINANCIAL"
-                    badgeColor="emerald"
-                    value="আর্থিক লেনদেন"
-                    note="অ্যাপের ক্যাটাগরিতে [আর্থিক লেনদেন] অপশনটি নির্বাচন করুন।"
-                    icon={CreditCard}
-                    onCopy={copyToClipboard}
-                    isCopied={copiedKey === 'PARAM_FILTER_CATEGORY'}
-                    successMessage="'আর্থিক লেনদেন' ক্যাটাগরি কপি হয়েছে!"
-                  />
-
-                  <IndividualParamCard
-                    id="PARAM_FILTER_FORWARD_DEST"
-                    title="ফরোয়ার্ডের গন্তব্য (FORWARD DESTINATION)"
-                    badge="DESTINATION"
-                    badgeColor="purple"
-                    value="DPIB PAYMENT"
-                    note="পূর্বে তৈরি করা DPIB PAYMENT (WEBHOOK) গন্তব্যটি টগল অন করুন।"
-                    icon={ArrowRight}
-                    onCopy={copyToClipboard}
-                    isCopied={copiedKey === 'PARAM_FILTER_FORWARD_DEST'}
-                    successMessage="ফরোয়ার্ড গন্তব্য 'DPIB PAYMENT' কপি হয়েছে!"
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* SECTION 3: JSON পে-লোড টেমপ্লেটসমূহ (PAYLOAD TEMPLATES) */}
-            {(settingsSubTab === 'ALL' || settingsSubTab === 'PAYLOAD') && (
-              <div className="space-y-3.5 pt-4 border-t border-slate-800">
-                <div className="flex items-center gap-2">
-                  <Code2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <h4 className="text-sm font-black text-emerald-300 uppercase tracking-wider font-outfit">
-                    ৩. JSON পে-লোড টেমপ্লেটসমূহ (JSON PAYLOAD TEMPLATES)
-                  </h4>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
-                  <IndividualParamCard
-                    id="PARAM_JSON_TMPL_1"
-                    title="ফরম্যাট ১: আপনার অ্যাপের চলক [SENDER] ও [MESSAGE]"
-                    badge="RECOMMENDED FOR YOUR APP"
-                    badgeColor="emerald"
-                    isMultiLine
-                    value={`{\n  "sender": "[SENDER]",\n  "message": "[MESSAGE]",\n  "timestamp": [TIMESTAMP],\n  "category": "[CATEGORY]"\n}`}
-                    note="আপনার স্ক্রিনশটের ডিফল্ট ভেরিয়েবল ফরম্যাট। এটি সরাসরি কপি করে অ্যাপের 'JSON পে-লোড টেমপ্লেট' বক্সে পেস্ট করুন।"
-                    icon={Code2}
-                    onCopy={copyToClipboard}
-                    isCopied={copiedKey === 'PARAM_JSON_TMPL_1'}
-                    successMessage="ফরম্যাট ১ JSON পে-লোড সফলভাবে কপি হয়েছে!"
-                  />
-
-                  <IndividualParamCard
-                    id="PARAM_JSON_TMPL_2"
-                    title="ফরম্যাট ২: টোকেন সহ সিকিউর পে-লোড (TOKEN IN BODY)"
-                    badge="TOKEN EMBEDDED"
-                    badgeColor="teal"
-                    isMultiLine
-                    value={`{\n  "sender": "[SENDER]",\n  "message": "[MESSAGE]",\n  "secret": "${config.smsWebhookSecret || 'DPIB_SMS_FUYTU9B2F5ZRK77F'}"\n}`}
-                    note="বডির ভেতরে সরাসরি সিক্রেট কী পাঠানো সুরক্ষিত পদ্ধতি।"
-                    icon={Lock}
-                    onCopy={copyToClipboard}
-                    isCopied={copiedKey === 'PARAM_JSON_TMPL_2'}
-                    successMessage="ফরম্যাট ২ JSON পে-লোড সফলভাবে কপি হয়েছে!"
-                  />
-
-                  <IndividualParamCard
-                    id="PARAM_JSON_TMPL_3"
-                    title="ফরম্যাট ৩: বিকল্প {sender} ও {msg} ফরম্যাট"
-                    badge="ALTERNATIVE MACROS"
-                    badgeColor="slate"
-                    isMultiLine
-                    value={`{\n  "sender": "{sender}",\n  "message": "{msg}",\n  "secret": "${config.smsWebhookSecret || 'DPIB_SMS_FUYTU9B2F5ZRK77F'}"\n}`}
-                    note="যদি অ্যাপে কার্লি ব্র্যাকেট {sender} এবং {msg} চলক থাকে তবে এটি দিন।"
-                    icon={Code2}
-                    onCopy={copyToClipboard}
-                    isCopied={copiedKey === 'PARAM_JSON_TMPL_3'}
-                    successMessage="ফরম্যাট ৩ JSON পে-লোড সফলভাবে কপি হয়েছে!"
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* SECTION 4: টেস্ট কমান্ড ও চেকলিস্ট (TOOLS & CHECKLIST) */}
-            {(settingsSubTab === 'ALL' || settingsSubTab === 'TOOLS') && (
-              <div className="space-y-4 pt-4 border-t border-slate-800">
-                <div className="flex items-center gap-2">
-                  <Terminal className="w-4 h-4 text-purple-400 shrink-0" />
-                  <h4 className="text-sm font-black text-purple-300 uppercase tracking-wider font-outfit">
-                    ৪. টেস্ট কমান্ড ও অ্যান্ড্রয়েড পারমিশন চেকলিস্ট (TOOLS & CHECKLIST)
-                  </h4>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-                  <IndividualParamCard
-                    id="PARAM_CURL_CMD"
-                    title="cURL টেস্ট কমান্ড (POSTMAN / TERMINAL TEST)"
-                    badge="TEST COMMAND"
-                    badgeColor="purple"
-                    isMultiLine
-                    value={`curl -X POST ${liveVercelUrl} \\\n  -H "Content-Type: application/json" \\\n  -d '{"sender":"bKash","message":"You have received Tk 10.00 from 01700000000. Ref DPIB-TEST. TrxID TEST123456 at 07/11/2026 18:00","secret":"${config.smsWebhookSecret || 'DPIB_SMS_FUYTU9B2F5ZRK77F'}"}'`}
-                    note="আপনার কম্পিউটার বা ফোনে টার্মিনালে এই কমান্ডটি চালিয়ে দেখতে পারেন সরাসরি টেস্ট এসএমএস সার্ভারে কাজ করে কি না।"
-                    icon={Terminal}
-                    onCopy={copyToClipboard}
-                    isCopied={copiedKey === 'PARAM_CURL_CMD'}
-                    successMessage="cURL টেস্ট কমান্ড সফলভাবে কপি হয়েছে!"
-                  />
-
-                  <IndividualParamCard
-                    id="PARAM_SAMPLE_BKASH"
-                    title="স্যাম্পল বিকাশ মেসেজ টেক্সট (SAMPLE BKASH SMS)"
-                    badge="BKASH SAMPLE"
-                    badgeColor="rose"
-                    isMultiLine
-                    value="You have received Tk 100.00 from 01712345678. Ref DPIB-4829. Fee Tk 0.00. Balance Tk 1500.00. TrxID BKH9A21M4P at 05/11/2026 14:30"
-                    note="সিমুলেটরে টেস্ট করতে এই স্যাম্পল এসএমএসটি কপি করে ব্যবহার করতে পারেন।"
-                    icon={Smartphone}
-                    onCopy={copyToClipboard}
-                    isCopied={copiedKey === 'PARAM_SAMPLE_BKASH'}
-                    successMessage="স্যাম্পল বিকাশ এসএমএস কপি হয়েছে!"
-                  />
-                </div>
-
-                {/* Xiaomi / Redmi / HyperOS Background Checklist */}
-                <div className="p-4 sm:p-5 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-3">
-                  <div className="flex items-center gap-2 text-amber-300">
-                    <AlertTriangle className="w-4 h-4 shrink-0" />
-                    <h5 className="text-xs sm:text-sm font-black uppercase font-outfit">
-                      শাওমি / রেডমি (MIUI / HyperOS) মোবাইল পারমিশন চেকলিস্ট:
-                    </h5>
+              {/* CARD 2: SECRET KEY */}
+              <div className="bg-white rounded-2xl border border-slate-200/90 p-4 sm:p-5 shadow-2xs hover:shadow-xs transition-shadow flex flex-col justify-between gap-4">
+                <div className="space-y-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="w-8 h-8 rounded-xl bg-purple-50 border border-purple-200 text-purple-800 flex items-center justify-center shrink-0">
+                        <KeyRound className="w-4 h-4" />
+                      </div>
+                      <h4 className="text-xs sm:text-sm font-black text-slate-900 truncate">
+                        ২. সিক্রেট টোকেন (SECRET KEY)
+                      </h4>
+                    </div>
+                    <span className="text-[10px] font-black uppercase font-outfit px-2 py-0.5 rounded-md bg-purple-50 text-purple-800 border border-purple-200 shrink-0">
+                      TOKEN
+                    </span>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs text-slate-300">
-                    <div className="p-3 rounded-xl bg-slate-900 border border-slate-800/80 space-y-1">
-                      <span className="font-bold text-teal-300 block">১. সার্ভিস SMS পারমিশন:</span>
-                      <p className="text-[11px] text-slate-400 leading-relaxed">
-                        Settings ➔ Apps ➔ Manage Apps ➔ SMS অ্যাপ ➔ Other Permissions ➔ <strong className="text-white">Service SMS = Allow</strong> দিন।
-                      </p>
-                    </div>
-                    <div className="p-3 rounded-xl bg-slate-900 border border-slate-800/80 space-y-1">
-                      <span className="font-bold text-teal-300 block">২. অটোস্টার্ট পারমিশন:</span>
-                      <p className="text-[11px] text-slate-400 leading-relaxed">
-                        Settings ➔ Apps ➔ Manage Apps ➔ SMS অ্যাপ ➔ <strong className="text-white">Autostart = ON</strong> করে দিন।
-                      </p>
-                    </div>
-                    <div className="p-3 rounded-xl bg-slate-900 border border-slate-800/80 space-y-1">
-                      <span className="font-bold text-teal-300 block">৩. ব্যাটারি সেভার বন্ধ:</span>
-                      <p className="text-[11px] text-slate-400 leading-relaxed">
-                        Battery Saver ➔ <strong className="text-white">No restrictions</strong> সিলেক্ট করুন যাতে অ্যাপ ব্যাকগ্রাউন্ডে বন্ধ না হয়।
-                      </p>
-                    </div>
+
+                  <p className="text-[11px] text-slate-500 leading-relaxed">
+                    নিরাপত্তা নিশ্চিত করতে এবং ভুয়া রিকোয়েস্ট রোধে এই সিক্রেট টোকেনটি ব্যবহৃত হয়।
+                  </p>
+
+                  <div className="w-full min-h-[42px] px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-purple-900 break-all select-all flex items-center">
+                    {config.smsWebhookSecret || 'DPIB_SMS_FUYTU9B2F5ZRK77F'}
                   </div>
                 </div>
+
+                <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    onClick={handleGenerateSecret}
+                    className="min-h-[36px] px-2.5 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-[11px] font-bold text-slate-700 cursor-pointer transition-colors"
+                  >
+                    নতুন তৈরি
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      copyToClipboard(
+                        config.smsWebhookSecret || 'DPIB_SMS_FUYTU9B2F5ZRK77F',
+                        'CARD_SECRET_TOKEN',
+                        'সিক্রেট টোকেন সফলভাবে কপি হয়েছে!'
+                      )
+                    }
+                    className={`min-h-[36px] px-3.5 py-1.5 rounded-xl text-xs font-black uppercase font-outfit flex items-center gap-1.5 cursor-pointer transition-all ${
+                      copiedKey === 'CARD_SECRET_TOKEN'
+                        ? 'bg-emerald-600 text-white shadow-2xs'
+                        : 'bg-slate-900 hover:bg-slate-800 text-white shadow-2xs'
+                    }`}
+                  >
+                    {copiedKey === 'CARD_SECRET_TOKEN' ? (
+                      <Check className="w-3.5 h-3.5" />
+                    ) : (
+                      <Copy className="w-3.5 h-3.5" />
+                    )}
+                    <span>{copiedKey === 'CARD_SECRET_TOKEN' ? 'COPIED' : 'সিক্রেট কপি করুন'}</span>
+                  </button>
+                </div>
               </div>
-            )}
+
+              {/* CARD 3: JSON PAYLOAD TEMPLATE */}
+              <div className="bg-white rounded-2xl border border-slate-200/90 p-4 sm:p-5 shadow-2xs hover:shadow-xs transition-shadow flex flex-col justify-between gap-4">
+                <div className="space-y-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="w-8 h-8 rounded-xl bg-blue-50 border border-blue-200 text-blue-800 flex items-center justify-center shrink-0">
+                        <Code2 className="w-4 h-4" />
+                      </div>
+                      <h4 className="text-xs sm:text-sm font-black text-slate-900 truncate">
+                        ৩. JSON পে-লোড টেমপ্লেট (PAYLOAD)
+                      </h4>
+                    </div>
+                    <span className="text-[10px] font-black uppercase font-outfit px-2 py-0.5 rounded-md bg-blue-50 text-blue-800 border border-blue-200 shrink-0">
+                      JSON BODY
+                    </span>
+                  </div>
+
+                  <p className="text-[11px] text-slate-500 leading-relaxed">
+                    অ্যাপের <strong className="text-slate-700">JSON পে-লোড টেমপ্লেট</strong> বক্সে এই কোডটি পেস্ট করুন।
+                  </p>
+
+                  <pre className="w-full text-[11px] font-mono text-slate-800 bg-slate-50 border border-slate-200 p-2.5 rounded-xl overflow-x-auto whitespace-pre leading-relaxed select-all">
+{`{
+  "sender": "[SENDER]",
+  "message": "[MESSAGE]",
+  "secret": "${config.smsWebhookSecret || 'DPIB_SMS_FUYTU9B2F5ZRK77F'}"
+}`}
+                  </pre>
+                </div>
+
+                <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                  <span className="text-[11px] text-slate-400 font-medium">
+                    {copiedKey === 'CARD_JSON_PAYLOAD' ? 'কপি সম্পন্ন!' : 'এক ক্লিকে কপি'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const payloadTemplate = `{\n  "sender": "[SENDER]",\n  "message": "[MESSAGE]",\n  "secret": "${config.smsWebhookSecret || 'DPIB_SMS_FUYTU9B2F5ZRK77F'}"\n}`;
+                      copyToClipboard(payloadTemplate, 'CARD_JSON_PAYLOAD', 'JSON পে-লোড সফলভাবে কপি হয়েছে!');
+                    }}
+                    className={`min-h-[36px] px-3.5 py-1.5 rounded-xl text-xs font-black uppercase font-outfit flex items-center gap-1.5 cursor-pointer transition-all ${
+                      copiedKey === 'CARD_JSON_PAYLOAD'
+                        ? 'bg-emerald-600 text-white shadow-2xs'
+                        : 'bg-blue-600 hover:bg-blue-700 text-white shadow-2xs'
+                    }`}
+                  >
+                    {copiedKey === 'CARD_JSON_PAYLOAD' ? (
+                      <Check className="w-3.5 h-3.5" />
+                    ) : (
+                      <Copy className="w-3.5 h-3.5" />
+                    )}
+                    <span>{copiedKey === 'CARD_JSON_PAYLOAD' ? 'COPIED' : 'JSON কপি করুন'}</span>
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}
