@@ -26,6 +26,7 @@ import {
 import { Student, Department, SemesterId } from '../../types';
 import {
   getStudents,
+  getCachedStudents,
   saveStudent,
   deleteStudent,
   batchSaveStudents,
@@ -53,8 +54,8 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
   onClearInitialAction,
 }) => {
   const effectiveDepartments = departments && departments.length > 0 ? departments : DEFAULT_DEPARTMENTS;
-  const [students, setStudents] = useState<Student[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [students, setStudents] = useState<Student[]>(() => getCachedStudents() || []);
+  const [loading, setLoading] = useState(() => !(getCachedStudents()?.length));
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [semesterFilter, setSemesterFilter] = useState<string>('ALL');
@@ -112,7 +113,9 @@ export const StudentManagement: React.FC<StudentManagementProps> = ({
   const [copiedSample, setCopiedSample] = useState(false);
 
   const fetchStudents = async () => {
-    setLoading(true);
+    if (students.length === 0) {
+      setLoading(true);
+    }
     setFetchError(null);
     try {
       const list = await getStudents({

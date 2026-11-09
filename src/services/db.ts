@@ -909,19 +909,95 @@ export function formatShiftLabel(shiftCodeOrName: string, customShifts?: ShiftCo
 
 /* ==================== STUDENTS ==================== */
 
-export async function getStudents(filters?: { semesterId?: string; departmentId?: string; search?: string }): Promise<Student[]> {
-  try {
-    const ref = collection(db, COLLECTIONS.STUDENTS);
-    const fetchPromise = getDocs(ref);
-    const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('ক্লাউড ডেটাবেস সংযোগ টাইমআউট')), 9000)
-    );
-    const snap = await Promise.race([fetchPromise, timeoutPromise]);
-    let list: Student[] = [];
+let _studentsCache: {
+  list: Student[];
+  timestamp: number;
+} | null = null;
+const STUDENTS_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes TTL
 
-    snap.forEach((docSnap) => {
-      list.push({ id: docSnap.id, ...(docSnap.data() as Omit<Student, 'id'>) });
-    });
+export function invalidateStudentsCache(): void {
+  _studentsCache = null;
+  try {
+    sessionStorage.removeItem('dpib_students_cache_v1');
+  } catch (_) {}
+}
+
+export function getCachedStudents(): Student[] | null {
+  if (_studentsCache && Date.now() - _studentsCache.timestamp < STUDENTS_CACHE_TTL_MS) {
+    return _studentsCache.list;
+  }
+  try {
+    const raw = sessionStorage.getItem('dpib_students_cache_v1');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && Array.isArray(parsed.list) && Date.now() - parsed.timestamp < STUDENTS_CACHE_TTL_MS) {
+        _studentsCache = parsed;
+        return parsed.list;
+      }
+    }
+  } catch (_) {}
+  return null;
+}
+
+export async function getStudents(
+  filters?: { semesterId?: string; departmentId?: string; search?: string },
+  forceRefresh = false
+): Promise<Student[]> {
+  try {
+    let allStudents: Student[];
+
+    const isCacheValid =
+      !forceRefresh &&
+      _studentsCache !== null &&
+      Date.now() - _studentsCache.timestamp < STUDENTS_CACHE_TTL_MS;
+
+    if (isCacheValid && _studentsCache) {
+      allStudents = _studentsCache.list;
+    } else {
+      let foundInSession = false;
+      if (!forceRefresh) {
+        try {
+          const raw = sessionStorage.getItem('dpib_students_cache_v1');
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (parsed && Array.isArray(parsed.list) && Date.now() - parsed.timestamp < STUDENTS_CACHE_TTL_MS) {
+              _studentsCache = parsed;
+              allStudents = parsed.list;
+              foundInSession = true;
+            }
+          }
+        } catch (_) {}
+      }
+
+      if (!foundInSession) {
+        const ref = collection(db, COLLECTIONS.STUDENTS);
+        const fetchPromise = getDocs(ref);
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('ক্লাউড ডেটাবেস সংযোগ টাইমআউট')), 9000)
+        );
+        const snap = await Promise.race([fetchPromise, timeoutPromise]);
+        let rawList: Student[] = [];
+
+        snap.forEach((docSnap) => {
+          rawList.push({ id: docSnap.id, ...(docSnap.data() as Omit<Student, 'id'>) });
+        });
+
+        allStudents = rawList;
+        _studentsCache = {
+          list: allStudents,
+          timestamp: Date.now(),
+        };
+
+        try {
+          sessionStorage.setItem(
+            'dpib_students_cache_v1',
+            JSON.stringify({ list: allStudents, timestamp: Date.now() })
+          );
+        } catch (_) {}
+      }
+    }
+
+    let list: Student[] = [...allStudents!];
 
     if (filters) {
       if (filters.semesterId && filters.semesterId !== 'ALL') {
@@ -950,6 +1026,7 @@ export async function getStudents(filters?: { semesterId?: string; departmentId?
 }
 
 export async function saveStudent(student: Omit<Student, 'id'>, id?: string): Promise<string> {
+  invalidateStudentsCache();
   const cleanStudent = sanitizeFirestorePayload({
     ...student,
     roll: toEnglishDigits(String(student.roll || '').trim()),
@@ -979,6 +1056,7 @@ export async function saveStudent(student: Omit<Student, 'id'>, id?: string): Pr
 }
 
 export async function deleteStudent(id: string): Promise<void> {
+  invalidateStudentsCache();
   try {
     await deleteDoc(doc(db, COLLECTIONS.STUDENTS, id));
   } catch (err) {
@@ -1094,6 +1172,10 @@ export async function batchSaveStudents(
 
     if (operationCountInBatch > 0) {
       await currentBatch.commit();
+    }
+
+    if (result.successCount > 0 || result.updatedCount > 0) {
+      invalidateStudentsCache();
     }
 
     return result;
@@ -1508,7 +1590,7 @@ let _resultsCache: {
   list: StudentResult[];
   timestamp: number;
 } | null = null;
-const RESULTS_CACHE_TTL_MS = 2.5 * 60 * 1000; // 2.5 minutes TTL
+const RESULTS_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes TTL
 
 export function invalidateResultsCache(): void {
   _resultsCache = null;
@@ -1920,7 +2002,15 @@ export interface DashboardStats {
   pendingAdmissions?: number;
 }
 
-export async function getDashboardStats(): Promise<DashboardStats> {
+let _dashboardStatsCache: {
+  data: DashboardStats;
+  timestamp: number;
+} | null = null;
+
+export async function getDashboardStats(forceRefresh = false): Promise<DashboardStats> {
+  if (!forceRefresh && _dashboardStatsCache && Date.now() - _dashboardStatsCache.timestamp < 2 * 60 * 1000) {
+    return _dashboardStatsCache.data;
+  }
   try {
     const [students, exams, results, notices] = await Promise.all([
       getStudents(),
@@ -1950,7 +2040,7 @@ export async function getDashboardStats(): Promise<DashboardStats> {
       else draftResults++;
     });
 
-    return {
+    const stats: DashboardStats = {
       totalStudents: students.length,
       totalExams: exams.length,
       totalResults: results.length,
@@ -1960,6 +2050,8 @@ export async function getDashboardStats(): Promise<DashboardStats> {
       totalAdmissions,
       pendingAdmissions,
     };
+    _dashboardStatsCache = { data: stats, timestamp: Date.now() };
+    return stats;
   } catch (error) {
     console.error('Error fetching dashboard stats:', error);
     return {

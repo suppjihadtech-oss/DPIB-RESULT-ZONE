@@ -521,6 +521,7 @@ export function App() {
       <div className="min-h-screen bg-slate-50 flex items-center justify-center font-bengali">
         <LoadingOverlay
           isVisible={true}
+          minDurationMs={300}
           message="সিস্টেম ও ডেটাবেস প্রস্তুত করা হচ্ছে..."
           subtext={<><DpibBrandTitle className="text-xs inline-block" /> ক্লাউড সার্ভারের সাথে সংযোগ স্থাপিত হচ্ছে...</>}
         />
@@ -588,7 +589,7 @@ export function App() {
           }
         }}
       >
-        <AnimatePresence mode="wait">
+        <AnimatePresence initial={false}>
           {adminSection === 'dashboard' && (
             <PageTransition key="admin-dashboard">
               <AdminDashboard
@@ -725,7 +726,7 @@ export function App() {
 
       {/* Main View Router with Modern Page Transition */}
       <main className={isAdmissionRoute ? 'flex-1 w-full max-w-full min-w-0' : 'flex-1 pb-24 md:pb-8 w-full max-w-full min-w-0'}>
-        <AnimatePresence mode="wait">
+        <AnimatePresence initial={false}>
           {publicTab === 'home' && (
             <PageTransition key="public-home">
               <PublicHomePage

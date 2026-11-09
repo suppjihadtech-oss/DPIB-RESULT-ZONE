@@ -32,7 +32,7 @@ export const LoadingOverlay: React.FC<LoadingOverlayProps> = ({
   subtext = 'অনুগ্রহ করে কিছুক্ষণ অপেক্ষা করুন...',
   fullScreen = true,
   transparentBackdrop = false,
-  minDurationMs = 2200,
+  minDurationMs = 350,
   className = '',
 }) => {
   const displayMessage = message || (operation ? OPERATION_MESSAGES[operation] : null) || 'তথ্য সংরক্ষণ করা হচ্ছে...';
@@ -82,25 +82,25 @@ export const LoadingOverlay: React.FC<LoadingOverlayProps> = ({
           id="dpib-loading-overlay"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          exit={{ opacity: 0, transition: { duration: 0.35, ease: 'easeInOut' } }}
+          exit={{ opacity: 0, transition: { duration: 0.16, ease: 'easeOut' } }}
           className={`${
             fullScreen
               ? 'fixed inset-0 z-[9999]'
               : 'absolute inset-0 z-50 rounded-2xl'
           } flex items-center justify-center p-4 ${
             transparentBackdrop
-              ? 'bg-slate-900/30 backdrop-blur-sm'
-              : 'bg-slate-950/45 backdrop-blur-md'
+              ? 'bg-slate-900/25 backdrop-blur-xs'
+              : 'bg-slate-950/35 backdrop-blur-xs'
           } select-none pointer-events-auto cursor-wait ${className}`}
           onClick={(e) => e.stopPropagation()}
         >
           {/* Main Card */}
           <motion.div
-            initial={{ scale: 0.88, opacity: 0, y: 12 }}
+            initial={{ scale: 0.94, opacity: 0, y: 8 }}
             animate={{ scale: 1, opacity: 1, y: 0 }}
-            exit={{ scale: 0.92, opacity: 0, y: 8 }}
-            transition={{ type: 'spring', damping: 26, stiffness: 320 }}
-            className="w-full max-w-xs sm:max-w-sm bg-white/95 backdrop-blur-2xl rounded-3xl p-6 sm:p-8 shadow-[0_25px_60px_-15px_rgba(15,23,42,0.3)] border border-white/80 text-center flex flex-col items-center relative overflow-hidden"
+            exit={{ scale: 0.96, opacity: 0, y: 4 }}
+            transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+            className="w-full max-w-xs sm:max-w-sm bg-white/98 rounded-3xl p-5 sm:p-7 shadow-[0_20px_50px_-10px_rgba(15,23,42,0.25)] border border-slate-100 text-center flex flex-col items-center relative overflow-hidden"
           >
             {/* Ambient Background Light Blobs */}
             <div className="absolute -top-12 -right-12 w-32 h-32 bg-blue-400/20 rounded-full blur-2xl pointer-events-none" />

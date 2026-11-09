@@ -46,6 +46,8 @@ import {
 import {
   getResults,
   getStudents,
+  getCachedPublishedResults,
+  getCachedStudents,
   saveStudentResult,
   batchSaveResults,
   deleteResult,
@@ -90,8 +92,8 @@ export const ResultManagement: React.FC<ResultManagementProps> = ({
   const [selectedDepartmentId, setSelectedDepartmentId] = useState<string>('ALL');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [results, setResults] = useState<StudentResult[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [results, setResults] = useState<StudentResult[]>(() => getCachedPublishedResults() || []);
+  const [loading, setLoading] = useState(() => !(getCachedPublishedResults()?.length));
 
   // Selection Bottom Sheets for Filters
   const [examFilterSheetOpen, setExamFilterSheetOpen] = useState(false);
@@ -136,7 +138,7 @@ export const ResultManagement: React.FC<ResultManagementProps> = ({
   const [deleteSuccessMessage, setDeleteSuccessMessage] = useState<string | null>(null);
 
   // Manual Entry 4-Step States
-  const [studentsList, setStudentsList] = useState<Student[]>([]);
+  const [studentsList, setStudentsList] = useState<Student[]>(() => getCachedStudents() || []);
   const [manualStep, setManualStep] = useState<1 | 2 | 3 | 4>(1);
   const [manualDeptId, setManualDeptId] = useState<string>('');
   const [manualSemesterId, setManualSemesterId] = useState<SemesterId>('1');
@@ -155,7 +157,10 @@ export const ResultManagement: React.FC<ResultManagementProps> = ({
   const [manualError, setManualError] = useState<string | null>(null);
 
   const fetchResults = async () => {
-    setLoading(true);
+    // Only show full loading spinner if we don't have any results to show yet
+    if (results.length === 0) {
+      setLoading(true);
+    }
     try {
       const [data, students] = await Promise.all([
         getResults({
