@@ -39,6 +39,7 @@ import {
   generateSampleShortResultJson,
   ShortResultValidationReport,
   ShortResultRowValidation,
+  DEFAULT_INSTITUTE_NAME,
 } from '../../services/shortResultParser';
 import { batchSaveResults, saveExam } from '../../services/db';
 import { BottomSheet } from '../common/BottomSheet';
@@ -73,8 +74,8 @@ export const ShortResultUploadModal: React.FC<ShortResultUploadModalProps> = ({
   const [overrideExamTitle, setOverrideExamTitle] = useState<string>('');
   const [overrideYear, setOverrideYear] = useState<string>(new Date().getFullYear().toString());
   const [overrideSemesterId, setOverrideSemesterId] = useState<SemesterId>('2');
-  const [overrideDepartmentId, setOverrideDepartmentId] = useState<string>(departments[0]?.id || 'cmt');
-  const [overrideInstituteName, setOverrideInstituteName] = useState<string>('ড্যাফোডিল পলিটেকনিক ইনস্টিটিউট');
+  const [overrideDepartmentId, setOverrideDepartmentId] = useState<string>('ALL');
+  const [overrideInstituteName, setOverrideInstituteName] = useState<string>(DEFAULT_INSTITUTE_NAME);
   const [publishStatus, setPublishStatus] = useState<'PUBLISHED' | 'DRAFT'>('PUBLISHED');
   const [overwriteDuplicates, setOverwriteDuplicates] = useState<boolean>(false);
 
@@ -184,7 +185,8 @@ export const ShortResultUploadModal: React.FC<ShortResultUploadModalProps> = ({
         const q = toEnglishDigits(previewSearch.toLowerCase().trim());
         const rowRoll = toEnglishDigits(row.roll).toLowerCase();
         const rowName = (row.matchedStudentName || '').toLowerCase();
-        return rowRoll.includes(q) || rowName.includes(q);
+        const rowDept = (row.departmentName || '').toLowerCase();
+        return rowRoll.includes(q) || rowName.includes(q) || rowDept.includes(q);
       }
 
       return true;
@@ -202,42 +204,54 @@ export const ShortResultUploadModal: React.FC<ShortResultUploadModalProps> = ({
     const toastId = toast.loading('সংক্ষিপ্ত ফলাফল ডাটাবেজে সংরক্ষণ করা হচ্ছে...', 'SAVING');
 
     try {
-      // 1. Create or ensure synthetic exam record exists in Firestore for filterability
-      const examId = report.resultsToPublish[0].examId;
-      const existingExam = exams.find((x) => x.id === examId);
-      if (!existingExam) {
-        await saveExam(
-          {
-            title: report.detectedExamTitle,
-            semesterId: report.detectedSemesterId,
-            departmentId: report.detectedDepartmentId,
-            departmentName: report.detectedDepartmentName,
-            examType: 'সংক্ষিপ্ত ফলাফল',
-            examDate: new Date().toISOString().split('T')[0],
-            academicYear: report.detectedAcademicYear,
-            totalMarks: 0,
-            description: `${report.detectedInstituteName ? `${report.detectedInstituteName} — ` : ''}বাংলাদেশ কারিগরি শিক্ষা বোর্ডের সংক্ষিপ্ত ফলাফল`,
-            subjects: [],
-            status: publishStatus,
-            allowMeritList: true,
-            publishedAt: publishStatus === 'PUBLISHED' ? Date.now() : undefined,
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-          },
-          examId
-        );
-      }
+      // Group results by examId (supports multiple departments in the same JSON)
+      const resultsByExamId = new Map<string, StudentResult[]>();
+      report.resultsToPublish.forEach((r) => {
+        const list = resultsByExamId.get(r.examId) || [];
+        list.push(r);
+        resultsByExamId.set(r.examId, list);
+      });
 
-      // 2. Batch Save results to Firestore
-      const res = await batchSaveResults(
-        report.resultsToPublish,
-        examId,
-        publishStatus === 'PUBLISHED'
-      );
+      let totalSaved = 0;
+
+      for (const [examId, resultsList] of resultsByExamId.entries()) {
+        const sampleResult = resultsList[0];
+        const existingExam = exams.find((x) => x.id === examId);
+
+        if (!existingExam) {
+          await saveExam(
+            {
+              title: report.detectedExamTitle,
+              semesterId: sampleResult.semesterId,
+              departmentId: sampleResult.departmentId,
+              departmentName: sampleResult.departmentName,
+              examType: 'সংক্ষিপ্ত ফলাফল',
+              examDate: new Date().toISOString().split('T')[0],
+              academicYear: report.detectedAcademicYear,
+              totalMarks: 0,
+              description: `${report.detectedInstituteName ? `${report.detectedInstituteName} — ` : ''}বাংলাদেশ কারিগরি শিক্ষা বোর্ডের সংক্ষিপ্ত ফলাফল`,
+              subjects: [],
+              status: publishStatus,
+              allowMeritList: true,
+              publishedAt: publishStatus === 'PUBLISHED' ? Date.now() : undefined,
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+            },
+            examId
+          );
+        }
+
+        const res = await batchSaveResults(
+          resultsList,
+          examId,
+          publishStatus === 'PUBLISHED'
+        );
+        totalSaved += res.successCount;
+      }
 
       toast.dismiss(toastId);
       toast.success(
-        `সফলভাবে ${toBanglaDigits(res.successCount)}টি সংক্ষিপ্ত ফলাফল ${publishStatus === 'PUBLISHED' ? 'প্রকাশিত' : 'সংরক্ষিত'} হয়েছে!`,
+        `সফলভাবে ${toBanglaDigits(totalSaved)}টি সংক্ষিপ্ত ফলাফল ${publishStatus === 'PUBLISHED' ? 'প্রকাশিত' : 'সংরক্ষিত'} হয়েছে!`,
         'COMPLETED'
       );
 
@@ -256,7 +270,7 @@ export const ShortResultUploadModal: React.FC<ShortResultUploadModalProps> = ({
     <BottomSheet
       isOpen={isOpen}
       onClose={onClose}
-      title="সংক্ষিপ্ত ফলাফল (Without Marksheet) আপলোড"
+      title="সংক্ষিপ্ত ফলাফল আপলোড"
       subtitle="বাংলাদেশ কারিগরি শিক্ষা বোর্ডের সংক্ষিপ্ত ফলাফল JSON ফাইল আপলোড ও স্বয়ংক্রিয় শিক্ষার্থী ম্যাচিং"
       maxHeight="max-h-[96vh]"
     >
@@ -352,7 +366,7 @@ export const ShortResultUploadModal: React.FC<ShortResultUploadModalProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="text-[11px] font-bold text-slate-600 block mb-1">
-                    পরীক্ষার নাম
+                     পরীক্ষার নাম
                   </label>
                   <input
                     type="text"
@@ -371,7 +385,7 @@ export const ShortResultUploadModal: React.FC<ShortResultUploadModalProps> = ({
                     type="text"
                     value={overrideInstituteName}
                     onChange={(e) => setOverrideInstituteName(e.target.value)}
-                    placeholder="উদাঃ ড্যাফোডিল পলিটেকনিক ইনস্টিটিউট"
+                    placeholder="উদাঃ দক্ষিণবঙ্গ পলিটেকনিক ইনস্টিটিউট, ভোলা সদর, ভোলা"
                     className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm font-medium focus:border-blue-500 outline-none"
                   />
                 </div>
@@ -392,8 +406,10 @@ export const ShortResultUploadModal: React.FC<ShortResultUploadModalProps> = ({
                     label="টেকনোলজি"
                     value={overrideDepartmentId}
                     displayValue={
-                      departments.find((d) => d.id === overrideDepartmentId)?.name ||
-                      overrideDepartmentId.toUpperCase()
+                      overrideDepartmentId === 'ALL'
+                        ? 'সকল টেকনোলজি (স্বয়ংক্রিয়)'
+                        : departments.find((d) => d.id === overrideDepartmentId)?.name ||
+                          overrideDepartmentId.toUpperCase()
                     }
                     onClick={() => setDeptSheetOpen(true)}
                   />
@@ -659,7 +675,7 @@ export const ShortResultUploadModal: React.FC<ShortResultUploadModalProps> = ({
                     <tr>
                       <th className="py-2.5 px-3 text-center w-12">#</th>
                       <th className="py-2.5 px-3">রোল নম্বর</th>
-                      <th className="py-2.5 px-3">শিক্ষার্থীর নাম (ডাটাবেজ মিল)</th>
+                      <th className="py-2.5 px-3">শিক্ষার্থী ও টেকনোলজি</th>
                       <th className="py-2.5 px-3 text-center">GPA</th>
                       <th className="py-2.5 px-3 text-center">গ্রেড</th>
                       <th className="py-2.5 px-3 text-center">অবস্থা</th>
@@ -692,21 +708,33 @@ export const ShortResultUploadModal: React.FC<ShortResultUploadModalProps> = ({
                             {row.roll || <span className="text-rose-500 italic">অনুপস্থিত</span>}
                           </td>
                           <td className="py-2 px-3">
-                            {row.isStudentMatched ? (
-                              <span className="font-semibold text-slate-900 flex items-center gap-1.5">
-                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                                <span>{row.matchedStudentName}</span>
-                              </span>
-                            ) : row.studentMatchStatus === 'AMBIGUOUS' ? (
-                              <span className="text-amber-700 font-medium text-[11px] flex items-center gap-1">
-                                <AlertTriangle className="w-3 h-3 text-amber-600 shrink-0" />
-                                <span>একাধিক শিক্ষার্থী মিলেছে (নাম রাখা হয়নি)</span>
-                              </span>
-                            ) : (
-                              <span className="text-slate-400 italic text-[11px]">
-                                ডাটাবেজে নাম মেলেনি
-                              </span>
-                            )}
+                            <div className="space-y-0.5">
+                              {row.isStudentMatched ? (
+                                <span className="font-semibold text-slate-900 flex items-center gap-1.5">
+                                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                  <span>{row.matchedStudentName}</span>
+                                </span>
+                              ) : row.studentMatchStatus === 'AMBIGUOUS' ? (
+                                <span className="text-amber-700 font-medium text-[11px] flex items-center gap-1">
+                                  <AlertTriangle className="w-3 h-3 text-amber-600 shrink-0" />
+                                  <span>একাধিক শিক্ষার্থী মিলেছে (নাম রাখা হয়নি)</span>
+                                </span>
+                              ) : (
+                                <span className="text-slate-400 italic text-[11px]">
+                                  ডাটাবেজে নাম মেলেনি
+                                </span>
+                              )}
+                              <div className="flex items-center gap-1">
+                                <span className="inline-block px-1.5 py-0.2 bg-blue-50 text-blue-700 rounded text-[10px] font-medium border border-blue-100">
+                                  {row.departmentName}
+                                </span>
+                                {row.rawDepartment && (
+                                  <span className="text-[10px] text-slate-400 font-outfit">
+                                    ({row.rawDepartment})
+                                  </span>
+                                )}
+                              </div>
+                            </div>
                           </td>
                           <td className="py-2 px-3 text-center font-outfit font-black text-slate-900">
                             {toBanglaNumber(row.gpa, 2)}
@@ -854,7 +882,7 @@ export const ShortResultUploadModal: React.FC<ShortResultUploadModalProps> = ({
                   <span>তথ্য সুরক্ষার নিশ্চয়তা:</span>
                 </p>
                 <p className="text-[11px] text-blue-800 leading-relaxed">
-                  • এটি একটি “সংক্ষিপ্ত ফলাফল (Without Marksheet)”। শিক্ষার্থীদের জন্য বিষয়ভিত্তিক নম্বরপত্র ব্যতীত কেবল রোল, GPA, লেটার গ্রেড এবং প্রতিষ্ঠানের নাম দৃশ্যমান হবে।<br />
+                  • এটি একটি “সংক্ষিপ্ত ফলাফল”। শিক্ষার্থীদের জন্য বিষয়ভিত্তিক নম্বরপত্র ব্যতীত কেবল রোল, GPA, লেটার গ্রেড এবং প্রতিষ্ঠানের নাম দৃশ্যমান হবে।<br />
                   • কোনো প্রকার ফেক ডাটা বা অপ্রমাণিত নাম যুক্ত করা হয়নি। যেসকল রোলের সংরক্ষিত নাম পাওয়া গেছে কেবল সেগুলিই সংযুক্ত করা হয়েছে।
                 </p>
               </div>
@@ -912,11 +940,18 @@ export const ShortResultUploadModal: React.FC<ShortResultUploadModalProps> = ({
         isOpen={deptSheetOpen}
         onClose={() => setDeptSheetOpen(false)}
         title="টেকনোলজি নির্বাচন করুন"
-        options={departments.map((dept) => ({
-          value: dept.id,
-          label: dept.name,
-          subLabel: dept.code,
-        }))}
+        options={[
+          {
+            value: 'ALL',
+            label: 'সকল টেকনোলজি (স্বয়ংক্রিয়)',
+            subLabel: 'JSON বা শিক্ষার্থী ডাটাবেজ অনুযায়ী প্রতিটি রোল শনাক্ত হবে',
+          },
+          ...departments.map((dept) => ({
+            value: dept.id,
+            label: dept.name,
+            subLabel: dept.code,
+          })),
+        ]}
         selectedValue={overrideDepartmentId}
         onSelect={(val) => setOverrideDepartmentId(val)}
       />

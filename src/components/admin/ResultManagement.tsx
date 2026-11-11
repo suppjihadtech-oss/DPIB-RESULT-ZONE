@@ -797,10 +797,10 @@ export const ResultManagement: React.FC<ResultManagementProps> = ({
           <button
             onClick={() => setShortUploadModalOpen(true)}
             className="flex items-center space-x-1.5 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs sm:text-sm font-bold transition-all shadow-xs active:scale-95 cursor-pointer"
-            title="বাংলাদেশ কারিগরি শিক্ষা বোর্ডের সংক্ষিপ্ত ফলাফল (Without Marksheet) JSON আপলোড"
+            title="বাংলাদেশ কারিগরি শিক্ষা বোর্ডের সংক্ষিপ্ত ফলাফল JSON আপলোড"
           >
             <Sparkles className="w-4 h-4 text-amber-200" />
-            <span>সংক্ষিপ্ত ফলাফল (Without Marksheet)</span>
+            <span>সংক্ষিপ্ত ফলাফল আপলোড</span>
           </button>
 
           <button
@@ -3013,7 +3013,7 @@ export const ResultManagement: React.FC<ResultManagementProps> = ({
         </div>
       </BottomSheet>
 
-      {/* Short Summary Result (Without Marksheet) JSON Upload Modal */}
+      {/* Short Summary Result JSON Upload Modal */}
       <ShortResultUploadModal
         isOpen={shortUploadModalOpen}
         onClose={() => setShortUploadModalOpen(false)}

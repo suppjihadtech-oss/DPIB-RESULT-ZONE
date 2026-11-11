@@ -16,6 +16,128 @@ import {
   generateVerificationCode,
 } from './db';
 
+export const DEFAULT_INSTITUTE_NAME = 'দক্ষিণবঙ্গ পলিটেকনিক ইনস্টিটিউট, ভোলা সদর, ভোলা';
+
+/**
+ * Case-insensitive & multi-alias technology/department resolver.
+ * Handles English (CMT, cmt, Computer, CIVIL, ce, ct, ELECTRICAL, et, eee, MECHANICAL, me, mt, etc.)
+ * and Bengali (কম্পিউটার, সিভিল, ইত্যাদি)
+ */
+export function resolveTechnology(rawTech?: string): { id: string; name: string } {
+  if (!rawTech) {
+    return { id: 'cmt', name: 'কম্পিউটার টেকনোলজি' };
+  }
+  const clean = String(rawTech).trim();
+  const lower = clean.toLowerCase();
+
+  // 1. Civil Technology (ce, ct, civil, etc.)
+  if (
+    lower === 'civil' ||
+    lower === 'ce' ||
+    lower === 'ct' ||
+    lower.includes('civil') ||
+    clean.includes('সিভিল')
+  ) {
+    return { id: 'ct', name: 'সিভিল টেকনোলজি' };
+  }
+
+  // 2. Electrical Technology (et, eee, ee, electrical, etc.)
+  if (
+    lower === 'electrical' ||
+    lower === 'eee' ||
+    lower === 'ee' ||
+    lower === 'et' ||
+    lower.includes('elect') ||
+    clean.includes('ইলেকট্রিক্যাল')
+  ) {
+    return { id: 'et', name: 'ইলেকট্রিক্যাল টেকনোলজি' };
+  }
+
+  // 3. Mechanical Technology (me, mt, mechanical, etc.)
+  if (
+    lower === 'mechanical' ||
+    lower === 'me' ||
+    lower === 'mt' ||
+    lower.includes('mech') ||
+    clean.includes('মেকানিক্যাল')
+  ) {
+    return { id: 'mt', name: 'মেকানিক্যাল টেকনোলজি' };
+  }
+
+  // 4. Computer Technology (cmt, cse, cst, it, computer, etc.)
+  if (
+    lower === 'cmt' ||
+    lower === 'computer' ||
+    lower === 'cse' ||
+    lower === 'cst' ||
+    lower === 'it' ||
+    lower.includes('comp') ||
+    clean.includes('কম্পিউটার')
+  ) {
+    return { id: 'cmt', name: 'কম্পিউটার টেকনোলজি' };
+  }
+
+  // 5. Electronics Technology (ent, electronics, etc.)
+  if (
+    lower === 'ent' ||
+    lower === 'electronics' ||
+    lower.includes('electron') ||
+    clean.includes('ইলেকট্রনিক্স')
+  ) {
+    return { id: 'ent', name: 'ইলেকট্রনিক্স টেকনোলজি' };
+  }
+
+  // 6. Refrigeration & Air Conditioning (RAC)
+  if (
+    lower === 'rac' ||
+    lower.includes('refrigeration') ||
+    clean.includes('রেফ্রিজারেশন') ||
+    clean.includes('আরএসি')
+  ) {
+    return { id: 'rac', name: 'আরএসি টেকনোলজি' };
+  }
+
+  // 7. Architecture Technology (aidt, arch, architecture, at)
+  if (
+    lower === 'architecture' ||
+    lower === 'aidt' ||
+    lower === 'at' ||
+    lower.includes('arch') ||
+    clean.includes('আর্কিটেকচার')
+  ) {
+    return { id: 'at', name: 'আর্কিটেকচার টেকনোলজি' };
+  }
+
+  // 8. Marine Technology (mnt, marine, mt)
+  if (
+    lower === 'marine' ||
+    lower === 'mnt' ||
+    lower.includes('marine') ||
+    clean.includes('মেরিন')
+  ) {
+    return { id: 'marine', name: 'মেরিন টেকনোলজি' };
+  }
+
+  // 9. Surveying Technology
+  if (
+    lower === 'surveying' ||
+    lower.includes('survey') ||
+    clean.includes('সার্ভেয়িং') ||
+    clean.includes('সার্ভেয়িং')
+  ) {
+    return { id: 'surveying', name: 'সার্ভেয়িং টেকনোলজি' };
+  }
+
+  // Normalize fallback
+  const fallback = normalizeDepartment(clean);
+  if (fallback && fallback.id && fallback.name) {
+    return fallback;
+  }
+
+  const cleanId = lower.replace(/[^a-z0-9]/g, '').slice(0, 10) || 'gen';
+  return { id: cleanId, name: clean };
+}
+
 export interface ShortResultRowValidation {
   rowNumber: number;
   rawRoll: string;
@@ -24,6 +146,11 @@ export interface ShortResultRowValidation {
   letterGrade: string;
   rawStatusText?: string;
   isPassed: boolean;
+
+  // Department / Technology
+  departmentId: string;
+  departmentName: string;
+  rawDepartment?: string;
 
   // Student match
   isStudentMatched: boolean;
@@ -280,16 +407,21 @@ export function parseShortResultJson(
     (normalizeSemester(topSemester) as SemesterId) ||
     '1';
 
-  const normDept = normalizeDepartment(options.overrideDepartmentId || topDept);
-  const effectiveDepartmentId = options.overrideDepartmentId || normDept.id;
+  const isAllDept = !options.overrideDepartmentId || options.overrideDepartmentId === 'ALL';
+  const normDept = isAllDept
+    ? { id: 'ALL', name: 'সকল টেকনোলজি' }
+    : resolveTechnology(options.overrideDepartmentId || topDept);
+
+  const effectiveDepartmentId = isAllDept ? 'ALL' : normDept.id;
   const effectiveDepartmentName = normDept.name;
 
   const effectiveInstituteName =
     options.overrideInstituteName?.trim() ||
     topInstitute.trim() ||
-    undefined;
+    DEFAULT_INSTITUTE_NAME;
 
-  const targetExamId =
+  // Target exam ID fallback (per department or generic)
+  const baseTargetExamId =
     options.overrideExamId ||
     `EXAM_${effectiveDepartmentId.toUpperCase()}_SEM${effectiveSemesterId}_${effectiveAcademicYear}`;
 
@@ -323,20 +455,18 @@ export function parseShortResultJson(
   });
 
   // Build lookup for existing database duplicates
-  // Criteria: same roll, examId (or title), semesterId, and departmentId
-  const isDuplicateInDb = (roll: string): boolean => {
+  // Criteria: same roll, examId (or title/semester/year), semesterId, and departmentId
+  const isDuplicateInDb = (roll: string, deptId: string, rowExamId: string): boolean => {
     return existingResults.some((er) => {
       const erRoll = toEnglishDigits(String(er.roll || '')).trim();
       if (erRoll !== roll) return false;
 
-      const sameExam =
-        er.examId === targetExamId ||
-        er.examTitle.toLowerCase() === effectiveExamTitle.toLowerCase();
       const sameSem = er.semesterId === effectiveSemesterId;
-      const sameDept =
-        !effectiveDepartmentId ||
-        effectiveDepartmentId === 'ALL' ||
-        er.departmentId === effectiveDepartmentId;
+      const sameDept = !deptId || deptId === 'ALL' || er.departmentId === deptId;
+      const sameExam =
+        er.examId === rowExamId ||
+        er.examTitle.toLowerCase() === effectiveExamTitle.toLowerCase() ||
+        er.examId.toUpperCase().includes(`SEM${effectiveSemesterId}_${effectiveAcademicYear}`.toUpperCase());
 
       return sameExam && sameSem && sameDept;
     });
@@ -367,6 +497,8 @@ export function parseShortResultJson(
         gpa: 0,
         letterGrade: 'F',
         isPassed: false,
+        departmentId: 'ALL',
+        departmentName: 'সকল টেকনোলজি',
         isStudentMatched: false,
         studentMatchStatus: 'UNMATCHED',
         isDuplicateInFile: false,
@@ -457,7 +589,17 @@ export function parseShortResultJson(
       isPassed = isGpaValid && gpaNum > 0 && letterGrade !== 'F';
     }
 
-    // 6. Student database matching
+    // 6. Row-level Technology detection (Case-insensitive & multi-alias)
+    const rawItemTech =
+      item.technology ||
+      item.tech ||
+      item.department ||
+      item.dept ||
+      item['টেকনোলজি'] ||
+      item['বিভাগ'] ||
+      item['টেক'];
+
+    // 7. Student database matching
     let matchedStudent: Student | undefined;
     let matchedStudentName = '';
     let matchedStudentId = '';
@@ -467,10 +609,16 @@ export function parseShortResultJson(
     if (roll) {
       const candidates = studentsByRollMap.get(roll) || [];
 
-      // If multiple candidates exist across departments, prefer candidate in the same department
+      // If multiple candidates exist across departments, prefer candidate matching row or chosen department
       let filteredCandidates = candidates;
-      if (candidates.length > 1 && effectiveDepartmentId && effectiveDepartmentId !== 'ALL') {
-        const deptMatched = candidates.filter((c) => c.departmentId === effectiveDepartmentId);
+      const expectedDeptHint = rawItemTech
+        ? resolveTechnology(rawItemTech).id
+        : !isAllDept
+        ? normDept.id
+        : undefined;
+
+      if (candidates.length > 1 && expectedDeptHint) {
+        const deptMatched = candidates.filter((c) => c.departmentId === expectedDeptHint);
         if (deptMatched.length > 0) {
           filteredCandidates = deptMatched;
         }
@@ -494,7 +642,33 @@ export function parseShortResultJson(
       }
     }
 
-    // 7. Duplicate Checks
+    // 8. Determine Effective Row Technology
+    let rowDept: { id: string; name: string };
+    if (rawItemTech) {
+      // Row explicitly has technology defined (CMT, cmt, Computer, CIVIL, ce, electrical, etc.)
+      rowDept = resolveTechnology(rawItemTech);
+    } else if (!isAllDept) {
+      // Admin chose a specific single technology in the UI dropdown
+      rowDept = normDept;
+    } else if (matchedStudent?.departmentId) {
+      // Admin chose "সকল টেকনোলজি", and student was found in student database
+      rowDept = {
+        id: matchedStudent.departmentId,
+        name: matchedStudent.departmentName || resolveTechnology(matchedStudent.departmentId).name,
+      };
+    } else if (topDept) {
+      // Top-level JSON technology specified
+      rowDept = resolveTechnology(topDept);
+    } else {
+      // Fallback
+      rowDept = { id: 'cmt', name: 'কম্পিউটার টেকনোলজি' };
+    }
+
+    const rowTargetExamId =
+      options.overrideExamId ||
+      `EXAM_${rowDept.id.toUpperCase()}_SEM${effectiveSemesterId}_${effectiveAcademicYear}`;
+
+    // 9. Duplicate Checks
     let isDuplicateInFile = false;
     if (roll) {
       const count = (fileRollOccurrenceCounter.get(roll) || 0) + 1;
@@ -506,7 +680,7 @@ export function parseShortResultJson(
       }
     }
 
-    const isDuplicateInDatabase = roll ? isDuplicateInDb(roll) : false;
+    const isDuplicateInDatabase = roll ? isDuplicateInDb(roll, rowDept.id, rowTargetExamId) : false;
     if (isDuplicateInDatabase) {
       duplicateInDbCount++;
       if (options.overwriteDuplicates) {
@@ -527,6 +701,9 @@ export function parseShortResultJson(
       letterGrade,
       rawStatusText: parsedStatus.statusText,
       isPassed,
+      departmentId: rowDept.id,
+      departmentName: rowDept.name,
+      rawDepartment: rawItemTech ? String(rawItemTech).trim() : undefined,
       isStudentMatched: studentMatchStatus === 'MATCHED',
       matchedStudent,
       matchedStudentName: matchedStudentName || undefined,
@@ -544,19 +721,19 @@ export function parseShortResultJson(
 
     // If valid, build StudentResult ready for Firestore
     if (isValid && (!isDuplicateInDatabase || options.overwriteDuplicates)) {
-      const docId = generateDynamicResultId(targetExamId, roll);
+      const docId = generateDynamicResultId(rowTargetExamId, roll);
       const studentId = matchedStudentId || `DPIB-${roll}`;
-      const verificationCode = generateVerificationCode(roll, targetExamId);
+      const verificationCode = generateVerificationCode(roll, rowTargetExamId);
 
       const studentResult: StudentResult = {
         id: docId,
-        examId: targetExamId,
+        examId: rowTargetExamId,
         examTitle: effectiveExamTitle,
         examType: 'সংক্ষিপ্ত ফলাফল',
         examDate: new Date().toISOString().split('T')[0],
         semesterId: effectiveSemesterId,
-        departmentId: effectiveDepartmentId,
-        departmentName: effectiveDepartmentName,
+        departmentId: rowDept.id,
+        departmentName: rowDept.name,
         studentName: matchedStudentName || '',
         roll,
         studentId,
@@ -628,29 +805,32 @@ export function generateSampleShortResultJson(): string {
     examTitle: 'ডিপ্লোমা ইন ইঞ্জিনিয়ারিং ২য় পর্ব বোর্ড পরীক্ষা ২০২৪',
     examYear: '2024',
     semester: '2',
-    technology: 'Computer Technology',
-    instituteName: 'ড্যাফোডিল পলিটেকনিক ইনস্টিটিউট',
+    instituteName: DEFAULT_INSTITUTE_NAME,
     results: [
       {
         roll: '612341',
+        technology: 'CMT',
         gpa: 3.85,
         grade: 'A',
         status: 'PASSED',
       },
       {
         roll: '612342',
+        technology: 'Civil',
         gpa: 3.5,
         grade: 'A-',
         status: 'PASSED',
       },
       {
         roll: '612343',
+        technology: 'electrical',
         gpa: 4.0,
         grade: 'A+',
         status: 'উত্তীর্ণ',
       },
       {
         roll: '612344',
+        technology: 'মেকানিক্যাল',
         gpa: 0.0,
         grade: 'F',
         status: 'REFERRED',

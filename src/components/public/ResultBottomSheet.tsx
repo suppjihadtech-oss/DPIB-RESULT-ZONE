@@ -223,15 +223,15 @@ export const ResultBottomSheet: React.FC<ResultBottomSheetProps> = ({
             </div>
           </div>
 
-          {/* Check if Short Result (Without Marksheet) or Detailed Marksheet */}
+          {/* Check if Short Result or Detailed Marksheet */}
           {result.resultType === 'SHORT' || (!result.subjects || result.subjects.length === 0) ? (
-            /* ================= WITHOUT MARKSHEET VIEW ================= */
+            /* ================= SHORT RESULT VIEW ================= */
             <div className="py-2 space-y-3">
               <div className="bg-slate-50/70 p-4 rounded-2xl border border-slate-200/90 space-y-3">
                 <div className="flex items-center justify-between border-b border-slate-200/80 pb-2">
                   <h4 className="text-xs font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5 font-outfit">
                     <Sparkles className="w-3.5 h-3.5 text-blue-600" />
-                    <span>সংক্ষিপ্ত ফলাফল বিবরণী (WITHOUT MARKSHEET)</span>
+                    <span>সংক্ষিপ্ত ফলাফল বিবরণী</span>
                   </h4>
                   <span className="text-[11px] font-bold text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-200">
                     বোর্ড ফলাফল
@@ -251,12 +251,10 @@ export const ResultBottomSheet: React.FC<ResultBottomSheetProps> = ({
                     <span className="text-blue-700 font-black font-outfit text-sm">{toBanglaDigits(result.roll)}</span>
                   </div>
 
-                  {result.instituteName ? (
-                    <div>
-                      <span className="text-slate-400 block text-[10px] font-bold">প্রতিষ্ঠানের নাম:</span>
-                      <span className="text-slate-900 font-bold">{result.instituteName}</span>
-                    </div>
-                  ) : null}
+                  <div>
+                    <span className="text-slate-400 block text-[10px] font-bold">প্রতিষ্ঠানের নাম:</span>
+                    <span className="text-slate-900 font-bold">{result.instituteName || 'দক্ষিণবঙ্গ পলিটেকনিক ইনস্টিটিউট, ভোলা সদর, ভোলা'}</span>
+                  </div>
 
                   <div>
                     <span className="text-slate-400 block text-[10px] font-bold">পরীক্ষা ও বছর:</span>
