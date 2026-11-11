@@ -92,6 +92,19 @@ const RESERVED_DOC_KEYS = new Set([
   'isvalid',
   'rownumber',
   'calculatedresult',
+  'resulttype',
+  'resultformat',
+  'institutename',
+  'institute',
+  'institution',
+  'college',
+  'academicyear',
+  'examyear',
+  'year',
+  'resultstatustext',
+  'resultstatus',
+  'statustext',
+  'ispass',
 ]);
 
 /**
@@ -122,6 +135,66 @@ export function normalizeStudentResult(res: any): StudentResult {
   const examTitle = String(res.examTitle || res.examName || res.title || '২য় পর্ব মডেল টেস্ট ২০২৬').trim();
   const examType = String(res.examType || 'মডেল টেস্ট').trim();
   const examDate = String(res.examDate || new Date().toISOString().split('T')[0]).trim();
+
+  // Distinct check for Short Summary Result (Without Marksheet)
+  const isShortResult = res.resultType === 'SHORT' || (
+    res.resultType !== 'DETAILED' &&
+    (!res.subjects || res.subjects.length === 0) &&
+    !res.subjectMarks &&
+    !res.marks &&
+    (res.gpa !== undefined || res.letterGrade !== undefined || res.grade !== undefined || res.resultStatusText !== undefined)
+  );
+
+  if (isShortResult) {
+    const rawGpa = res.gpa !== undefined ? Number(toEnglishDigits(String(res.gpa))) : 0;
+    const finalGpa = isNaN(rawGpa) ? 0 : rawGpa;
+    const rawGrade = String(res.letterGrade || res.grade || '').trim();
+    const finalGrade = rawGrade || (finalGpa >= 4 ? 'A+' : finalGpa >= 3.75 ? 'A' : finalGpa >= 3.5 ? 'A-' : finalGpa >= 3.25 ? 'B+' : finalGpa >= 3 ? 'B' : finalGpa >= 2 ? 'C' : finalGpa > 0 ? 'D' : 'F');
+    const finalIsPassed = res.isPassed !== undefined
+      ? Boolean(res.isPassed)
+      : (finalGpa > 0 && finalGrade !== 'F');
+
+    const rawVerCode = res.verificationCode ? String(res.verificationCode).trim() : '';
+    const verificationCode = (rawVerCode && !isFirestoreAutoId(rawVerCode))
+      ? rawVerCode
+      : generateVerificationCode(roll, examId);
+
+    const rawId = res.id ? String(res.id).trim() : '';
+    const id = (rawId && !rawId.startsWith('res-temp'))
+      ? rawId
+      : generateDynamicResultId(examId, roll);
+
+    return {
+      id,
+      examId,
+      examTitle,
+      examType: res.examType || 'সংক্ষিপ্ত ফলাফল',
+      examDate,
+      semesterId,
+      departmentId,
+      departmentName,
+      studentName,
+      roll,
+      studentId,
+      registration,
+      subjects: [],
+      totalObtainedMarks: Number(res.totalObtainedMarks) || 0,
+      totalFullMarks: Number(res.totalFullMarks) || 0,
+      gpa: finalGpa,
+      letterGrade: finalGrade,
+      isPassed: finalIsPassed,
+      status: res.status || 'PUBLISHED',
+      meritRank: res.meritRank ?? null,
+      publishedAt: res.publishedAt || res.createdAt || Date.now(),
+      verificationCode,
+      createdAt: res.createdAt || Date.now(),
+      updatedAt: res.updatedAt || Date.now(),
+      resultType: 'SHORT',
+      instituteName: res.instituteName || res.institute || res.college || res['প্রতিষ্ঠানের নাম'] || undefined,
+      academicYear: res.academicYear || res.examYear || res.year || res['বছর'] || undefined,
+      resultStatusText: res.resultStatusText || res.resultStatus || res.statusText || res['ফলাফলের অবস্থা'] || undefined,
+    };
+  }
 
   // Extract all subjects from multiple potential representations
   const subjectMap = new Map<string, SubjectResult>();
@@ -421,6 +494,10 @@ export function normalizeStudentResult(res: any): StudentResult {
     verificationCode,
     createdAt: res.createdAt || Date.now(),
     updatedAt: res.updatedAt || Date.now(),
+    resultType: res.resultType || 'DETAILED',
+    instituteName: res.instituteName || res.institute || res['প্রতিষ্ঠানের নাম'] || undefined,
+    academicYear: res.academicYear || res.examYear || res.year || res['বছর'] || undefined,
+    resultStatusText: res.resultStatusText || res.resultStatus || res.statusText || undefined,
   };
 }
 

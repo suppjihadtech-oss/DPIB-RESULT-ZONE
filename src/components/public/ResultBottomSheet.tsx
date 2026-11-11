@@ -223,125 +223,211 @@ export const ResultBottomSheet: React.FC<ResultBottomSheetProps> = ({
             </div>
           </div>
 
-          {/* 2-Column Info Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-6 py-3.5 border-b border-slate-100">
-            {/* Exam Info */}
-            <div className="bg-slate-50/50 p-3 rounded-xl border border-slate-100 space-y-2">
-              <h4 className="text-[11px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-200/60 pb-1 flex items-center gap-1.5 font-outfit">
-                <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                <span>EXAMINATION DETAILS</span>
-              </h4>
-              <div className="grid grid-cols-2 gap-y-1.5 text-xs">
-                <p className="text-slate-500">পরীক্ষার নাম:</p>
-                <p className="text-slate-900 font-bold truncate">{result.examTitle}</p>
-                <p className="text-slate-500">সেমিস্টার:</p>
-                <p className="text-slate-900 font-bold">{semesterBangla}</p>
-                <p className="text-slate-500">বিভাগ:</p>
-                <p className="text-slate-900 font-bold truncate">{result.departmentName}</p>
-                <p className="text-slate-500">পরীক্ষার ধরন:</p>
-                <p className="text-slate-900 font-bold font-outfit">{result.examType}</p>
+          {/* Check if Short Result (Without Marksheet) or Detailed Marksheet */}
+          {result.resultType === 'SHORT' || (!result.subjects || result.subjects.length === 0) ? (
+            /* ================= WITHOUT MARKSHEET VIEW ================= */
+            <div className="py-2 space-y-3">
+              <div className="bg-slate-50/70 p-4 rounded-2xl border border-slate-200/90 space-y-3">
+                <div className="flex items-center justify-between border-b border-slate-200/80 pb-2">
+                  <h4 className="text-xs font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5 font-outfit">
+                    <Sparkles className="w-3.5 h-3.5 text-blue-600" />
+                    <span>সংক্ষিপ্ত ফলাফল বিবরণী (WITHOUT MARKSHEET)</span>
+                  </h4>
+                  <span className="text-[11px] font-bold text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-200">
+                    বোর্ড ফলাফল
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-2.5 gap-x-4 text-xs">
+                  {result.studentName ? (
+                    <div>
+                      <span className="text-slate-400 block text-[10px] font-bold">শিক্ষার্থীর নাম:</span>
+                      <span className="text-slate-900 font-bold text-sm">{result.studentName}</span>
+                    </div>
+                  ) : null}
+
+                  <div>
+                    <span className="text-slate-400 block text-[10px] font-bold">রোল নম্বর:</span>
+                    <span className="text-blue-700 font-black font-outfit text-sm">{toBanglaDigits(result.roll)}</span>
+                  </div>
+
+                  {result.instituteName ? (
+                    <div>
+                      <span className="text-slate-400 block text-[10px] font-bold">প্রতিষ্ঠানের নাম:</span>
+                      <span className="text-slate-900 font-bold">{result.instituteName}</span>
+                    </div>
+                  ) : null}
+
+                  <div>
+                    <span className="text-slate-400 block text-[10px] font-bold">পরীক্ষা ও বছর:</span>
+                    <span className="text-slate-900 font-bold">
+                      {result.examTitle} {result.academicYear ? `(${toBanglaDigits(result.academicYear)})` : ''}
+                    </span>
+                  </div>
+
+                  <div>
+                    <span className="text-slate-400 block text-[10px] font-bold">সেমিস্টার:</span>
+                    <span className="text-slate-900 font-bold">{semesterBangla}</span>
+                  </div>
+
+                  <div>
+                    <span className="text-slate-400 block text-[10px] font-bold">টেকনোলজি / বিভাগ:</span>
+                    <span className="text-slate-900 font-bold">{result.departmentName}</span>
+                  </div>
+
+                  <div>
+                    <span className="text-slate-400 block text-[10px] font-bold">ফলাফলের অবস্থা:</span>
+                    <span className={`font-black ${isPassed ? 'text-emerald-700' : 'text-rose-700'}`}>
+                      {result.resultStatusText || (isPassed ? 'উত্তীর্ণ (PASSED)' : 'অকৃতকার্য / রেফার্ড')}
+                    </span>
+                  </div>
+
+                  <div>
+                    <span className="text-slate-400 block text-[10px] font-bold">জিপিএ ও গ্রেড:</span>
+                    <span className="text-slate-900 font-black font-outfit">
+                      GPA {toBanglaNumber(result.gpa, 2)} ({result.letterGrade})
+                    </span>
+                  </div>
+
+                  <div>
+                    <span className="text-slate-400 block text-[10px] font-bold">প্রকাশের তারিখ:</span>
+                    <span className="text-slate-900 font-bold">
+                      {formatBanglaDate(result.publishedAt || result.createdAt)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-3 bg-blue-50/50 rounded-xl border border-blue-100 text-center">
+                <p className="text-[11px] text-slate-600 font-medium leading-relaxed">
+                  এটি বাংলাদেশ কারিগরি শিক্ষা বোর্ডের সংক্ষিপ্ত ফলাফল। এতে কোনো বিষয়ভিত্তিক নম্বরপত্র বা মার্কশিট সংরক্ষিত নেই।
+                </p>
               </div>
             </div>
+          ) : (
+            /* ================= DETAILED MARKSHEET VIEW ================= */
+            <>
+              {/* 2-Column Info Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-6 py-3.5 border-b border-slate-100">
+                {/* Exam Info */}
+                <div className="bg-slate-50/50 p-3 rounded-xl border border-slate-100 space-y-2">
+                  <h4 className="text-[11px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-200/60 pb-1 flex items-center gap-1.5 font-outfit">
+                    <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                    <span>EXAMINATION DETAILS</span>
+                  </h4>
+                  <div className="grid grid-cols-2 gap-y-1.5 text-xs">
+                    <p className="text-slate-500">পরীক্ষার নাম:</p>
+                    <p className="text-slate-900 font-bold truncate">{result.examTitle}</p>
+                    <p className="text-slate-500">সেমিস্টার:</p>
+                    <p className="text-slate-900 font-bold">{semesterBangla}</p>
+                    <p className="text-slate-500">বিভাগ:</p>
+                    <p className="text-slate-900 font-bold truncate">{result.departmentName}</p>
+                    <p className="text-slate-500">পরীক্ষার ধরন:</p>
+                    <p className="text-slate-900 font-bold font-outfit">{result.examType}</p>
+                  </div>
+                </div>
 
-            {/* Merit Info */}
-            <div className="bg-slate-50/50 p-3 rounded-xl border border-slate-100 space-y-2">
-              <h4 className="text-[11px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-200/60 pb-1 flex items-center gap-1.5 font-outfit">
-                <Award className="w-3.5 h-3.5 text-slate-400" />
-                <span>ACADEMIC MERIT & MARKS</span>
-              </h4>
-              <div className="grid grid-cols-2 gap-y-1.5 text-xs">
-                <p className="text-slate-500">মেধাক্রম:</p>
-                <p className="text-blue-600 font-black">
-                  {result.meritRank ? toBanglaOrdinal(result.meritRank) : 'উপলব্ধ নয়'}
-                </p>
-                <p className="text-slate-500">লেটার গ্রেড:</p>
-                <p className="text-slate-900 font-black font-outfit">{result.letterGrade}</p>
-                <p className="text-slate-500">মোট প্রাপ্ত নম্বর:</p>
-                <p className="text-slate-900 font-bold font-outfit">
-                  {toBanglaDigits(result.totalObtainedMarks)} / {toBanglaDigits(result.totalFullMarks)}
-                </p>
-                <p className="text-slate-500">প্রকাশের তারিখ:</p>
-                <p className="text-slate-900 font-bold">
-                  {formatBanglaDate(result.publishedAt || result.createdAt)}
-                </p>
+                {/* Merit Info */}
+                <div className="bg-slate-50/50 p-3 rounded-xl border border-slate-100 space-y-2">
+                  <h4 className="text-[11px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-200/60 pb-1 flex items-center gap-1.5 font-outfit">
+                    <Award className="w-3.5 h-3.5 text-slate-400" />
+                    <span>ACADEMIC MERIT & MARKS</span>
+                  </h4>
+                  <div className="grid grid-cols-2 gap-y-1.5 text-xs">
+                    <p className="text-slate-500">মেধাক্রম:</p>
+                    <p className="text-blue-600 font-black">
+                      {result.meritRank ? toBanglaOrdinal(result.meritRank) : 'উপলব্ধ নয়'}
+                    </p>
+                    <p className="text-slate-500">লেটার গ্রেড:</p>
+                    <p className="text-slate-900 font-black font-outfit">{result.letterGrade}</p>
+                    <p className="text-slate-500">মোট প্রাপ্ত নম্বর:</p>
+                    <p className="text-slate-900 font-bold font-outfit">
+                      {toBanglaDigits(result.totalObtainedMarks)} / {toBanglaDigits(result.totalFullMarks)}
+                    </p>
+                    <p className="text-slate-500">প্রকাশের তারিখ:</p>
+                    <p className="text-slate-900 font-bold">
+                      {formatBanglaDate(result.publishedAt || result.createdAt)}
+                    </p>
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
 
-          {/* Subject Marks Table */}
-          <div className="py-3.5">
-            <h4 className="text-xs font-black text-slate-500 tracking-wider uppercase mb-2 flex items-center justify-between font-outfit">
-              <span className="flex items-center gap-1.5 text-slate-700">
-                <BookOpen className="w-3.5 h-3.5 text-blue-600" />
-                <span>SUBJECT-WISE MARKS BREAKDOWN</span>
-              </span>
-              <span className="text-[11px] text-slate-400 font-medium font-bengali">
-                মোট বিষয়: {toBanglaDigits(result.subjects?.length || 0)}টি
-              </span>
-            </h4>
-            <div className="overflow-x-auto rounded-xl border border-slate-200 shadow-2xs">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead>
-                  <tr className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200">
-                    <th className="py-2.5 px-3 text-center w-12 font-outfit uppercase tracking-wider text-[10px]">
-                      <BookOpen className="w-3.5 h-3.5 text-slate-400 mx-auto" />
-                    </th>
-                    <th className="py-2.5 px-3">বিষয় কোড ও নাম</th>
-                    <th className="py-2.5 px-3 text-center">পূর্ণমান</th>
-                    <th className="py-2.5 px-3 text-center">প্রাপ্ত নম্বর</th>
-                    <th className="py-2.5 px-3 text-center">গ্রেড</th>
-                    <th className="py-2.5 px-3 text-center">গ্রেড পয়েন্ট</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {result.subjects?.map((sub, idx) => (
-                    <tr key={idx} className="hover:bg-slate-50/70 transition-colors">
-                      <td className="py-2 px-3 text-center">
-                        <div className="w-6 h-6 rounded-md bg-blue-50/90 border border-blue-200/70 flex items-center justify-center text-blue-600 shadow-2xs mx-auto">
-                          <BookOpen className="w-3 h-3" />
-                        </div>
-                      </td>
-                      <td className="py-2 px-3 font-semibold text-slate-800">
-                        <span className="font-outfit text-slate-400 mr-1.5 font-bold text-[11px]">
-                          [{sub.subjectCode}]
-                        </span>
-                        <span>{sub.subjectName}</span>
-                        {sub.originalSubjectName && sub.originalSubjectName.trim().toLowerCase() !== sub.subjectName.trim().toLowerCase() && (
-                          <span className="block text-[10px] text-slate-400 font-mono font-normal">
-                            ({sub.originalSubjectName})
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-2 px-3 text-center font-outfit text-slate-600 font-medium">
-                        {toBanglaDigits(sub.fullMarks)}
-                      </td>
-                      <td className="py-2 px-3 text-center font-black font-outfit text-slate-900">
-                        {formatBanglaMarks(sub.obtainedMarks)}
-                      </td>
-                      <td className="py-2 px-3 text-center">
-                        <span
-                          className={`inline-block px-2 py-0.5 rounded-md font-black font-outfit text-[11px] ${
-                            sub.obtainedMarks === null || sub.grade === '—'
-                              ? 'bg-slate-100 text-slate-500 border border-slate-200'
-                              : sub.grade === 'A+'
-                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                              : sub.grade === 'F'
-                              ? 'bg-rose-100 text-rose-800 border border-rose-200'
-                              : 'bg-slate-100 text-slate-800 border border-slate-200'
-                          }`}
-                        >
-                          {sub.obtainedMarks === null ? '—' : sub.grade}
-                        </span>
-                      </td>
-                      <td className="py-2 px-3 text-center font-bold font-outfit text-slate-800">
-                        {sub.obtainedMarks === null ? '—' : toBanglaNumber(sub.gradePoint, 2)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
+              {/* Subject Marks Table */}
+              <div className="py-3.5">
+                <h4 className="text-xs font-black text-slate-500 tracking-wider uppercase mb-2 flex items-center justify-between font-outfit">
+                  <span className="flex items-center gap-1.5 text-slate-700">
+                    <BookOpen className="w-3.5 h-3.5 text-blue-600" />
+                    <span>SUBJECT-WISE MARKS BREAKDOWN</span>
+                  </span>
+                  <span className="text-[11px] text-slate-400 font-medium font-bengali">
+                    মোট বিষয়: {toBanglaDigits(result.subjects?.length || 0)}টি
+                  </span>
+                </h4>
+                <div className="overflow-x-auto rounded-xl border border-slate-200 shadow-2xs">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200">
+                        <th className="py-2.5 px-3 text-center w-12 font-outfit uppercase tracking-wider text-[10px]">
+                          <BookOpen className="w-3.5 h-3.5 text-slate-400 mx-auto" />
+                        </th>
+                        <th className="py-2.5 px-3">বিষয় কোড ও নাম</th>
+                        <th className="py-2.5 px-3 text-center">পূর্ণমান</th>
+                        <th className="py-2.5 px-3 text-center">প্রাপ্ত নম্বর</th>
+                        <th className="py-2.5 px-3 text-center">গ্রেড</th>
+                        <th className="py-2.5 px-3 text-center">গ্রেড পয়েন্ট</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {result.subjects?.map((sub, idx) => (
+                        <tr key={idx} className="hover:bg-slate-50/70 transition-colors">
+                          <td className="py-2 px-3 text-center">
+                            <div className="w-6 h-6 rounded-md bg-blue-50/90 border border-blue-200/70 flex items-center justify-center text-blue-600 shadow-2xs mx-auto">
+                              <BookOpen className="w-3 h-3" />
+                            </div>
+                          </td>
+                          <td className="py-2 px-3 font-semibold text-slate-800">
+                            <span className="font-outfit text-slate-400 mr-1.5 font-bold text-[11px]">
+                              [{sub.subjectCode}]
+                            </span>
+                            <span>{sub.subjectName}</span>
+                            {sub.originalSubjectName && sub.originalSubjectName.trim().toLowerCase() !== sub.subjectName.trim().toLowerCase() && (
+                              <span className="block text-[10px] text-slate-400 font-mono font-normal">
+                                ({sub.originalSubjectName})
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-2 px-3 text-center font-outfit text-slate-600 font-medium">
+                            {toBanglaDigits(sub.fullMarks)}
+                          </td>
+                          <td className="py-2 px-3 text-center font-black font-outfit text-slate-900">
+                            {formatBanglaMarks(sub.obtainedMarks)}
+                          </td>
+                          <td className="py-2 px-3 text-center">
+                            <span
+                              className={`inline-block px-2 py-0.5 rounded-md font-black font-outfit text-[11px] ${
+                                sub.obtainedMarks === null || sub.grade === '—'
+                                  ? 'bg-slate-100 text-slate-500 border border-slate-200'
+                                  : sub.grade === 'A+'
+                                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                                  : sub.grade === 'F'
+                                  ? 'bg-rose-100 text-rose-800 border border-rose-200'
+                                  : 'bg-slate-100 text-slate-800 border border-slate-200'
+                              }`}
+                            >
+                              {sub.obtainedMarks === null ? '—' : sub.grade}
+                            </span>
+                          </td>
+                          <td className="py-2 px-3 text-center font-bold font-outfit text-slate-800">
+                            {sub.obtainedMarks === null ? '—' : toBanglaNumber(sub.gradePoint, 2)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>
+          )}
 
           {/* Verification Code & QR Footer inside card */}
           <div className="flex flex-col sm:flex-row items-center justify-between pt-3 border-t border-slate-100 text-xs text-slate-500 gap-3">
@@ -371,48 +457,50 @@ export const ResultBottomSheet: React.FC<ResultBottomSheetProps> = ({
             </div>
 
             <div className="text-right text-[10px] text-slate-400 space-y-0.5">
-              <p>কম্পিউটার জেনারেটেড ডিজিটাল গ্রেডশিট</p>
+              <p>কম্পিউটার জেনারেটেড ডিজিটাল ফলাফল</p>
               <p className="font-outfit uppercase font-semibold">DPIB DIGITAL RESULT SYSTEM</p>
             </div>
           </div>
         </div>
 
-        {/* Exclusive Digital Result Card Option Banner */}
-        <div className="bg-gradient-to-r from-blue-700 via-indigo-700 to-sky-700 rounded-2xl p-3.5 sm:p-4 text-white flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-md border border-blue-400/30">
-          <div className="flex items-center gap-3 text-left w-full sm:w-auto">
-            <div className="w-10 h-10 rounded-xl bg-white/15 border border-white/25 flex items-center justify-center shrink-0 shadow-inner">
-              <CreditCard className="w-5 h-5 text-amber-300" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-amber-400/20 text-amber-200 text-[9px] font-black font-outfit uppercase tracking-widest mb-0.5">
-                <Sparkles className="w-3 h-3 text-amber-300" />
-                <span>OFFICIAL SMART CARD</span>
+        {/* Exclusive Digital Result Card Option Banner (Only for detailed marksheets) */}
+        {result.resultType !== 'SHORT' && (
+          <div className="bg-gradient-to-r from-blue-700 via-indigo-700 to-sky-700 rounded-2xl p-3.5 sm:p-4 text-white flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-md border border-blue-400/30">
+            <div className="flex items-center gap-3 text-left w-full sm:w-auto">
+              <div className="w-10 h-10 rounded-xl bg-white/15 border border-white/25 flex items-center justify-center shrink-0 shadow-inner">
+                <CreditCard className="w-5 h-5 text-amber-300" />
               </div>
-              <h4 className="text-sm sm:text-base font-black leading-tight truncate">
-                DPIB ডিজিটাল রেজাল্ট কার্ড
-              </h4>
-              <p className="text-[11px] text-white/80 font-medium truncate">
-                গোল্ড, রেড ও সায়ান থিমে প্রিমিয়াম 3D রেজাল্ট কার্ড পান
-              </p>
+              <div className="min-w-0 flex-1">
+                <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-amber-400/20 text-amber-200 text-[9px] font-black font-outfit uppercase tracking-widest mb-0.5">
+                  <Sparkles className="w-3 h-3 text-amber-300" />
+                  <span>OFFICIAL SMART CARD</span>
+                </div>
+                <h4 className="text-sm sm:text-base font-black leading-tight truncate">
+                  DPIB ডিজিটাল রেজাল্ট কার্ড
+                </h4>
+                <p className="text-[11px] text-white/80 font-medium truncate">
+                  গোল্ড, রেড ও সায়ান থিমে প্রিমিয়াম 3D রেজাল্ট কার্ড পান
+                </p>
+              </div>
             </div>
-          </div>
 
-          <button
-            id="btn-take-result-card"
-            type="button"
-            onClick={() => {
-              if (onOpenDigitalCard) {
-                onOpenDigitalCard(result);
-              } else {
-                setDigitalCardOpen(true);
-              }
-            }}
-            className="w-full sm:w-auto px-5 py-2.5 sm:py-2.5 min-h-[42px] bg-white text-blue-950 rounded-xl font-black text-xs sm:text-sm hover:bg-amber-300 transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer active:scale-98 shrink-0 font-bengali"
-          >
-            <Sparkles className="w-4 h-4 text-amber-600" />
-            <span>রেজাল্ট কার্ড নিন</span>
-          </button>
-        </div>
+            <button
+              id="btn-take-result-card"
+              type="button"
+              onClick={() => {
+                if (onOpenDigitalCard) {
+                  onOpenDigitalCard(result);
+                } else {
+                  setDigitalCardOpen(true);
+                }
+              }}
+              className="w-full sm:w-auto px-5 py-2.5 sm:py-2.5 min-h-[42px] bg-white text-blue-950 rounded-xl font-black text-xs sm:text-sm hover:bg-amber-300 transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer active:scale-98 shrink-0 font-bengali"
+            >
+              <Sparkles className="w-4 h-4 text-amber-600" />
+              <span>রেজাল্ট কার্ড নিন</span>
+            </button>
+          </div>
+        )}
 
         {/* Action Buttons Section */}
         <div className="flex flex-wrap items-center gap-2 sm:gap-2.5 pt-0.5">

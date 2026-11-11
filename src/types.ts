@@ -146,6 +146,10 @@ export interface StudentResult {
   verificationCode: string;
   createdAt: number;
   updatedAt: number;
+  resultType?: 'DETAILED' | 'SHORT';
+  instituteName?: string;
+  academicYear?: string;
+  resultStatusText?: string;
 }
 
 export interface Notice {

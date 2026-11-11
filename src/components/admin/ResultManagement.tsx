@@ -75,6 +75,7 @@ import { LoadingOverlay } from '../common/LoadingOverlay';
 import { BottomSheet } from '../common/BottomSheet';
 import { ResultBottomSheet } from '../public/ResultBottomSheet';
 import { SelectBottomSheet, SelectTrigger, SelectOption } from '../common/SelectBottomSheet';
+import { ShortResultUploadModal } from './ShortResultUploadModal';
 import { toast } from '../../context/ToastContext';
 
 interface ResultManagementProps {
@@ -102,6 +103,7 @@ export const ResultManagement: React.FC<ResultManagementProps> = ({
 
   // Modals & Bottom Sheets
   const [uploadSheetOpen, setUploadSheetOpen] = useState(false);
+  const [shortUploadModalOpen, setShortUploadModalOpen] = useState(false);
   const [manualSheetOpen, setManualSheetOpen] = useState(false);
   const [previewResult, setPreviewResult] = useState<StudentResult | null>(null);
 
@@ -793,6 +795,15 @@ export const ResultManagement: React.FC<ResultManagementProps> = ({
 
         <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
           <button
+            onClick={() => setShortUploadModalOpen(true)}
+            className="flex items-center space-x-1.5 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs sm:text-sm font-bold transition-all shadow-xs active:scale-95 cursor-pointer"
+            title="বাংলাদেশ কারিগরি শিক্ষা বোর্ডের সংক্ষিপ্ত ফলাফল (Without Marksheet) JSON আপলোড"
+          >
+            <Sparkles className="w-4 h-4 text-amber-200" />
+            <span>সংক্ষিপ্ত ফলাফল (Without Marksheet)</span>
+          </button>
+
+          <button
             onClick={() => {
               setUploadStep(parsedPreviewList.length > 0 ? 'PREVIEW' : 'FILE');
               setUploadSheetOpen(true);
@@ -800,7 +811,7 @@ export const ResultManagement: React.FC<ResultManagementProps> = ({
             className="flex items-center space-x-1.5 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs sm:text-sm font-bold transition-all shadow-xs active:scale-95 cursor-pointer"
           >
             <FileCode className="w-4 h-4 text-emerald-300" />
-            <span>JSON ফলাফল ইমপোর্ট</span>
+            <span>পূর্ণাঙ্গ মার্কশিট JSON ইমপোর্ট</span>
           </button>
 
           <button
@@ -917,7 +928,27 @@ export const ResultManagement: React.FC<ResultManagementProps> = ({
                     <td className="py-3 px-4 text-center font-bold text-blue-700 font-outfit">
                       {toBanglaDigits(res.roll)}
                     </td>
-                    <td className="py-3 px-4 font-semibold text-slate-900">{res.studentName}</td>
+                    <td className="py-3 px-4 font-semibold text-slate-900">
+                      <div>
+                        <span>{res.studentName || <span className="text-slate-400 font-normal italic">নাম সংরক্ষিত নেই</span>}</span>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          {res.resultType === 'SHORT' || (!res.subjects || res.subjects.length === 0) ? (
+                            <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200">
+                              সংক্ষিপ্ত ফলাফল
+                            </span>
+                          ) : (
+                            <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                              মার্কশিট ({toBanglaDigits(res.subjects?.length || 0)})
+                            </span>
+                          )}
+                          {res.instituteName && (
+                            <span className="text-[10px] text-slate-400 truncate max-w-[130px]">
+                              • {res.instituteName}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </td>
                     <td className="py-3 px-4">
                       <span className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-slate-100 text-slate-700 border border-slate-200/70">
                         {res.departmentName || res.departmentId}
@@ -925,7 +956,9 @@ export const ResultManagement: React.FC<ResultManagementProps> = ({
                     </td>
                     <td className="py-3 px-4 text-slate-600 text-xs truncate max-w-xs">{res.examTitle}</td>
                     <td className="py-3 px-4 text-center font-outfit font-semibold text-slate-700">
-                      {toBanglaDigits(res.totalObtainedMarks)} / {toBanglaDigits(res.totalFullMarks)}
+                      {res.resultType === 'SHORT' || (!res.subjects || res.subjects.length === 0)
+                        ? '—'
+                        : `${toBanglaDigits(res.totalObtainedMarks)} / ${toBanglaDigits(res.totalFullMarks)}`}
                     </td>
                     <td className="py-3 px-4 text-center font-black font-outfit text-blue-600">
                       {toBanglaNumber(res.gpa, 2)}
@@ -2979,6 +3012,21 @@ export const ResultManagement: React.FC<ResultManagementProps> = ({
           </div>
         </div>
       </BottomSheet>
+
+      {/* Short Summary Result (Without Marksheet) JSON Upload Modal */}
+      <ShortResultUploadModal
+        isOpen={shortUploadModalOpen}
+        onClose={() => setShortUploadModalOpen(false)}
+        departments={departments}
+        exams={exams}
+        existingStudents={studentsList}
+        existingResults={results}
+        onUploadSuccess={() => {
+          fetchResults();
+          if (onRefreshStats) onRefreshStats();
+        }}
+      />
+
       {/* Processing & Data Action Loading Overlay */}
       <LoadingOverlay
         isVisible={isProcessingUpload || isDeletingAll || isDeletingResult || manualSaving}
