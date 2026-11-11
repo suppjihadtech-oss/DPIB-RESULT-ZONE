@@ -17,6 +17,9 @@ import {
   Sparkles,
   BookOpen,
   GraduationCap,
+  CheckCircle2,
+  XCircle,
+  AlertCircle,
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { playPassSound, playFailSound, triggerPassConfetti } from '../../utils/resultAudio';
@@ -203,18 +206,26 @@ export const ResultBottomSheet: React.FC<ResultBottomSheetProps> = ({
             </div>
 
             {/* GPA Header display */}
-            <div className="text-left sm:text-right bg-slate-50 sm:bg-slate-50/80 px-4 py-2.5 rounded-xl w-full sm:w-auto border border-slate-100">
-              <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-0.5 font-outfit">
+            <div className={`text-left sm:text-right px-4 py-2.5 rounded-2xl w-full sm:w-auto border transition-all ${
+              isPassed
+                ? 'bg-emerald-50/80 border-emerald-200'
+                : 'bg-rose-50/80 border-rose-200'
+            }`}>
+              <p className={`text-[10px] font-black uppercase tracking-widest mb-0.5 font-outfit ${
+                isPassed ? 'text-emerald-700' : 'text-rose-700'
+              }`}>
                 GRADE POINT AVERAGE
               </p>
-              <div className="text-3xl sm:text-4xl font-black text-blue-600 leading-none tracking-tight font-outfit">
+              <div className={`text-3xl sm:text-4xl font-black leading-none tracking-tight font-outfit ${
+                isPassed ? 'text-emerald-600' : 'text-rose-600'
+              }`}>
                 {toBanglaNumber(result.gpa, 2)}{' '}
-                <span className="text-base sm:text-lg text-blue-400 font-bold">/ ৪.০০</span>
+                <span className={`text-base sm:text-lg font-bold ${isPassed ? 'text-emerald-400' : 'text-rose-400'}`}>/ ৪.০০</span>
                 <span
-                  className={`ml-1.5 text-xs px-2 py-0.5 rounded-md font-black ${
+                  className={`ml-1.5 text-xs px-2.5 py-0.5 rounded-lg font-black ${
                     result.letterGrade === 'F'
                       ? 'bg-rose-100 text-rose-800'
-                      : 'bg-blue-100 text-blue-800'
+                      : 'bg-emerald-100 text-emerald-800'
                   }`}
                 >
                   {result.letterGrade}
@@ -226,79 +237,174 @@ export const ResultBottomSheet: React.FC<ResultBottomSheetProps> = ({
           {/* Check if Short Result or Detailed Marksheet */}
           {result.resultType === 'SHORT' || (!result.subjects || result.subjects.length === 0) ? (
             /* ================= SHORT RESULT VIEW ================= */
-            <div className="py-2 space-y-3">
-              <div className="bg-slate-50/70 p-4 rounded-2xl border border-slate-200/90 space-y-3">
-                <div className="flex items-center justify-between border-b border-slate-200/80 pb-2">
-                  <h4 className="text-xs font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5 font-outfit">
-                    <Sparkles className="w-3.5 h-3.5 text-blue-600" />
+            <div className="py-2.5 space-y-4">
+              {/* 1. Large Prominent Result Status Card (Green for Pass, Red for Fail) */}
+              <div
+                className={`p-5 sm:p-7 rounded-3xl border-2 transition-all shadow-sm ${
+                  isPassed
+                    ? 'bg-gradient-to-br from-emerald-50 via-teal-50/60 to-emerald-100/40 border-emerald-400'
+                    : 'bg-gradient-to-br from-rose-50 via-red-50/60 to-rose-100/40 border-rose-400'
+                }`}
+              >
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="flex items-start sm:items-center gap-3.5 sm:gap-4">
+                    <div
+                      className={`w-14 h-14 sm:w-16 sm:h-16 rounded-2xl flex items-center justify-center shrink-0 shadow-sm ${
+                        isPassed
+                          ? 'bg-emerald-600 text-white'
+                          : 'bg-rose-600 text-white'
+                      }`}
+                    >
+                      {isPassed ? (
+                        <CheckCircle2 className="w-8 h-8 sm:w-10 sm:h-10" />
+                      ) : (
+                        <XCircle className="w-8 h-8 sm:w-10 sm:h-10" />
+                      )}
+                    </div>
+
+                    <div>
+                      <span
+                        className={`text-xs font-black uppercase tracking-wider font-outfit ${
+                          isPassed ? 'text-emerald-700' : 'text-rose-700'
+                        }`}
+                      >
+                        RESULT STATUS • চূড়ান্ত ফলাফল
+                      </span>
+                      <h2
+                        className={`text-3xl sm:text-5xl font-black tracking-tight font-bengali leading-tight mt-0.5 ${
+                          isPassed ? 'text-emerald-700' : 'text-rose-700'
+                        }`}
+                      >
+                        {isPassed ? 'উত্তীর্ণ (PASSED)' : (result.resultStatusText || 'অকৃতকার্য / রেফার্ড')}
+                      </h2>
+                      <p
+                        className={`text-sm sm:text-base font-bold mt-1 ${
+                          isPassed ? 'text-emerald-900' : 'text-rose-900'
+                        }`}
+                      >
+                        {isPassed
+                          ? (result.resultStatusText || 'শিক্ষার্থী পরীক্ষায় সফলভাবে উত্তীর্ণ হয়েছেন')
+                          : 'পুনরায় পরীক্ষায় অংশগ্রহণের জন্য সংশ্লিষ্ট বোর্ড নীতিমালা প্রযোজ্য'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Big GPA & Grade Highlight Strip inside Result Status Card */}
+                <div
+                  className={`mt-4 pt-4 border-t flex flex-wrap items-center justify-between gap-3 ${
+                    isPassed ? 'border-emerald-200/90' : 'border-rose-200/90'
+                  }`}
+                >
+                  <div className="flex items-baseline gap-2">
+                    <span
+                      className={`text-xs sm:text-sm font-black uppercase ${
+                        isPassed ? 'text-emerald-800' : 'text-rose-800'
+                      }`}
+                    >
+                      অর্জিত জিপিএ (GPA):
+                    </span>
+                    <span
+                      className={`text-3xl sm:text-4xl font-black font-outfit ${
+                        isPassed ? 'text-emerald-700' : 'text-rose-700'
+                      }`}
+                    >
+                      {toBanglaNumber(result.gpa, 2)}
+                    </span>
+                    <span
+                      className={`text-sm sm:text-base font-bold ${
+                        isPassed ? 'text-emerald-600' : 'text-rose-600'
+                      }`}
+                    >
+                      / ৪.০০
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`text-xs sm:text-sm font-bold ${
+                        isPassed ? 'text-emerald-800' : 'text-rose-800'
+                      }`}
+                    >
+                      লেটার গ্রেড:
+                    </span>
+                    <span
+                      className={`text-2xl sm:text-3xl font-black font-outfit px-3.5 py-0.5 rounded-xl text-white shadow-xs ${
+                        isPassed ? 'bg-emerald-600' : 'bg-rose-600'
+                      }`}
+                    >
+                      {result.letterGrade}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 2. Structured Student & Academic Details Card with Large Fonts */}
+              <div className="bg-slate-50/80 p-5 sm:p-6 rounded-3xl border border-slate-200/90 space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-200/80 pb-3">
+                  <h4 className="text-xs sm:text-sm font-black text-slate-800 uppercase tracking-wider flex items-center gap-2 font-outfit">
+                    <Sparkles className="w-4 h-4 text-blue-600" />
                     <span>সংক্ষিপ্ত ফলাফল বিবরণী</span>
                   </h4>
-                  <span className="text-[11px] font-bold text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-200">
+                  <span className="text-xs font-bold text-blue-800 bg-blue-100/80 px-3 py-1 rounded-full border border-blue-200">
                     বোর্ড ফলাফল
                   </span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-2.5 gap-x-4 text-xs">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-3.5 gap-x-6 text-sm">
                   {result.studentName ? (
                     <div>
-                      <span className="text-slate-400 block text-[10px] font-bold">শিক্ষার্থীর নাম:</span>
-                      <span className="text-slate-900 font-bold text-sm">{result.studentName}</span>
+                      <span className="text-slate-400 block text-xs font-bold mb-0.5">শিক্ষার্থীর নাম:</span>
+                      <span className="text-slate-900 font-black text-base sm:text-xl">{result.studentName}</span>
                     </div>
                   ) : null}
 
                   <div>
-                    <span className="text-slate-400 block text-[10px] font-bold">রোল নম্বর:</span>
-                    <span className="text-blue-700 font-black font-outfit text-sm">{toBanglaDigits(result.roll)}</span>
+                    <span className="text-slate-400 block text-xs font-bold mb-0.5">রোল নম্বর:</span>
+                    <span className="text-blue-700 font-black font-outfit text-xl sm:text-2xl">{toBanglaDigits(result.roll)}</span>
                   </div>
 
                   <div>
-                    <span className="text-slate-400 block text-[10px] font-bold">প্রতিষ্ঠানের নাম:</span>
-                    <span className="text-slate-900 font-bold">{result.instituteName || 'দক্ষিণবঙ্গ পলিটেকনিক ইনস্টিটিউট, ভোলা সদর, ভোলা'}</span>
+                    <span className="text-slate-400 block text-xs font-bold mb-0.5">প্রতিষ্ঠানের নাম:</span>
+                    <span className="text-slate-900 font-extrabold text-sm sm:text-base">
+                      {result.instituteName || 'দক্ষিণবঙ্গ পলিটেকনিক ইনস্টিটিউট, ভোলা সদর, ভোলা'}
+                    </span>
                   </div>
 
                   <div>
-                    <span className="text-slate-400 block text-[10px] font-bold">পরীক্ষা ও বছর:</span>
-                    <span className="text-slate-900 font-bold">
+                    <span className="text-slate-400 block text-xs font-bold mb-0.5">পরীক্ষা ও সাল:</span>
+                    <span className="text-slate-900 font-extrabold text-sm sm:text-base">
                       {result.examTitle} {result.academicYear ? `(${toBanglaDigits(result.academicYear)})` : ''}
                     </span>
                   </div>
 
                   <div>
-                    <span className="text-slate-400 block text-[10px] font-bold">সেমিস্টার:</span>
-                    <span className="text-slate-900 font-bold">{semesterBangla}</span>
+                    <span className="text-slate-400 block text-xs font-bold mb-0.5">সেমিস্টার / পর্ব:</span>
+                    <span className="text-slate-900 font-extrabold text-sm sm:text-base">{semesterBangla}</span>
                   </div>
 
                   <div>
-                    <span className="text-slate-400 block text-[10px] font-bold">টেকনোলজি / বিভাগ:</span>
-                    <span className="text-slate-900 font-bold">{result.departmentName}</span>
+                    <span className="text-slate-400 block text-xs font-bold mb-0.5">টেকনোলজি / বিভাগ:</span>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <span className="inline-block px-2.5 py-0.5 bg-blue-50 text-blue-800 rounded-lg text-xs sm:text-sm font-extrabold border border-blue-200">
+                        {result.departmentName}
+                      </span>
+                    </div>
                   </div>
 
                   <div>
-                    <span className="text-slate-400 block text-[10px] font-bold">ফলাফলের অবস্থা:</span>
-                    <span className={`font-black ${isPassed ? 'text-emerald-700' : 'text-rose-700'}`}>
-                      {result.resultStatusText || (isPassed ? 'উত্তীর্ণ (PASSED)' : 'অকৃতকার্য / রেফার্ড')}
-                    </span>
-                  </div>
-
-                  <div>
-                    <span className="text-slate-400 block text-[10px] font-bold">জিপিএ ও গ্রেড:</span>
-                    <span className="text-slate-900 font-black font-outfit">
-                      GPA {toBanglaNumber(result.gpa, 2)} ({result.letterGrade})
-                    </span>
-                  </div>
-
-                  <div>
-                    <span className="text-slate-400 block text-[10px] font-bold">প্রকাশের তারিখ:</span>
-                    <span className="text-slate-900 font-bold">
+                    <span className="text-slate-400 block text-xs font-bold mb-0.5">ফলাফল প্রকাশের তারিখ:</span>
+                    <span className="text-slate-800 font-bold text-sm sm:text-base">
                       {formatBanglaDate(result.publishedAt || result.createdAt)}
                     </span>
                   </div>
                 </div>
               </div>
 
-              <div className="p-3 bg-blue-50/50 rounded-xl border border-blue-100 text-center">
-                <p className="text-[11px] text-slate-600 font-medium leading-relaxed">
-                  এটি বাংলাদেশ কারিগরি শিক্ষা বোর্ডের সংক্ষিপ্ত ফলাফল। এতে কোনো বিষয়ভিত্তিক নম্বরপত্র বা মার্কশিট সংরক্ষিত নেই।
+              {/* 3. Reassuring Notice Box */}
+              <div className="p-3.5 bg-blue-50/60 rounded-2xl border border-blue-100 text-center">
+                <p className="text-xs text-slate-600 font-medium leading-relaxed">
+                  এটি বাংলাদেশ কারিগরি শিক্ষা বোর্ডের সংক্ষিপ্ত ফলাফল ব্যবস্থা। এতে বিষয়ভিত্তিক বিস্তারিত নম্বরপত্র ব্যতীত কেবল অর্জিত জিপিএ, লেটার গ্রেড এবং চূড়ান্ত ফলাফল সংরক্ষিত রয়েছে।
                 </p>
               </div>
             </div>
